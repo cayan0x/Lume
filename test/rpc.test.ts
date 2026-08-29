@@ -90,7 +90,7 @@ describe("createLumeRpcHandler", () => {
 			ok: true,
 			value: expect.arrayContaining([
 				{ name: "tsundere", displayName: "傲娇", description: "嘴硬心软", profileName: null, custom: true },
-				{ name: "loli", custom: false },
+				{ name: "loli", displayName: "萝莉", description: "可爱", profileName: null, custom: false },
 			]),
 		});
 	});

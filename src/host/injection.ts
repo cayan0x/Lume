@@ -10,9 +10,12 @@ import { sampleForSession } from "../core/sampling.js";
 import type { Persona } from "../core/manifest.js";
 import type { MemoryFact, StyleRule } from "./identity.js";
 
-/** core 记忆判定：身份/称呼/名字类事实，无论检索命中与否恒注入。 */
+/**
+ * core 记忆判定：身份/称呼/名字类事实，无论检索命中与否恒注入。
+ * 昵称类只认「小+字母」（小A/小B）；不放宽到 CJK，否则「小时/小组」等常用词全部误判。
+ */
 export function isCoreMemory(text: string): boolean {
-	return /名字|叫|称呼|身份|小[AB-z]|名字是/.test(text) && text.length <= 30;
+	return /名字|叫|称呼|昵称|爱称|自称|身份|小[A-Za-z]/.test(text) && text.length <= 30;
 }
 
 export interface InjectionConfig {

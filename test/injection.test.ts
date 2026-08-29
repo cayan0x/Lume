@@ -100,4 +100,20 @@ describe("isCoreMemory", () => {
 		expect(isCoreMemory("用户希望被叫做哥哥")).toBe(true);
 		expect(isCoreMemory("用户喜欢A游戏")).toBe(false);
 	});
+
+	it("recognises explicit identity vocabulary", () => {
+		expect(isCoreMemory("用户让我自称小噜")).toBe(true);
+		expect(isCoreMemory("你的昵称是噜噜")).toBe(true);
+		expect(isCoreMemory("哥哥的爱称是笨蛋哥哥")).toBe(true);
+	});
+
+	it("does not mistake common 小X words for nicknames", () => {
+		expect(isCoreMemory("用户写了三小时代码")).toBe(false);
+		expect(isCoreMemory("用户在小组里当组长")).toBe(false);
+		expect(isCoreMemory("用户喜欢读小说")).toBe(false);
+	});
+
+	it("enforces the length cap", () => {
+		expect(isCoreMemory("名字".repeat(16))).toBe(false);
+	});
 });

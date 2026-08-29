@@ -78,3 +78,15 @@ export function parseFacts(output: string): string[] {
 export function mergeNewFacts(candidateFacts: string[], existing: MemoryFact[]): string[] {
 	return candidateFacts.filter((fact) => !isDuplicateFact(fact, existing));
 }
+
+/** 取名类事实：从记忆文本中提取用户给人设起的名字（同步 profile 用）。 */
+export const NAMING_RE = /(?:取名[为叫]|叫你|你的名字[是为]|名字[是为]|以后[就]?叫)[「『]?你?[「『]?([^」』"'，。,．!！?？\s]{1,12})/;
+
+/** 从事实列表中找出第一个取名事实的名字；没有则 null。 */
+export function extractNaming(facts: string[]): string | null {
+	for (const fact of facts) {
+		const m = fact.match(NAMING_RE);
+		if (m?.[1]) return m[1];
+	}
+	return null;
+}

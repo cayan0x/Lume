@@ -23,7 +23,7 @@ import { createLumeRpcHandler } from "./host/rpc.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
 import { IdentityStore, LUME_IDENTITY_SPEC } from "./host/identity.js";
 import { PersonaRegistry } from "./host/registry.js";
-import { buildExtractionPrompt, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, shouldConsider } from "./host/extraction.js";
+import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, shouldConsider } from "./host/extraction.js";
 import { jaccard } from "./core/retrieval.js";
 import type { Persona } from "./core/manifest.js";
 
@@ -162,7 +162,12 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		turnIndex: number;
 		/** undefined = 本会话尚无注入先例（不视为切换）；null = 当值人设为「不使用」。 */
 		lastInjected: string | null | undefined;
-		boundaryRemainder: number;
+		/** 切换发生时的轮次号；边界窗口按「用户轮」计——一条回复内部多次 prompt 构建不会烧掉窗口。 */
+		switchTurn: number | null;
+		/** 切换前的当值人设（接班播报用）。 */
+		prevPersona: string | null | undefined;
+		/** 切换后第一轮的播报需要接手招呼；窗口内后续轮只保留边界句。 */
+		switchGreetingPending: boolean;
 		extracting: Promise<void> | null;
 		lastExtractionAt: number | undefined;
 	}
@@ -170,7 +175,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const runtimeFor = (sid: string): SessionRuntime => {
 		let st = runtime.get(sid);
 		if (!st) {
-			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, boundaryRemainder: 0, extracting: null, lastExtractionAt: undefined };
+			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, switchTurn: null, prevPersona: undefined, switchGreetingPending: false, extracting: null, lastExtractionAt: undefined };
 			runtime.set(sid, st);
 		}
 		return st;
@@ -241,6 +246,12 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
 			for (const fact of fresh) {
 				await identity.addMemory(personaName, fact, (candidate, all) => isDuplicateFact(candidate, all));
+			}
+			// 取名类事实同步身份档案：下拉显示档案名 + 【你是谁】段生效
+			const named = extractNaming(fresh);
+			if (named) {
+				await identity.setProfileName(personaName, named);
+				ctx.logger?.warn?.(`lume: 人设 ${personaName} 被命名为「${named}」`);
 			}
 		} catch (error) {
 			ctx.logger?.warn?.("lume: 提取失败（静默跳过）", error);
@@ -370,14 +381,17 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	}, "lume: persona tools");
 
 	// ── 人设五段式注入 + 切换播报 ──
-	function composeBoundary(previous: string | null | undefined, current: string | null): string | null {
+	function composeBoundary(previous: string | null | undefined, current: string | null, greeting: boolean): string | null {
 		const labelOf = (personaName: string | null | undefined): string => {
 			if (!personaName) return "默认风格";
 			const persona: Persona | undefined = registry.resolve(personaName);
 			const profileName = identity?.getProfileName(personaName) ?? null;
 			return profileName ?? persona?.displayName ?? personaName;
 		};
-		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。`;
+		const takeover = greeting
+			? "请以当前人设的语气，用一句简短的接手招呼开启本条回复，让用户明确看到换人了。"
+			: "";
+		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${takeover}`;
 	}
 	function buildSessionText(sid: string): string {
 		if (!currentStore) return "";
@@ -386,10 +400,18 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		const personaName = selected ?? defaultName;
 		const previous = st.lastInjected;
 		if (previous !== undefined && previous !== personaName) {
-			st.boundaryRemainder = boundaryTurns;
+			// 切换窗口按「用户轮」计（turnIndex 只在 turn/end 递增）：
+			// 一条回复内部的多次 prompt 构建不会消耗窗口，播报能撑满完整的 N 个用户轮。
+			st.switchTurn = st.turnIndex;
+			st.prevPersona = previous;
+			st.switchGreetingPending = true;
 		}
+		const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
+		const greeting = st.switchGreetingPending && inWindow;
 		const persona = registry.resolve(personaName);
-		const boundaryText = st.boundaryRemainder > 0 ? composeBoundary(previous, personaName) : null;
+		const boundaryText = inWindow && st.switchTurn !== null
+			? composeBoundary(st.prevPersona, personaName, greeting)
+			: null;
 		const text = buildPersonaSection({
 			persona,
 			profileName: personaName ? identity?.getProfileName(personaName) ?? null : null,
@@ -402,7 +424,8 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			config: { sampleCount, sampleMin, memoryInject, styleInject, strategy },
 		});
 		st.lastInjected = personaName;
-		if (st.boundaryRemainder > 0) st.boundaryRemainder--;
+		if (greeting) st.switchGreetingPending = false;
+		if (st.switchTurn !== null && st.turnIndex - st.switchTurn >= boundaryTurns) st.switchTurn = null; // 窗口关闭
 		return text;
 	}
 

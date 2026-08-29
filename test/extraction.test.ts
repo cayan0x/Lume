@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildExtractionPrompt,
+	extractNaming,
 	isCoolingDown,
 	isDuplicateFact,
 	mergeNewFacts,
@@ -76,5 +77,18 @@ describe("合并", () => {
 	it("filters candidates that duplicate existing memory", () => {
 		const existing: MemoryFact[] = [{ text: "用户喜欢深夜写代码", at: 1 }];
 		expect(mergeNewFacts(["用户喜欢深夜写代码", "用户有一个妹妹"], existing)).toEqual(["用户有一个妹妹"]);
+	});
+});
+
+describe("取名提取（同步 profile.name 用）", () => {
+	it("extracts names from naming-style facts", () => {
+		expect(extractNaming(["用户给助手取名为「噜噜」，之后可自称噜噜"])).toBe("噜噜");
+		expect(extractNaming(["以后叫你小星"])).toBe("小星");
+		expect(extractNaming(["用户的名字是阿璃"])).toBe("阿璃");
+	});
+
+	it("returns null for non-naming facts", () => {
+		expect(extractNaming(["用户喜欢深夜写代码"])).toBeNull();
+		expect(extractNaming([])).toBeNull();
 	});
 });

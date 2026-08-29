@@ -1,4 +1,4 @@
-# lume-dsh-plugin（微光）
+# Lume（微光）
 
 DSH Desktop 人设切换插件：为会话提供「萝莉 / 御姐 / 不使用人设」下拉切换，附带 P0-P3 思考逻辑注入。
 
@@ -13,8 +13,8 @@ DSH Desktop 人设切换插件：为会话提供「萝莉 / 御姐 / 不使用�
 ## 安装
 
 ```bash
-dsh plugin add github:cayan0x/lume-dsh-plugin            # 最新版本
-dsh plugin add github:cayan0x/lume-dsh-plugin#v0.1.0     # 指定版本
+dsh plugin add github:cayan0x/Lume            # 最新版本
+dsh plugin add github:cayan0x/Lume#v0.1.0     # 指定版本
 ```
 
 ## 自定义人设

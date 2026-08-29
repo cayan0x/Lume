@@ -78,7 +78,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		await h.rpc()("select", { sessionId: "s-first", personaName: "senpai" });
 		const text = h.personaText("s-first");
 		expect(text).not.toContain("【人设切换】");
-		expect(text).toContain("御姐");
+		expect(text).toContain("晚晴");
 	});
 
 	it("切换后同一轮内多次构建不烧窗口，播报跨完整的两个用户轮", async () => {
@@ -105,7 +105,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		// 第 3 轮：窗口关闭
 		const third = h.personaText(sid);
 		expect(third).not.toContain("【人设切换】");
-		expect(third).toContain("萝莉");
+		expect(third).toContain("噜噜");
 	});
 
 	it("接班播报带前后任名字与接手语义", async () => {
@@ -115,8 +115,8 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		h.personaText(sid);
 		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
 		const text = h.personaText(sid);
-		expect(text).toContain("御姐");
-		expect(text).toContain("萝莉");
+		expect(text).toContain("晚晴");
+		expect(text).toContain("噜噜");
 		expect(text).toContain("接手");
 	});
 

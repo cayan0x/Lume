@@ -38,14 +38,24 @@ export class PersonaRegistry {
 		};
 	}
 
-	/** 下拉列表：内置 + 自定义，附身份档案名。 */
+	/**
+	 * 生效身份名：存储档案（用户改名）优先，回退出厂名（manifest defaultName）。
+	 * 自定义人设无出厂名，返回 null（展示层用 displayName）。
+	 */
+	profileNameOf(name: string): string | null {
+		const identityName = this.#identity()?.getProfileName(name) ?? null;
+		if (identityName) return identityName;
+		return this.#builtins[name]?.defaultName ?? null;
+	}
+
+	/** 下拉列表：内置 + 自定义，附生效身份名。 */
 	list(): PersonaSummary[] {
 		const identity = this.#identity();
 		const out: PersonaSummary[] = Object.values(this.#builtins).map((p) => ({
 			name: p.name,
 			displayName: p.displayName,
 			description: p.description,
-			profileName: identity?.getProfileName(p.name) ?? null,
+			profileName: identity?.getProfileName(p.name) ?? p.defaultName ?? null,
 		}));
 		const customs = identity?.listCustomPersonas() ?? {};
 		for (const [name, custom] of Object.entries(customs)) {

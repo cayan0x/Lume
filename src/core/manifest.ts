@@ -16,6 +16,8 @@ export interface PersonaManifestEntry {
 	name: string;
 	displayName: string;
 	description: string;
+	/** 出厂身份名（如「噜噜」「晚晴」）；用户在对话中改名后以存储档案为准。 */
+	defaultName?: string;
 	promptFile: string;
 	corpusFile: string;
 }
@@ -25,6 +27,7 @@ export interface Persona {
 	name: string;
 	displayName: string;
 	description: string;
+	defaultName?: string;
 	promptText: string;
 	corpus: PersonaSample[];
 }
@@ -44,6 +47,7 @@ export function parseManifest(raw: string): PersonaManifestEntry[] {
 			name: entry.name,
 			displayName: typeof entry.displayName === "string" ? entry.displayName : entry.name,
 			description: typeof entry.description === "string" ? entry.description : "",
+			defaultName: typeof entry.defaultName === "string" && entry.defaultName ? entry.defaultName : undefined,
 			promptFile: typeof entry.promptFile === "string" ? entry.promptFile : `${entry.name}.txt`,
 			corpusFile: typeof entry.corpusFile === "string" ? entry.corpusFile : `${entry.name}-corpus.jsonl`,
 		});

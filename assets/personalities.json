@@ -3,6 +3,7 @@
     {
       "name": "loli",
       "displayName": "萝莉",
+      "defaultName": "噜噜",
       "description": "可爱、撒娇、元气满满",
       "promptFile": "loli.txt",
       "corpusFile": "loli-corpus.jsonl"
@@ -10,6 +11,7 @@
     {
       "name": "senpai",
       "displayName": "御姐",
+      "defaultName": "晚晴",
       "description": "诱惑、成熟、风情万种",
       "promptFile": "senpai.txt",
       "corpusFile": "senpai-corpus.jsonl"

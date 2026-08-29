@@ -385,8 +385,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		const labelOf = (personaName: string | null | undefined): string => {
 			if (!personaName) return "默认风格";
 			const persona: Persona | undefined = registry.resolve(personaName);
-			const profileName = identity?.getProfileName(personaName) ?? null;
-			return profileName ?? persona?.displayName ?? personaName;
+			return registry.profileNameOf(personaName) ?? persona?.displayName ?? personaName;
 		};
 		const takeover = greeting
 			? "请以当前人设的语气，用一句简短的接手招呼开启本条回复，让用户明确看到换人了。"
@@ -414,7 +413,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			: null;
 		const text = buildPersonaSection({
 			persona,
-			profileName: personaName ? identity?.getProfileName(personaName) ?? null : null,
+			profileName: personaName ? registry.profileNameOf(personaName) : null,
 			memories: personaName ? identity?.getMemory(personaName) ?? [] : [],
 			styleRules: personaName ? identity?.getStyleRules(personaName) ?? [] : [],
 			query: st.lastQuery,

@@ -39,6 +39,7 @@ export function loadPersonalities(assetsDir: string): Record<string, Persona> {
 			name: entry.name,
 			displayName: entry.displayName,
 			description: entry.description,
+			defaultName: entry.defaultName,
 			promptText,
 			corpus,
 		};

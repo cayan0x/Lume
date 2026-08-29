@@ -7,3 +7,6 @@ LUME_FIX_TASK.md
 
 # macOS resource forks on exFAT volumes
 ._*
+
+# ZCode session artifacts
+.zcode/

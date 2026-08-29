@@ -32,12 +32,11 @@ afterEach(() => {
 
 const PROBE_SPECS = [LUME_DOMAIN_SPEC, LUME_IDENTITY_SPEC];
 
-async function openProbeTables() {
-	const root = mkdtempSync(join(tmpdir(), "lume-it-"));
-	roots.push(root);
-
+/** 在给定 root 上拉起真实存储栈并打开两个 Lume 域；close() 关闭全部域以模拟 DSH 重启。 */
+async function bootStack(root: string) {
 	const app = new Context() as any;
 	const tables = new Map<string, any>();
+	const domains = new Map<string, any>();
 	let opened!: (value: unknown) => void;
 	const ready = new Promise((resolve) => {
 		opened = resolve;
@@ -47,6 +46,7 @@ async function openProbeTables() {
 		Promise.all(
 			PROBE_SPECS.map((spec) =>
 				ctx.storageDomain.open(spec).then((domain: any) => {
+					domains.set(spec.name, domain);
 					for (const name of Object.keys(spec.tables)) tables.set(name, domain.table(name));
 				}),
 			),
@@ -64,13 +64,20 @@ async function openProbeTables() {
 		ready,
 		new Promise((_, reject) => setTimeout(() => reject(new Error("probe: storage stack did not open in time")), 10_000)),
 	]);
-	return { root, tables };
+	const close = async () => Promise.all([...domains.values()].map((domain: any) => domain.close()));
+	return { tables, close };
+}
+
+async function openProbeStack() {
+	const root = mkdtempSync(join(tmpdir(), "lume-it-"));
+	roots.push(root);
+	return { root, ...(await bootStack(root)) };
 }
 
 it(
 	"PersonaStore drives the real storage stack: LRU + persistence layout",
 	async () => {
-		const { root, tables } = await openProbeTables();
+		const { root, tables } = await openProbeStack();
 		const store = new PersonaStore(tables.get("session_persona"), { maxSessions: 3 });
 
 		await store.select("s1", "loli");
@@ -97,7 +104,7 @@ it(
 it(
 	"IdentityStore drives the real storage stack: schemastery record schemas accept plain objects",
 	async () => {
-		const { root, tables } = await openProbeTables();
+		const { root, tables } = await openProbeStack();
 		const identity = new IdentityStore({
 			profile: tables.get("profile"),
 			memory_facts: tables.get("memory_facts"),
@@ -125,6 +132,59 @@ it(
 		expect(raw.unit).toMatchObject({ name: "lume_persona_identity", version: 1 });
 		expect(raw.tables.profile.loli).toEqual({ name: "小A" });
 		expect(raw.tables.custom_personas.tsundere.displayName).toBe("傲娇");
+	},
+	20_000,
+);
+
+it(
+	"domains reopen with existing records: the schemastery schema bridge survives open-time validation",
+	async () => {
+		const root = mkdtempSync(join(tmpdir(), "lume-it-"));
+		roots.push(root);
+
+		// 第一世：写满各类记录（open 时空表，不触发逐记录 parse）
+		const first = await bootStack(root);
+		const identity = new IdentityStore({
+			profile: first.tables.get("profile"),
+			memory_facts: first.tables.get("memory_facts"),
+			style_rules: first.tables.get("style_rules"),
+			custom_personas: first.tables.get("custom_personas"),
+		});
+		await identity.setProfileName("loli", "小A");
+		await identity.addMemory("loli", "用户喜欢深夜写代码", () => false);
+		await identity.addStyleRule("loli", "少用 emoji", () => false);
+		await identity.setCustomPersona("tsundere", {
+			displayName: "傲娇",
+			description: "嘴硬心软",
+			promptText: "以「傲娇」性格回应。",
+			createdAt: 1,
+			corpus: [
+				{ user: "帮我看看这个报错", assistant: "哼，谁让你乱改配置的。……啦，帮你看看还不行嘛。" },
+			],
+		});
+		const store = new PersonaStore(first.tables.get("session_persona"), { maxSessions: 3 });
+		await store.select("s1", "loli");
+		await first.close();
+
+		// 第二世：同一份落盘数据重开域。open 会对每条记录调 valueSchema.parse ——
+		// schema 桥接缺失时这里抛 invalid-record，整个身份域静默降级（回归防护）。
+		const second = await bootStack(root);
+		const identity2 = new IdentityStore({
+			profile: second.tables.get("profile"),
+			memory_facts: second.tables.get("memory_facts"),
+			style_rules: second.tables.get("style_rules"),
+			custom_personas: second.tables.get("custom_personas"),
+		});
+		expect(identity2.getProfileName("loli")).toBe("小A");
+		expect(identity2.getMemory("loli")[0].text).toBe("用户喜欢深夜写代码");
+		expect(identity2.getStyleRules("loli")[0].rule).toBe("少用 emoji");
+		const persona = identity2.getCustomPersona("tsundere");
+		expect(persona?.displayName).toBe("傲娇");
+		expect(persona?.corpus).toEqual([
+			{ user: "帮我看看这个报错", assistant: "哼，谁让你乱改配置的。……啦，帮你看看还不行嘛。" },
+		]);
+		expect(new PersonaStore(second.tables.get("session_persona")).get("s1")).toBe("loli");
+		await second.close();
 	},
 	20_000,
 );

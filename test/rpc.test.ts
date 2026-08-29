@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Persona } from "../src/core/manifest.js";
+import { DistillJobRunner } from "../src/host/distill.js";
 import { IdentityStore } from "../src/host/identity.js";
 import { createLumeRpcHandler } from "../src/host/rpc.js";
 import { PersonaRegistry } from "../src/host/registry.js";
@@ -14,7 +15,7 @@ function makePersonalities(): Record<string, Persona> {
 	};
 }
 
-function makeHarness(options: { withIdentity?: boolean } = {}) {
+function makeHarness(options: { withIdentity?: boolean; withDistill?: boolean } = {}) {
 	const store = new PersonaStore(new FakePersonaTable());
 	const identityTables = {
 		profile: new FakePersonaTable(),
@@ -24,8 +25,15 @@ function makeHarness(options: { withIdentity?: boolean } = {}) {
 	};
 	const identity = options.withIdentity === false ? null : new IdentityStore(identityTables);
 	const registry = new PersonaRegistry(makePersonalities(), () => identity);
-	const handle = createLumeRpcHandler({ personalities: makePersonalities(), store, registry, identity });
-	return { store, identity, identityTables, handle };
+	const distill =
+		options.withDistill === false
+			? null
+			: new DistillJobRunner({
+					route: () => ({ provider: "test", model: "test-model" }),
+					call: async () => '{"key":"distilled","displayName":"蒸馏姐","description":"测试","promptText":"【身份】测试。"}',
+				});
+	const handle = createLumeRpcHandler({ personalities: makePersonalities(), store, registry, identity, distill });
+	return { store, identity, identityTables, handle, distill };
 }
 
 describe("createLumeRpcHandler", () => {
@@ -118,6 +126,49 @@ describe("createLumeRpcHandler", () => {
 		expect(await handle("teleport", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
 	});
 
+	it("distillStart / distillStatus lifecycle", async () => {
+		const { distill, handle } = makeHarness();
+		const started = await handle("distillStart", { text: "晚晴：交给我。" });
+		expect(started).toMatchObject({ ok: true, value: { jobId: expect.any(String) } });
+		const jobId = (started as { value: { jobId: string } }).value.jobId;
+		await vi.waitFor(() => expect(distill!.status(jobId)?.status).toBe("done"));
+		expect(await handle("distillStatus", { jobId })).toMatchObject({
+			ok: true,
+			value: { status: "done", card: { key: "distilled", displayName: "蒸馏姐" } },
+		});
+		expect(await handle("distillStatus", { jobId: "nope" })).toEqual({ ok: true, value: null });
+	});
+
+	it("distillStart validates input and maps errors to bad-request", async () => {
+		const { handle } = makeHarness();
+		expect(await handle("distillStart", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
+		expect(await handle("distillStart", { text: "a".repeat(20_001) })).toMatchObject({ ok: false, error: { code: "bad-request" } });
+	});
+
+	it("distill endpoints degrade when the runner is unavailable", async () => {
+		const { handle } = makeHarness({ withDistill: false });
+		expect(await handle("distillStart", { text: "x" })).toMatchObject({ ok: false, error: { code: "storage-unavailable" } });
+		expect(await handle("distillStatus", { jobId: "x" })).toMatchObject({ ok: false, error: { code: "storage-unavailable" } });
+	});
+
+	it("saveCustomPersona persists the distilled card and protects builtins", async () => {
+		const { identity, handle } = makeHarness();
+		expect(
+			await handle("saveCustomPersona", { name: "distilled", displayName: "蒸馏姐", promptText: "p", corpus: [{ user: "u", assistant: "a" }] }),
+		).toEqual({ ok: true });
+		expect(identity!.getCustomPersona("distilled")?.corpus).toEqual([{ user: "u", assistant: "a" }]);
+		// 内置名与非法键都在 identity 层拒绝，映射为 forbidden
+		expect(await handle("saveCustomPersona", { name: "loli", displayName: "x", promptText: "p" })).toMatchObject({
+			ok: false,
+			error: { code: "forbidden" },
+		});
+		expect(await handle("saveCustomPersona", { name: "bad key!", displayName: "x", promptText: "p" })).toMatchObject({
+			ok: false,
+			error: { code: "forbidden" },
+		});
+		expect(await handle("saveCustomPersona", { name: "x" })).toMatchObject({ ok: false, error: { code: "bad-request" } });
+	});
+
 	it("reads deps.store lazily per call (host storage becomes ready after startup)", async () => {
 		let store: PersonaStore | null = null;
 		const identity = new IdentityStore({
@@ -133,6 +184,7 @@ describe("createLumeRpcHandler", () => {
 			},
 			registry: new PersonaRegistry(makePersonalities(), () => identity),
 			identity,
+			distill: null,
 		});
 		const before = await handle("getSessionPersona", { sessionId: "s1" });
 		expect(before).toMatchObject({ ok: false, error: { code: "storage-unavailable" } });

@@ -11,7 +11,8 @@
  * react 系与 primitives 为外部 require，由模块图解析。
  */
 import { Menu } from "@deepseek-ai/dsh-client-ui-primitives";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DistillModal } from "./distill.js";
 import { NS, en, zh } from "./locales.js";
 
 /** 宿主经 RPC list 返回的人设条目。 */
@@ -28,6 +29,8 @@ interface PersonaController {
 	available: boolean;
 	load: () => Promise<{ list: PersonaItem[]; current: string | null }>;
 	select: (personaName: string) => Promise<boolean>;
+	/** /lume 通道的通用 RPC 调用（蒸馏弹窗用）。 */
+	callRpc: (endpoint: string, payload: unknown) => Promise<{ ok?: boolean; value?: unknown } | undefined>;
 }
 
 /** dsh-client-locale 注入的翻译函数。 */
@@ -40,15 +43,22 @@ interface LumeClientCtx {
 	locale: { register: (ns: string, dict: Record<string, Record<string, string>>) => unknown };
 }
 
-function PersonaSelect({ available, load, select, t }: PersonaController & { t: Translate }) {
+const DISTILL_ITEM_ID = "lume-distill";
+
+function PersonaSelect({ available, load, select, callRpc, t }: PersonaController & { t: Translate }) {
 	const [open, setOpen] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [items, setItems] = useState<PersonaItem[]>([]);
 	const [current, setCurrent] = useState<string | null>(null);
+	const [distillOpen, setDistillOpen] = useState(false);
+	const [reloadToken, setReloadToken] = useState(0);
+	const loadedTokenRef = useRef(-1);
 
-	// 首次展开时懒加载人设列表 + 当前会话的显式选择（null = 未选择 → 占位文案）
+	// 展开时懒加载人设列表 + 当前会话的显式选择（null = 未选择 → 占位文案）；
+	// 蒸馏保存成功后 reloadToken 自增，下次展开强制重载（绕过 loadedTokenRef 缓存门）
 	useEffect(() => {
-		if (!open || !available || items.length > 0) return;
+		if (!open || !available) return;
+		if (loadedTokenRef.current === reloadToken) return;
 		let cancelled = false;
 		setLoading(true);
 		load()
@@ -60,11 +70,14 @@ function PersonaSelect({ available, load, select, t }: PersonaController & { t: 
 			})
 			.catch(() => {
 				if (!cancelled) setLoading(false);
+			})
+			.finally(() => {
+				loadedTokenRef.current = reloadToken;
 			});
 		return () => {
 			cancelled = true;
 		};
-	}, [open, available, items.length, load]);
+	}, [open, available, reloadToken, load]);
 
 	if (!available) return null;
 
@@ -88,45 +101,60 @@ function PersonaSelect({ available, load, select, t }: PersonaController & { t: 
 				}));
 
 	return (
-		<Menu
-			open={open}
-			portal
-			side="top"
-			align="start"
-			items={entries}
-			selectedId={current ?? undefined}
-			onSelect={(id) => {
-				select(id).then((ok) => {
-					if (ok) setCurrent(id);
-				});
-				setOpen(false);
-			}}
-			onClose={() => setOpen(false)}
-			anchor={
-				<button
-					className="lume-persona-trigger"
-					onClick={() => setOpen((v) => !v)}
-					aria-label={t("trigger.aria", { persona: currentLabel })}
-					aria-haspopup="listbox"
-					aria-expanded={open}
-					style={{
-						background: "none",
-						border: "1px solid var(--color-border, #333)",
-						borderRadius: 6,
-						padding: "2px 8px",
-						fontSize: 12,
-						color: "var(--color-text-secondary, #999)",
-						cursor: "pointer",
-						display: "flex",
-						alignItems: "center",
-						gap: 4,
-					}}
-				>
-					<span>{currentLabel}</span>
-					<span style={{ fontSize: 10 }}>{open ? "▴" : "▾"}</span>
-				</button>
-			}
-		/>
+		<>
+			<Menu
+				open={open}
+				portal
+				side="top"
+				align="start"
+				items={entries}
+				footer={[{ id: DISTILL_ITEM_ID, label: t("distill.menu") }]}
+				selectedId={current ?? undefined}
+				onSelect={(id) => {
+					if (id === DISTILL_ITEM_ID) {
+						setOpen(false);
+						setDistillOpen(true);
+						return;
+					}
+					select(id).then((ok) => {
+						if (ok) setCurrent(id);
+					});
+					setOpen(false);
+				}}
+				onClose={() => setOpen(false)}
+				anchor={
+					<button
+						className="lume-persona-trigger"
+						onClick={() => setOpen((v) => !v)}
+						aria-label={t("trigger.aria", { persona: currentLabel })}
+						aria-haspopup="listbox"
+						aria-expanded={open}
+						style={{
+							background: "none",
+							border: "1px solid var(--color-border, #333)",
+							borderRadius: 6,
+							padding: "2px 8px",
+							fontSize: 12,
+							color: "var(--color-text-secondary, #999)",
+							cursor: "pointer",
+							display: "flex",
+							alignItems: "center",
+							gap: 4,
+						}}
+					>
+						<span>{currentLabel}</span>
+						<span style={{ fontSize: 10 }}>{open ? "▴" : "▾"}</span>
+					</button>
+				}
+			/>
+			<DistillModal
+				open={distillOpen}
+				onClose={() => setDistillOpen(false)}
+				onSaved={() => setReloadToken((v) => v + 1)}
+				t={t}
+				callRpc={callRpc}
+			/>
+		</>
 	);
 }
 
@@ -188,7 +216,12 @@ function apply(ctx: LumeClientCtx) {
 								}
 							}
 
-							return { available, load, select };
+							/** 通用 /lume RPC（蒸馏弹窗用） */
+							function callRpc(endpoint: string, payload: unknown) {
+								return conn.rpc.call("/lume", endpoint, payload, void 0);
+							}
+
+							return { available, load, select, callRpc };
 						},
 					},
 					PersonaSelect,

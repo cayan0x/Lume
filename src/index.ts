@@ -22,9 +22,10 @@ import { buildPersonaSection } from "./host/injection.js";
 import { loadPersonalities, NONE_PERSONA } from "./host/personalities.js";
 import { createLumeRpcHandler } from "./host/rpc.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
-import { IdentityStore, LUME_IDENTITY_SPEC } from "./host/identity.js";
+import { IdentityStore, LUME_IDENTITY_SPEC, zodLike } from "./host/identity.js";
 import { PersonaRegistry } from "./host/registry.js";
-import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, resolveExtractionRoute, shouldConsider } from "./host/extraction.js";
+import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, resolveAuxRoute, shouldConsider } from "./host/extraction.js";
+import { DistillJobRunner } from "./host/distill.js";
 import { jaccard } from "./core/retrieval.js";
 import type { Persona } from "./core/manifest.js";
 
@@ -42,7 +43,7 @@ const THINKING_TEXT = `[思考逻辑]
 **P0 上下文管理**：当对话历史越来越长时，主动浓缩之前的讨论，保留关键信息（用户请求了什么、已完成的操作、关键决策、遇到的错误、已排除的假设），避免上下文耗尽。`;
 
 /** schemastery → domainTable 形参的桥接（与 identity.ts 同款）。 */
-const recordSchema = (schema: unknown): Parameters<typeof domainTable>[0] => schema as Parameters<typeof domainTable>[0];
+const recordSchema = zodLike;
 
 /** 会话人设选择的持久层（键 = sessionId）。 */
 export const LUME_DOMAIN_SPEC = defineDomain({
@@ -78,6 +79,9 @@ export interface LumeConfig {
 	/** 提取专用模型路由：不配置则逐项回落到主对话模型（provider/model 可只配其一）。 */
 	extractionProvider?: string;
 	extractionModel?: string;
+	/** 蒸馏专用模型路由：契约合成质量要求高，默认跟随主对话模型。 */
+	distillProvider?: string;
+	distillModel?: string;
 	switchBoundaryTurns?: number;
 }
 
@@ -105,6 +109,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const extractionEnabled = config.extractionEnabled ?? true;
 	const cooldownMs = config.extractionCooldownMs ?? 10 * 60 * 1000;
 	const extractionRouteOverride = { provider: config.extractionProvider, model: config.extractionModel };
+	const distillRouteOverride = { provider: config.distillProvider, model: config.distillModel };
 	const boundaryTurns = config.switchBoundaryTurns ?? SWITCH_BOUNDARY_TURNS;
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
@@ -190,9 +195,8 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	// ── 模型路由缓存（request/header）──
 	let llmRoute: { provider: string; model: string } | null = null;
 
-	/** 小模型单次调用（提取/固化用）；路由取提取专用配置，未配置则跟随主对话；不可用时返回 null。 */
-	async function callLlm(system: string, userText: string, maxTokens: number): Promise<string | null> {
-		const route = resolveExtractionRoute(extractionRouteOverride, llmRoute);
+	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。 */
+	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number): Promise<string | null> {
 		if (!route) return null;
 		const llm = ctx.get("llm");
 		if (!llm) return null;
@@ -247,7 +251,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				assistantText,
 				existing.map((f) => f.text),
 			);
-			const output = await callLlm(prompt.system, prompt.userText, 200);
+			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute), prompt.system, prompt.userText, 200);
 			if (output === null) return;
 			st.lastExtractionAt = Date.now();
 			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
@@ -264,6 +268,13 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			ctx.logger?.warn?.("lume: 提取失败（静默跳过）", error);
 		}
 	}
+
+	/** 蒸馏任务 Runner：素材文本 → 角色卡（契约+语料）。路由可配专用档（distillProvider/Model），默认跟随主对话。 */
+	const distillRunner = new DistillJobRunner({
+		route: () => resolveAuxRoute(distillRouteOverride, llmRoute),
+		call: (route, system, userText, maxTokens) => callLlm(route, system, userText, maxTokens),
+		logger: ctx.logger,
+	});
 
 	// ── 会话事件：路由缓存 + 轮次缓冲 + 提取调度 + 清理 ──
 	ctx.effect(
@@ -449,6 +460,9 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		},
 		get identity() {
 			return identity;
+		},
+		get distill() {
+			return distillRunner;
 		},
 	});
 	ctx.effect(

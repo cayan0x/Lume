@@ -6,7 +6,7 @@ import {
 	isDuplicateFact,
 	mergeNewFacts,
 	parseFacts,
-	resolveExtractionRoute,
+	resolveAuxRoute,
 	shouldConsider,
 } from "../src/host/extraction.js";
 import type { MemoryFact } from "../src/host/identity.js";
@@ -15,31 +15,31 @@ describe("提取路由解析", () => {
 	const conversation = { provider: "openai", model: "gpt-5.6-sol" };
 
 	it("falls back to the conversation route when unconfigured", () => {
-		expect(resolveExtractionRoute({}, conversation)).toEqual(conversation);
-		expect(resolveExtractionRoute({}, null)).toBeNull();
+		expect(resolveAuxRoute({}, conversation)).toEqual(conversation);
+		expect(resolveAuxRoute({}, null)).toBeNull();
 	});
 
 	it("prefers the dedicated extraction model", () => {
-		expect(resolveExtractionRoute({ provider: "ds-pro", model: "deepseek-v4-lite" }, conversation)).toEqual({
+		expect(resolveAuxRoute({ provider: "ds-pro", model: "deepseek-v4-lite" }, conversation)).toEqual({
 			provider: "ds-pro",
 			model: "deepseek-v4-lite",
 		});
 	});
 
 	it("allows overriding a single dimension", () => {
-		expect(resolveExtractionRoute({ model: "deepseek-v4-lite" }, conversation)).toEqual({
+		expect(resolveAuxRoute({ model: "deepseek-v4-lite" }, conversation)).toEqual({
 			provider: "openai",
 			model: "deepseek-v4-lite",
 		});
-		expect(resolveExtractionRoute({ provider: "ds-pro" }, conversation)).toEqual({
+		expect(resolveAuxRoute({ provider: "ds-pro" }, conversation)).toEqual({
 			provider: "ds-pro",
 			model: "gpt-5.6-sol",
 		});
 	});
 
 	it("needs both dimensions to route", () => {
-		expect(resolveExtractionRoute({ provider: "ds-pro" }, null)).toBeNull();
-		expect(resolveExtractionRoute({ model: "deepseek-v4-lite" }, null)).toBeNull();
+		expect(resolveAuxRoute({ provider: "ds-pro" }, null)).toBeNull();
+		expect(resolveAuxRoute({ model: "deepseek-v4-lite" }, null)).toBeNull();
 	});
 });
 

@@ -8,8 +8,12 @@
  * - getProfile          → { name | null } 身份档案
  * - setProfile          → 设置身份名（人设必须存在）
  * - deleteCustomPersona → 删除自定义人设（内置拒绝，identity 层再拦一道）
+ * - distillStart        → 投递蒸馏任务 {text, hint?} → {jobId}（素材上限校验在 Runner）
+ * - distillStatus       → 轮询任务 {jobId} → DistillJob | null（null = 未知/过期）
+ * - saveCustomPersona   → 保存蒸馏产出的自定义人设（含语料；内置拒绝）
  */
 import type { Persona } from "../core/manifest.js";
+import type { DistillJobRunner } from "./distill.js";
 import type { IdentityStore } from "./identity.js";
 import type { PersonaRegistry } from "./registry.js";
 
@@ -27,6 +31,8 @@ export interface LumeRpcDeps {
 	store: PersonaSelectionStore;
 	registry: PersonaRegistry;
 	identity: IdentityStore | null;
+	/** 蒸馏任务Runner；蒸馏管线不可用时为 null。 */
+	distill: DistillJobRunner | null;
 }
 
 function requireString(payload: unknown, field: string): string | null {
@@ -44,7 +50,7 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				error: { code: "storage-unavailable", message: "lume storage is not ready" },
 			};
 		}
-		const { store, registry, identity } = deps;
+		const { store, registry, identity, distill } = deps;
 		switch (endpoint) {
 			case "list": {
 				return { ok: true, value: registry.list() };
@@ -91,6 +97,47 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
 				try {
 					await identity.deleteCustomPersona(personaName);
+				} catch (error) {
+					return { ok: false, error: { code: "forbidden", message: String((error as Error)?.message ?? error) } };
+				}
+				return { ok: true };
+			}
+			case "distillStart": {
+				if (!distill) return { ok: false, error: { code: "storage-unavailable", message: "distill runner unavailable" } };
+				const text = requireString(payload, "text");
+				if (!text) return { ok: false, error: { code: "bad-request", message: "text is required" } };
+				const rawHint = (payload as { hint?: unknown } | undefined)?.hint;
+				const hint = typeof rawHint === "string" && rawHint.trim() ? rawHint.trim() : undefined;
+				try {
+					return { ok: true, value: { jobId: distill.start({ text, hint }) } };
+				} catch (error) {
+					return { ok: false, error: { code: "bad-request", message: String((error as Error)?.message ?? error) } };
+				}
+			}
+			case "distillStatus": {
+				if (!distill) return { ok: false, error: { code: "storage-unavailable", message: "distill runner unavailable" } };
+				const jobId = requireString(payload, "jobId");
+				if (!jobId) return { ok: false, error: { code: "bad-request", message: "jobId is required" } };
+				return { ok: true, value: distill.status(jobId) };
+			}
+			case "saveCustomPersona": {
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				const name = requireString(payload, "name");
+				const displayName = requireString(payload, "displayName");
+				const promptText = requireString(payload, "promptText");
+				if (!name || !displayName || !promptText) {
+					return { ok: false, error: { code: "bad-request", message: "name, displayName and promptText are required" } };
+				}
+				const description = (payload as { description?: unknown }).description;
+				const corpus = (payload as { corpus?: unknown }).corpus;
+				try {
+					await identity.setCustomPersona(name, {
+						displayName,
+						description: typeof description === "string" ? description : "",
+						promptText,
+						createdAt: Date.now(),
+						corpus: Array.isArray(corpus) ? (corpus as { user: string; assistant: string }[]) : undefined,
+					});
 				} catch (error) {
 					return { ok: false, error: { code: "forbidden", message: String((error as Error)?.message ?? error) } };
 				}

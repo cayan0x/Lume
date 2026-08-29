@@ -34,7 +34,7 @@ export class PersonaRegistry {
 			displayName: custom.displayName,
 			description: custom.description,
 			promptText: custom.promptText,
-			corpus: [],
+			corpus: custom.corpus ?? [],
 		};
 	}
 

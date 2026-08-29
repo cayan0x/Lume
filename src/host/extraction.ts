@@ -17,10 +17,10 @@ export interface LlmRoute {
 }
 
 /**
- * 提取路由解析：配置的独立模型（省钱的提取专用档）优先，未配置的维度逐项
- * 回落到主对话路由；任一维度都没有 → null（本模型不可用，跳过提取）。
+ * 辅助 LLM 路由解析（被动提取/蒸馏共用）：配置的专用模型优先，未配置的维度
+ * 逐项回落到主对话路由；任一维度都没有 → null（模型不可用，跳过对应功能）。
  */
-export function resolveExtractionRoute(
+export function resolveAuxRoute(
 	override: { provider?: string; model?: string },
 	conversationRoute: LlmRoute | null,
 ): LlmRoute | null {

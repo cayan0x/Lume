@@ -9,25 +9,50 @@
  */
 import { domainTable, defineDomain } from "@deepseek-ai/dsh-storage-domain";
 import z from "@deepseek-ai/schemastery";
+import type { PersonaSample } from "../core/manifest.js";
 
-/** schemastery（zod 兼容面）→ domainTable 形参的桥接；运行时同源兼容，仅类型摩擦。 */
-const recordSchema = (schema: unknown): Parameters<typeof domainTable>[0] => schema as Parameters<typeof domainTable>[0];
+export const CORPUS_CAP = 12;
+export const CORPUS_LINE_CAP = 240;
+
+/**
+ * schemastery → 存储域 schema 桥接。
+ * 官方契约：domainTable 的 schema 必须暴露 `.parse(raw)`（zod 形状），open 时
+ * 逐记录调用。schemastery 实例没有 `.parse`（它是可调用函数 + `~standard.validate`
+ * 的 Standard Schema 接口），直接传入会在「域内有数据后重启」时炸掉 open，
+ * 触发身份域静默降级。这里把 validate 的 `{value}|{issues}` 结果翻译成
+ * parse 的「返回|抛错」语义；行为由集成测试的带数据重开域用例锁死。
+ */
+export function zodLike(schema: unknown): Parameters<typeof domainTable>[0] {
+	const standard = (schema as { "~standard"?: { validate(value: unknown): { value?: unknown; issues?: { message: string }[] } } })["~standard"];
+	if (typeof standard?.validate !== "function") {
+		throw new Error("schema does not implement the Standard Schema ~standard interface");
+	}
+	return {
+		parse(raw: unknown): unknown {
+			const result = standard.validate(raw);
+			if (result.issues?.length) throw new Error(result.issues.map((issue) => issue.message).join("; "));
+			return result.value;
+		},
+	} as unknown as Parameters<typeof domainTable>[0];
+}
 
 /** 域名与表名受 UNIT_NAME_RE（^[a-z][a-z0-9_]*$）约束；schema 用 schemastery（zod 兼容面）。 */
 export const LUME_IDENTITY_SPEC = defineDomain({
 	name: "lume_persona_identity",
 	version: 1,
 	tables: {
-		profile: domainTable(recordSchema(z.object({ name: z.string() }))),
-		memory_facts: domainTable(recordSchema(z.array(z.object({ text: z.string(), at: z.number() })))),
-		style_rules: domainTable(recordSchema(z.array(z.object({ rule: z.string(), at: z.number() })))),
+		profile: domainTable(zodLike(z.object({ name: z.string() }))),
+		memory_facts: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
+		style_rules: domainTable(zodLike(z.array(z.object({ rule: z.string(), at: z.number() })))),
 		custom_personas: domainTable(
-			recordSchema(
+			zodLike(
 				z.object({
 					displayName: z.string(),
 					description: z.string(),
 					promptText: z.string(),
 					createdAt: z.number(),
+					/** 蒸馏产出的示例对话语料；可选字段，旧记录无此键照常通过 open 校验。 */
+					corpus: z.array(z.object({ user: z.string(), assistant: z.string() })),
 				}),
 			),
 		),
@@ -53,6 +78,8 @@ export interface CustomPersona {
 	description: string;
 	promptText: string;
 	createdAt: number;
+	/** 示例对话语料（蒸馏产出）；旧记录可能没有。 */
+	corpus?: PersonaSample[];
 }
 
 /** 与 store.ts 的 PersonaTable 同构（未知值类型面）。 */
@@ -67,6 +94,24 @@ export interface IdentityTable {
 /** 宽松读取：schema 校验失败或损坏值按空值处理，不炸会话。 */
 function asArray<T>(value: unknown): T[] {
 	return Array.isArray(value) ? (value as T[]) : [];
+}
+
+/** 语料净化：只保留 {user?, assistant} 形状的合法样本，超限截断。 */
+export function sanitizeCorpus(value: unknown): PersonaSample[] {
+	if (!Array.isArray(value)) return [];
+	const out: PersonaSample[] = [];
+	for (const item of value) {
+		const assistant = (item as { assistant?: unknown } | undefined)?.assistant;
+		const user = (item as { user?: unknown } | undefined)?.user;
+		if (typeof assistant === "string" && assistant.trim()) {
+			out.push({
+				user: typeof user === "string" ? user.slice(0, CORPUS_LINE_CAP) : "",
+				assistant: assistant.slice(0, CORPUS_LINE_CAP),
+			});
+		}
+		if (out.length >= CORPUS_CAP) break;
+	}
+	return out;
 }
 
 function isFactList(value: unknown): value is MemoryFact[] {
@@ -145,9 +190,9 @@ export class IdentityStore {
 	}
 
 	getCustomPersona(name: string): CustomPersona | null {
-		const value = this.#customTable.get(name) as CustomPersona | undefined;
+		const value = this.#customTable.get(name) as (CustomPersona & { corpus?: unknown }) | undefined;
 		if (!value || typeof value?.displayName !== "string" || typeof value?.promptText !== "string") return null;
-		return value;
+		return { ...value, corpus: sanitizeCorpus(value.corpus) };
 	}
 
 	listCustomPersonas(): Record<string, CustomPersona> {
@@ -162,7 +207,13 @@ export class IdentityStore {
 	async setCustomPersona(name: string, persona: CustomPersona): Promise<void> {
 		if (BUILTIN_PERSONA_NAMES.has(name)) throw new Error(`cannot shadow builtin persona: ${name}`);
 		if (!/^[a-z][a-z0-9_-]{0,31}$/.test(name)) throw new Error(`invalid persona key: ${name}`);
-		await this.#customTable.put(name, persona);
+		await this.#customTable.put(name, {
+			displayName: persona.displayName,
+			description: persona.description ?? "",
+			promptText: persona.promptText,
+			createdAt: persona.createdAt,
+			corpus: sanitizeCorpus(persona.corpus),
+		});
 	}
 
 	async deleteCustomPersona(name: string): Promise<void> {

@@ -50,6 +50,11 @@ const LUME_PERSONA_SECTION = "lume:persona";
 const LUME_THINKING_SECTION = "lume:thinking";
 const LUME_THINKING_ORDER = 1;
 const MAX_SESSIONS = 200;
+/** 人设切换后的边界提示强化轮数：对抗对话历史里旧人设语气的惯性。 */
+const SWITCH_BOUNDARY_TURNS = 2;
+/** 切换边界提示：只在切换后的头几轮注入，其余时间为空（零常驻成本）。 */
+const SWITCH_BOUNDARY_TEXT =
+	"【人设切换】此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话（若当前为默认风格，则用你的默认风格）。";
 
 export interface LumeConfig {
 	/** 注入的语料示例条数（会话级稳定采样）。 */
@@ -97,14 +102,28 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		currentStore = store;
 	});
 
-	// 生效人设文本：显式选择 ?? 默认值（none），再组装风格契约 + 稳定采样示例
+	// 生效人设文本：显式选择 ?? 默认值（none），再组装风格契约 + 稳定采样示例。
+	// 切换边界：记录每会话上次实际注入的人设，检测到变化就在头几轮前插边界提示，
+	// 压制对话历史中旧人设语气的惯性（模型对上下文里「最近的自己」模仿性极强）。
+	const lastInjected = new Map<string, string | null>();
+	const boundaryRemainder = new Map<string, number>();
 	function buildSessionText(sessionId: string): string {
 		if (!currentStore) return "";
 		const selected = currentStore.get(sessionId);
 		const personaName = selected ?? defaultName;
-		if (!personaName) return "";
-		const persona: Persona | undefined = personalities[personaName];
-		return buildPersonaText(persona, sampleCount, sessionId);
+		const previous = lastInjected.get(sessionId);
+		if (previous !== undefined && previous !== personaName) {
+			boundaryRemainder.set(sessionId, SWITCH_BOUNDARY_TURNS);
+		}
+		const persona: Persona | undefined = personaName ? personalities[personaName] : undefined;
+		const text = buildPersonaText(persona, sampleCount, sessionId);
+		lastInjected.set(sessionId, personaName);
+		const remaining = boundaryRemainder.get(sessionId) ?? 0;
+		if (remaining > 0) {
+			boundaryRemainder.set(sessionId, remaining - 1);
+			return text ? `${SWITCH_BOUNDARY_TEXT}\n\n${text}` : SWITCH_BOUNDARY_TEXT;
+		}
+		return text;
 	}
 
 	// RPC 通道（信封语义见 host/rpc.ts；等存储就绪后再处理写请求）

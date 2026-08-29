@@ -18,6 +18,11 @@ export interface PersonaManifestEntry {
 	description: string;
 	/** 出厂身份名（如「噜噜」「晚晴」）；用户在对话中改名后以存储档案为准。 */
 	defaultName?: string;
+	/**
+	 * 声音签名词：该人设的高频自称/称呼/口头禅。切换人设后用于检测旧人设的
+	 * 「风格泄漏」（见 core/leak-detector.ts）；不配置则该人设不参与泄漏检测。
+	 */
+	signatureWords?: string[];
 	promptFile: string;
 	corpusFile: string;
 }
@@ -28,6 +33,7 @@ export interface Persona {
 	displayName: string;
 	description: string;
 	defaultName?: string;
+	signatureWords?: string[];
 	promptText: string;
 	corpus: PersonaSample[];
 }
@@ -48,6 +54,7 @@ export function parseManifest(raw: string): PersonaManifestEntry[] {
 			displayName: typeof entry.displayName === "string" ? entry.displayName : entry.name,
 			description: typeof entry.description === "string" ? entry.description : "",
 			defaultName: typeof entry.defaultName === "string" && entry.defaultName ? entry.defaultName : undefined,
+			signatureWords: Array.isArray(entry.signatureWords) ? entry.signatureWords.filter((w): w is string => typeof w === "string" && w.length > 0) : undefined,
 			promptFile: typeof entry.promptFile === "string" ? entry.promptFile : `${entry.name}.txt`,
 			corpusFile: typeof entry.corpusFile === "string" ? entry.corpusFile : `${entry.name}-corpus.jsonl`,
 		});

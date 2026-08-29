@@ -38,6 +38,12 @@ describe("buildPersonaSection 五段式", () => {
 		expect(buildPersonaSection({ ...emptyInput, persona: undefined })).toBe("");
 	});
 
+	it("empty persona with a boundary still emits the takeover announcement (none takeover)", () => {
+		const text = buildPersonaSection({ ...emptyInput, persona: undefined, boundaryText: "【人设切换】此前对话由「晚晴」负责，现在由「默认风格」接手。" });
+		expect(text).toContain("【人设切换】");
+		expect(text).toContain("默认风格");
+	});
+
 	it("contract + decayed corpus by default", () => {
 		const text = buildPersonaSection({ ...emptyInput, persona: makePersona() });
 		expect(text).toContain("以「萝莉」性格回应。");

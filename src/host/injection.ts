@@ -42,10 +42,10 @@ export interface InjectionInput {
 	config: InjectionConfig;
 }
 
-/** 组装人设注入文本；无人设返回空串。 */
+/** 组装人设注入文本；无人设（none/未选）时若带边界播报，仍单独输出播报。 */
 export function buildPersonaSection(input: InjectionInput): string {
 	const { persona, config, query } = input;
-	if (!persona) return "";
+	if (!persona) return input.boundaryText ?? "";
 	const parts: string[] = [];
 
 	// 1. 基础契约（基本盘）

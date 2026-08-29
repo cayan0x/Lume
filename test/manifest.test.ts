@@ -13,6 +13,18 @@ describe("parseManifest", () => {
 		expect(entries[0]).toMatchObject({ name: "loli", displayName: "萝莉" });
 	});
 
+	it("parses signatureWords and drops non-string entries", () => {
+		const raw = JSON.stringify({
+			personalities: [
+				{ name: "loli", signatureWords: ["哥哥", "人家", 42, ""] },
+				{ name: "none" },
+			],
+		});
+		const entries = parseManifest(raw);
+		expect(entries[0]?.signatureWords).toEqual(["哥哥", "人家"]);
+		expect(entries[1]?.signatureWords).toBeUndefined();
+	});
+
 	it("defaults displayName / files from name when missing", () => {
 		const entries = parseManifest(JSON.stringify({ personalities: [{ name: "x" }] }));
 		expect(entries[0].displayName).toBe("x");

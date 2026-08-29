@@ -6,7 +6,8 @@
       "defaultName": "噜噜",
       "description": "可爱、撒娇、元气满满",
       "promptFile": "loli.txt",
-      "corpusFile": "loli-corpus.jsonl"
+      "corpusFile": "loli-corpus.jsonl",
+      "signatureWords": ["哥哥", "人家", "好哒"]
     },
     {
       "name": "senpai",
@@ -14,7 +15,8 @@
       "defaultName": "晚晴",
       "description": "诱惑、成熟、风情万种",
       "promptFile": "senpai.txt",
-      "corpusFile": "senpai-corpus.jsonl"
+      "corpusFile": "senpai-corpus.jsonl",
+      "signatureWords": ["姐姐", "小家伙", "交给我"]
     },
     {
       "name": "none",

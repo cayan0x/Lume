@@ -27,6 +27,7 @@ import { PersonaRegistry } from "./host/registry.js";
 import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, resolveAuxRoute, shouldConsider } from "./host/extraction.js";
 import { DistillJobRunner } from "./host/distill.js";
 import { jaccard } from "./core/retrieval.js";
+import { detectLeak } from "./core/leak-detector.js";
 import type { Persona } from "./core/manifest.js";
 
 /** P0-P3 思考逻辑：始终注入，告诉模型「怎么想」。 */
@@ -179,6 +180,10 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		prevPersona: string | null | undefined;
 		/** 切换后第一轮的播报需要接手招呼；窗口内后续轮只保留边界句。 */
 		switchGreetingPending: boolean;
+		/** 旧人设的声音签名词：切换后持续检测回复泄漏，漏了就重开边界窗口升级纠偏。 */
+		prevSignatures: string[];
+		/** 泄漏复发时的升级纠偏标记；出现一轮无泄漏回复即解除。 */
+		leakEscalated: boolean;
 		extracting: Promise<void> | null;
 		lastExtractionAt: number | undefined;
 	}
@@ -186,7 +191,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const runtimeFor = (sid: string): SessionRuntime => {
 		let st = runtime.get(sid);
 		if (!st) {
-			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, switchTurn: null, prevPersona: undefined, switchGreetingPending: false, extracting: null, lastExtractionAt: undefined };
+			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, switchTurn: null, prevPersona: undefined, switchGreetingPending: false, prevSignatures: [], leakEscalated: false, extracting: null, lastExtractionAt: undefined };
 			runtime.set(sid, st);
 		}
 		return st;
@@ -303,7 +308,23 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					}
 					case "assistant/message": {
 						const text = messageText((event.data as { message?: unknown } | undefined)?.message);
-						if (text) st.assistantText = text;
+						if (text) {
+							st.assistantText = text;
+							// 风格泄漏检测：切换完成后，若回复仍带着旧人设的签名词（称呼/口头禅），
+							// 且边界窗口已关，则重开一轮窗口并升级播报措辞——窗口不再是固定两轮就撒手，
+							// 而是「漏了就纠、不漏不扰」。零 token：纯词法检测，不额外调用模型。
+							if (st.prevSignatures.length > 0 && st.lastInjected !== undefined) {
+								const report = detectLeak(text, st.prevSignatures);
+								const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
+								if (report.leaked && !inWindow) {
+									st.switchTurn = st.turnIndex;
+									st.leakEscalated = true;
+									ctx.logger?.warn?.(`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`);
+								} else if (!report.leaked) {
+									st.leakEscalated = false;
+								}
+							}
+						}
 						break;
 					}
 					case "turn/end": {
@@ -402,7 +423,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	}, "lume: persona tools");
 
 	// ── 人设五段式注入 + 切换播报 ──
-	function composeBoundary(previous: string | null | undefined, current: string | null, greeting: boolean): string | null {
+	function composeBoundary(previous: string | null | undefined, current: string | null, greeting: boolean, escalated = false): string | null {
 		const labelOf = (personaName: string | null | undefined): string => {
 			if (!personaName) return "默认风格";
 			const persona: Persona | undefined = registry.resolve(personaName);
@@ -411,7 +432,10 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		const takeover = greeting
 			? "请以当前人设的语气，用一句简短的接手招呼开启本条回复，让用户明确看到换人了。"
 			: "";
-		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${takeover}`;
+		const correction = escalated
+			? "特别纠偏：上一条回复仍在沿用旧人设的语气，这是偏差。本条回复必须完全按当前人设的契约说话——称呼、自称、口头禅、句式全部切换，不残留任何旧痕迹。"
+			: "";
+		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${correction}${takeover}`;
 	}
 	function buildSessionText(sid: string): string {
 		if (!currentStore) return "";
@@ -425,13 +449,16 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			st.switchTurn = st.turnIndex;
 			st.prevPersona = previous;
 			st.switchGreetingPending = true;
+			st.leakEscalated = false;
+			// 记录旧人设的签名词：窗口关闭后持续检测风格泄漏（自定义人设无签名词则跳过）
+			st.prevSignatures = previous ? (registry.resolve(previous)?.signatureWords ?? []) : [];
 			ctx.logger?.warn?.(`lume: [${sid}] 人设切换 ${String(previous)} → ${String(personaName)}（播报窗口 ${boundaryTurns} 轮）`);
 		}
 		const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
 		const greeting = st.switchGreetingPending && inWindow;
 		const persona = registry.resolve(personaName);
 		const boundaryText = inWindow && st.switchTurn !== null
-			? composeBoundary(st.prevPersona, personaName, greeting)
+			? composeBoundary(st.prevPersona, personaName, greeting, st.leakEscalated)
 			: null;
 		const text = buildPersonaSection({
 			persona,

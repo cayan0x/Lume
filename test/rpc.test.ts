@@ -89,7 +89,8 @@ describe("createLumeRpcHandler", () => {
 		expect(list).toMatchObject({
 			ok: true,
 			value: expect.arrayContaining([
-				{ name: "tsundere", displayName: "傲娇", description: "嘴硬心软", profileName: null },
+				{ name: "tsundere", displayName: "傲娇", description: "嘴硬心软", profileName: null, custom: true },
+				{ name: "loli", custom: false },
 			]),
 		});
 	});

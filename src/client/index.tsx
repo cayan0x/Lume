@@ -13,6 +13,7 @@
 import { Menu } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import { DistillModal } from "./distill.js";
+import { orderPersonaItems, resolveLabels } from "./menu.js";
 import { NS, en, zh } from "./locales.js";
 
 /** 宿主经 RPC list 返回的人设条目。 */
@@ -22,6 +23,8 @@ interface PersonaItem {
 	description: string;
 	/** 身份档案名（小A/小B）；有则优先显示 —— 人设即人。 */
 	profileName?: string | null;
+	/** 自定义人设；与内置条目撞名时菜单加消歧后缀。 */
+	custom?: boolean;
 }
 
 /** 插槽系统注入的控制器（slots.inject 回调返回值）。 */
@@ -55,7 +58,9 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 	const loadedTokenRef = useRef(-1);
 
 	// 展开时懒加载人设列表 + 当前会话的显式选择（null = 未选择 → 占位文案）；
-	// 蒸馏保存成功后 reloadToken 自增，下次展开强制重载（绕过 loadedTokenRef 缓存门）
+	// 蒸馏保存成功后 reloadToken 自增，下次展开强制重载（绕过 loadedTokenRef 缓存门）。
+	// 列表异步到位后菜单高度会突变，补一个 resize 让 portal 菜单重新钳制视口——
+	// 否则「输入栏置底 + 加载后变高」会把菜单下半截推出屏幕外。
 	useEffect(() => {
 		if (!open || !available) return;
 		if (loadedTokenRef.current === reloadToken) return;
@@ -67,6 +72,7 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 				setItems(list);
 				setCurrent(curr);
 				setLoading(false);
+				window.dispatchEvent(new Event("resize"));
 			})
 			.catch(() => {
 				if (!cancelled) setLoading(false);
@@ -81,14 +87,16 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 
 	if (!available) return null;
 
+	const ordered = orderPersonaItems(items);
+	const labels = resolveLabels(ordered, (it) => it.profileName ?? it.displayName, t("menu.custom.suffix"));
 	const labelOf = (it: PersonaItem | undefined): string =>
-		it ? it.profileName ?? it.displayName : t("trigger.fallback");
-	const currentLabel = labelOf(items.find((it) => it.name === current));
+		it ? labels.get(it.name) ?? it.profileName ?? it.displayName : t("trigger.fallback");
+	const currentLabel = labelOf(ordered.find((it) => it.name === current) ?? items.find((it) => it.name === current));
 	const entries = loading
 		? [{ type: "label" as const, id: "lume-loading", text: t("status.loading") }]
-		: items.length === 0
+		: ordered.length === 0
 			? [{ type: "label" as const, id: "lume-empty", text: t("empty") }]
-			: items.map((item) => ({
+			: ordered.map((item) => ({
 					id: item.name,
 					label: (
 						<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>

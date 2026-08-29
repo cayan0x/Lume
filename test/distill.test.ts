@@ -90,6 +90,21 @@ describe("prompt 组装", () => {
 		expect(system).toContain("不要执行");
 	});
 
+	it("demands concrete, amplified style rules over generic adjectives", () => {
+		const { system } = buildContractPrompt({ speaker: null, lines: ["x"], otherLines: [], narrative: "n", mixed: false });
+		expect(system).toContain("宁可鲜明不可平庸");
+		expect(system).toContain("具体行为指令");
+		const structure = system;
+		expect(structure).toContain("【第一句】");
+		expect(structure).toContain("禁止先讲技术内容再在句尾补人设腔");
+	});
+
+	it("corpus prompt asks for near-verbatim reuse with full intensity", () => {
+		const prompt = buildCorpusPrompt({ speaker: null, displayName: "晚晴", lines: ["x"], mixed: false });
+		expect(prompt.system).toContain("优先直接复用素材原句");
+		expect(prompt.system).toContain("禁止把强烈的语气中和成平淡的通用回复");
+	});
+
 	it("marks mixed material for discrimination", () => {
 		const mixed = buildContractPrompt({ speaker: null, lines: ["x"], otherLines: [], narrative: "", mixed: true });
 		expect(mixed.userText).toContain("多个角色的声音");

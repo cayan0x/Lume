@@ -11,6 +11,8 @@ export interface PersonaSummary {
 	description: string;
 	/** 身份档案名（小A/小B）；未设置时为 null —— 客户端展示层优先用它。 */
 	profileName: string | null;
+	/** 自定义人设（对话创建/蒸馏）；与内置条目撞名时客户端用它加消歧后缀。 */
+	custom: boolean;
 }
 
 export class PersonaRegistry {
@@ -56,6 +58,7 @@ export class PersonaRegistry {
 			displayName: p.displayName,
 			description: p.description,
 			profileName: identity?.getProfileName(p.name) ?? p.defaultName ?? null,
+			custom: false,
 		}));
 		const customs = identity?.listCustomPersonas() ?? {};
 		for (const [name, custom] of Object.entries(customs)) {
@@ -64,6 +67,7 @@ export class PersonaRegistry {
 				displayName: custom.displayName,
 				description: custom.description,
 				profileName: identity?.getProfileName(name) ?? null,
+				custom: true,
 			});
 		}
 		return out;

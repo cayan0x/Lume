@@ -1,23 +1,31 @@
 /**
- * @lume/dsh-plugin 宿主入口（Cordis 函数插件）。
+ * @lume/dsh-plugin 宿主入口（Cordis 函数插件）—— v0.3.0「人设即人」。
  *
- * 依赖三个注入服务：systemPrompt（提示词段落）、connection（RPC 通道）、
- * storageDomain（官方 Domain KV —— 会话人设的持久层，落
- * `<harness home>/storages/lume_persona_state.json`）。
+ * 注入服务：
+ * - systemPrompt  思考逻辑 + 人设五段式注入
+ * - connection    RPC 通道 /lume
+ * - storageDomain 两个域：lume_persona_state（会话显式选择）、lume_persona_identity（身份/记忆/风格/自定义人设）
+ * - tools         三个模型可调用工具（lume_remember / lume_update_style / lume_create_persona）
  *
- * 默认人设语义（A 项）：manifest 含 none 时新会话默认「不使用人设」；
- * RPC getSessionPersona 只回显式选择（null = 未选择），生效默认值只在
- * 注入侧生效 —— UI 占位文案与注入行为互不污染。
+ * 被动提取安全网挂在 session/event 的 turn/end 上，三道门（关键词/去重/冷却）
+ * 保证 99% 轮次零消耗；模型路由从 request/header 事件缓存（官方 title-llm 模式）。
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
+import { BlockAssembler, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { defineTool } from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import z from "@deepseek-ai/schemastery";
-import { buildPersonaText } from "./core/persona-text.js";
-import type { Persona } from "./core/manifest.js";
+import { buildPersonaSection } from "./host/injection.js";
 import { loadPersonalities, NONE_PERSONA } from "./host/personalities.js";
 import { createLumeRpcHandler } from "./host/rpc.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
+import { IdentityStore, LUME_IDENTITY_SPEC } from "./host/identity.js";
+import { PersonaRegistry } from "./host/registry.js";
+import { buildExtractionPrompt, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, shouldConsider } from "./host/extraction.js";
+import { jaccard } from "./core/retrieval.js";
+import type { Persona } from "./core/manifest.js";
 
 /** P0-P3 思考逻辑：始终注入，告诉模型「怎么想」。 */
 const THINKING_TEXT = `[思考逻辑]
@@ -32,62 +40,81 @@ const THINKING_TEXT = `[思考逻辑]
 
 **P0 上下文管理**：当对话历史越来越长时，主动浓缩之前的讨论，保留关键信息（用户请求了什么、已完成的操作、关键决策、遇到的错误、已排除的假设），避免上下文耗尽。`;
 
-/** 会话人设的持久层声明：落 harness home 的 storages/ 下，原子写、带版本。
- *  域名与表名都受 UNIT_NAME_RE（^[a-z][a-z0-9_]*$）约束。
- *  schema 用 @deepseek-ai/schemastery（zod 兼容面）—— 与 core 插件
- *  （dsh-message-feedback 等）一致；类型系统上桥接一次即可。 */
+/** schemastery → domainTable 形参的桥接（与 identity.ts 同款）。 */
+const recordSchema = (schema: unknown): Parameters<typeof domainTable>[0] => schema as Parameters<typeof domainTable>[0];
+
+/** 会话人设选择的持久层（键 = sessionId）。 */
 export const LUME_DOMAIN_SPEC = defineDomain({
 	name: "lume_persona_state",
 	version: 1,
 	tables: {
-		session_persona: domainTable(z.string() as unknown as Parameters<typeof domainTable>[0]),
+		session_persona: domainTable(recordSchema(z.string())),
 	},
 });
 const SESSION_PERSONA_TABLE = "session_persona";
-
 const LUME_CHANNEL = "/lume";
 const LUME_PERSONA_SECTION = "lume:persona";
 const LUME_THINKING_SECTION = "lume:thinking";
 const LUME_THINKING_ORDER = 1;
 const MAX_SESSIONS = 200;
-/** 人设切换后的边界提示强化轮数：对抗对话历史里旧人设语气的惯性。 */
-const SWITCH_BOUNDARY_TURNS = 2;
-/** 切换边界提示：只在切换后的头几轮注入，其余时间为空（零常驻成本）。 */
-const SWITCH_BOUNDARY_TEXT =
-	"【人设切换】此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话（若当前为默认风格，则用你的默认风格）。";
 
-export interface LumeConfig {
-	/** 注入的语料示例条数（会话级稳定采样）。 */
-	sampleCount?: number;
-	/** 人设段在 system prompt 中的排序；默认 2 —— 排在思考逻辑（order 1）之后，近因效应强化人设。 */
-	personaOrder?: number;
-}
+const SWITCH_BOUNDARY_TURNS = 2;
 
 /** Cordis 插件名 */
 export const name = "lume";
 /** 依赖的服务 */
-export const inject = ["systemPrompt", "connection", "storageDomain"];
+export const inject = ["systemPrompt", "connection", "storageDomain", "tools"];
 
-/** 插件入口：RPC 通道 + 系统提示词段落 + 会话人设存储 */
+export interface LumeConfig {
+	sampleCount?: number;
+	sampleMin?: number;
+	personaOrder?: number;
+	memoryInject?: number;
+	styleInject?: number;
+	injectionStrategy?: "topk" | "full";
+	extractionEnabled?: boolean;
+	extractionCooldownMs?: number;
+	switchBoundaryTurns?: number;
+}
+
+/** 从消息对象提取纯文本（user/message 的 data 即消息；assistant 的 data.message）。 */
+function messageText(message: unknown): string {
+	const content = (message as { content?: unknown } | undefined)?.content;
+	if (!Array.isArray(content)) return "";
+	const parts: string[] = [];
+	for (const block of content) {
+		const text = (block as { text?: unknown } | undefined)?.text;
+		if (typeof text === "string") parts.push(text);
+	}
+	return parts.join(" ").trim();
+}
+
 export function apply(ctx: any, config: LumeConfig = {}): void {
 	const assetsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
-	const personalities = loadPersonalities(assetsDir);
+	const builtins = loadPersonalities(assetsDir);
 	const sampleCount = config.sampleCount ?? 6;
+	const sampleMin = config.sampleMin ?? 2;
 	const personaOrder = config.personaOrder ?? 2;
-	// A 项：默认人设 = none（不注入），manifest 顺序不再影响默认值
-	const defaultName = personalities[NONE_PERSONA] ? NONE_PERSONA : null;
+	const memoryInject = config.memoryInject ?? 8;
+	const styleInject = config.styleInject ?? 5;
+	const strategy = config.injectionStrategy ?? "topk";
+	const extractionEnabled = config.extractionEnabled ?? true;
+	const cooldownMs = config.extractionCooldownMs ?? 10 * 60 * 1000;
+	const boundaryTurns = config.switchBoundaryTurns ?? SWITCH_BOUNDARY_TURNS;
+	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
 
-	// 存储就绪前 buildSessionText 返回空串（域打开是毫秒级，首个 prompt 不会赶上）
+	// ── 存储就绪：会话选择域（必有）+ 身份域（失败降级为无档案功能）──
 	let currentStore: PersonaStore | FilePersonaStore | null = null;
-	const storeReady = (async () => {
+	let identity: IdentityStore | null = null;
+	const storesReady = (async () => {
 		try {
 			const domain = await ctx.storageDomain.open(LUME_DOMAIN_SPEC);
 			ctx.effect(
 				() => async () => {
 					await domain.close();
 				},
-				"lume: close storage domain",
+				"lume: close state domain",
 			);
 			const store = new PersonaStore(domain.table(SESSION_PERSONA_TABLE), { maxSessions: MAX_SESSIONS });
 			const migrated = await migrateLegacyState(store, legacyStatePath);
@@ -98,58 +125,313 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			return new FilePersonaStore(legacyStatePath, { maxSessions: MAX_SESSIONS });
 		}
 	})();
-	void storeReady.then((store) => {
+	const identityReady = (async () => {
+		try {
+			const domain = await ctx.storageDomain.open(LUME_IDENTITY_SPEC);
+			ctx.effect(
+				() => async () => {
+					await domain.close();
+				},
+				"lume: close identity domain",
+			);
+			return new IdentityStore({
+				profile: domain.table("profile"),
+				memory_facts: domain.table("memory_facts"),
+				style_rules: domain.table("style_rules"),
+				custom_personas: domain.table("custom_personas"),
+			});
+		} catch (error) {
+			ctx.logger?.warn?.("lume: 身份域不可用，档案/记忆/自定义人设功能降级", error);
+			return null;
+		}
+	})();
+	void storesReady.then((store) => {
 		currentStore = store;
 	});
+	void identityReady.then((store) => {
+		identity = store;
+	});
 
-	// 生效人设文本：显式选择 ?? 默认值（none），再组装风格契约 + 稳定采样示例。
-	// 切换边界：记录每会话上次实际注入的人设，检测到变化就在头几轮前插边界提示，
-	// 压制对话历史中旧人设语气的惯性（模型对上下文里「最近的自己」模仿性极强）。
-	const lastInjected = new Map<string, string | null>();
-	const boundaryRemainder = new Map<string, number>();
-	function buildSessionText(sessionId: string): string {
+	const registry = new PersonaRegistry(builtins, () => identity);
+
+	// ── 每会话运行时状态（内存，重启即弃）──
+	interface SessionRuntime {
+		userText: string;
+		assistantText: string;
+		lastQuery: string | null;
+		turnIndex: number;
+		/** undefined = 本会话尚无注入先例（不视为切换）；null = 当值人设为「不使用」。 */
+		lastInjected: string | null | undefined;
+		boundaryRemainder: number;
+		extracting: Promise<void> | null;
+		lastExtractionAt: number | undefined;
+	}
+	const runtime = new Map<string, SessionRuntime>();
+	const runtimeFor = (sid: string): SessionRuntime => {
+		let st = runtime.get(sid);
+		if (!st) {
+			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, boundaryRemainder: 0, extracting: null, lastExtractionAt: undefined };
+			runtime.set(sid, st);
+		}
+		return st;
+	};
+
+	// ── 模型路由缓存（request/header）──
+	let llmRoute: { provider: string; model: string } | null = null;
+
+	/** 小模型单次调用（提取/固化用）；不可用时返回 null。 */
+	async function callLlm(system: string, userText: string, maxTokens: number): Promise<string | null> {
+		if (!llmRoute) return null;
+		const llm = ctx.get("llm");
+		if (!llm) return null;
+		try {
+			const messages = [
+				createUserMessage({
+					content: [{ type: "text", text: userText }],
+					source: { kind: "plugin", plugin: "lume" },
+				}),
+			];
+			const assembler = new BlockAssembler();
+			for await (const chunk of llm.stream({ provider: llmRoute.provider, model: llmRoute.model, messages, system, maxTokens })) {
+				assembler.push(chunk);
+			}
+			return assembler
+				.blocks()
+				.map((block: unknown) => {
+					const text = (block as { text?: unknown })?.text;
+					return typeof text === "string" ? text : "";
+				})
+				.join(" ")
+				.trim();
+		} catch (error) {
+			ctx.logger?.warn?.("lume: 小模型调用失败，本轮跳过", error);
+			return null;
+		}
+	}
+
+	/** 被动提取：三道门 → 小模型 → 合并落盘。按会话串行，失败静默。 */
+	function scheduleExtraction(sid: string, st: SessionRuntime): void {
+		if (st.extracting) {
+			st.extracting = st.extracting.then(() => doExtract(sid, st));
+		} else {
+			st.extracting = doExtract(sid, st);
+		}
+	}
+	async function doExtract(sid: string, st: SessionRuntime): Promise<void> {
+		const userText = st.userText;
+		const assistantText = st.assistantText;
+		st.userText = "";
+		st.assistantText = "";
+		try {
+			if (!extractionEnabled || !identity || !llmRoute) return;
+			const personaName = st.lastInjected;
+			if (!personaName || !userText) return;
+			if (!shouldConsider(userText)) return;
+			if (isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) return;
+			const existing = identity.getMemory(personaName);
+			if (isDuplicateFact(userText, existing)) return;
+			const prompt = buildExtractionPrompt(
+				userText,
+				assistantText,
+				existing.map((f) => f.text),
+			);
+			const output = await callLlm(prompt.system, prompt.userText, 200);
+			if (output === null) return;
+			st.lastExtractionAt = Date.now();
+			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
+			for (const fact of fresh) {
+				await identity.addMemory(personaName, fact, (candidate, all) => isDuplicateFact(candidate, all));
+			}
+		} catch (error) {
+			ctx.logger?.warn?.("lume: 提取失败（静默跳过）", error);
+		}
+	}
+
+	// ── 会话事件：路由缓存 + 轮次缓冲 + 提取调度 + 清理 ──
+	ctx.effect(
+		() =>
+			ctx.on("session/event", (session: any, event: any) => {
+				const sid = String(session.id);
+				const st = runtimeFor(sid);
+				switch (event.type) {
+					case "request/header": {
+						const route = (event.data as { route?: { provider?: unknown; model?: unknown } } | undefined)?.route;
+						if (typeof route?.provider === "string" && typeof route?.model === "string") {
+							llmRoute = { provider: route.provider, model: route.model };
+						}
+						break;
+					}
+					case "user/message": {
+						const text = messageText(event.data);
+						if (text) {
+							st.userText = text;
+							st.lastQuery = text;
+						}
+						break;
+					}
+					case "assistant/message": {
+						const text = messageText((event.data as { message?: unknown } | undefined)?.message);
+						if (text) st.assistantText = text;
+						break;
+					}
+					case "turn/end": {
+						st.turnIndex++;
+						scheduleExtraction(sid, st);
+						break;
+					}
+					default:
+						break;
+				}
+			}),
+		"lume: session events",
+	);
+	ctx.effect(
+		() =>
+			ctx.on("session/disposed", (session: any) => {
+				runtime.delete(String(session.id));
+			}),
+		"lume: session disposal",
+	);
+
+	// ── 模型可调用工具（主写入通道）──
+	// 工具 output schema 的 const 语义要求成功值恒为 { ok: true }；失败一律抛错交由框架呈现。
+	// as const 让 defineTool 从字面量推断 O，三个工具共用同一份成功形状。
+	const OK_OUTPUT_SCHEMA = {
+		type: "object",
+		additionalProperties: false,
+		properties: { ok: { type: "boolean", const: true, required: true } },
+	} as const;
+	function dutyPersona(exec: any): string | null {
+		const sid = exec?.agent?.session?.id;
+		const st = sid !== undefined ? runtime.get(String(sid)) : undefined;
+		return st?.lastInjected ?? defaultName;
+	}
+	ctx.effect(() => {
+		ctx.tools.register(
+			defineTool({
+				name: "lume_remember",
+				description:
+					"记住关于用户或你们关系的持久事实（偏好、习惯、背景、称呼）。仅当信息明确值得长期记住时调用；每次一条，40 字以内。不要记录工作内容、代码或项目机密。",
+				parameters: {
+					text: { type: "string", required: true, description: "要长期记住的事实，第三人称陈述句，≤40 字" },
+				},
+				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已保存" }] },
+				execute: async (args: { text: string }, exec: any) => {
+					if (!identity) throw new Error("lume identity store is unavailable");
+					const personaName = dutyPersona(exec);
+					if (!personaName) throw new Error("lume_remember requires an active persona (当前没有当值人设)");
+					await identity.addMemory(personaName, String(args.text), isDuplicateFact);
+					return { ok: true };
+				},
+			}),
+		);
+		ctx.tools.register(
+			defineTool({
+				name: "lume_update_style",
+				description:
+					"把用户对你说话方式的新要求固化为长期风格约定（如「少用 emoji」「自称改成XX」）。仅当用户明确提出风格/语气要求时调用，每条一句话。",
+				parameters: {
+					rule: { type: "string", required: true, description: "风格约定，一句话祈使句" },
+				},
+				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已保存" }] },
+				execute: async (args: { rule: string }, exec: any) => {
+					if (!identity) throw new Error("lume identity store is unavailable");
+					const personaName = dutyPersona(exec);
+					if (!personaName) throw new Error("lume_update_style requires an active persona (当前没有当值人设)");
+					await identity.addStyleRule(personaName, String(args.rule), (a, b) => jaccard(a, b) >= 0.6);
+					return { ok: true };
+				},
+			}),
+		);
+		ctx.tools.register(
+			defineTool({
+				name: "lume_create_persona",
+				description:
+					"创建一个全新的自定义人设。仅当用户明确想新建人设时使用：先在对话中访谈收集（人设的名字、性格、说话方式、对用户的称呼），收集完整后再调用本工具保存，并告知用户保存成功。",
+				parameters: {
+					name: { type: "string", required: true, description: "人设英文键名，小写字母开头，≤32 字符（如 tsundere）" },
+					displayName: { type: "string", required: true, description: "界面显示名（如「傲娇」）" },
+					description: { type: "string", required: true, description: "一句话简介" },
+					promptText: { type: "string", required: true, description: "完整风格契约：称呼/emoji/语气词/节奏/立场，与内置契约同构" },
+				},
+				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已保存" }] },
+				execute: async (args: { name: string; displayName: string; description: string; promptText: string }) => {
+					if (!identity) throw new Error("lume identity store is unavailable");
+					await identity.setCustomPersona(String(args.name), {
+						displayName: String(args.displayName),
+						description: String(args.description ?? ""),
+						promptText: String(args.promptText),
+						createdAt: Date.now(),
+					});
+					return { ok: true };
+				},
+			}),
+		);
+	}, "lume: persona tools");
+
+	// ── 人设五段式注入 + 切换播报 ──
+	function composeBoundary(previous: string | null | undefined, current: string | null): string | null {
+		const labelOf = (personaName: string | null | undefined): string => {
+			if (!personaName) return "默认风格";
+			const persona: Persona | undefined = registry.resolve(personaName);
+			const profileName = identity?.getProfileName(personaName) ?? null;
+			return profileName ?? persona?.displayName ?? personaName;
+		};
+		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。`;
+	}
+	function buildSessionText(sid: string): string {
 		if (!currentStore) return "";
-		const selected = currentStore.get(sessionId);
+		const st = runtimeFor(sid);
+		const selected = currentStore.get(sid);
 		const personaName = selected ?? defaultName;
-		const previous = lastInjected.get(sessionId);
+		const previous = st.lastInjected;
 		if (previous !== undefined && previous !== personaName) {
-			boundaryRemainder.set(sessionId, SWITCH_BOUNDARY_TURNS);
+			st.boundaryRemainder = boundaryTurns;
 		}
-		const persona: Persona | undefined = personaName ? personalities[personaName] : undefined;
-		const text = buildPersonaText(persona, sampleCount, sessionId);
-		lastInjected.set(sessionId, personaName);
-		const remaining = boundaryRemainder.get(sessionId) ?? 0;
-		if (remaining > 0) {
-			boundaryRemainder.set(sessionId, remaining - 1);
-			return text ? `${SWITCH_BOUNDARY_TEXT}\n\n${text}` : SWITCH_BOUNDARY_TEXT;
-		}
+		const persona = registry.resolve(personaName);
+		const boundaryText = st.boundaryRemainder > 0 ? composeBoundary(previous, personaName) : null;
+		const text = buildPersonaSection({
+			persona,
+			profileName: personaName ? identity?.getProfileName(personaName) ?? null : null,
+			memories: personaName ? identity?.getMemory(personaName) ?? [] : [],
+			styleRules: personaName ? identity?.getStyleRules(personaName) ?? [] : [],
+			query: st.lastQuery,
+			turnIndex: st.turnIndex,
+			sessionKey: sid,
+			boundaryText,
+			config: { sampleCount, sampleMin, memoryInject, styleInject, strategy },
+		});
+		st.lastInjected = personaName;
+		if (st.boundaryRemainder > 0) st.boundaryRemainder--;
 		return text;
 	}
 
-	// RPC 通道（信封语义见 host/rpc.ts；等存储就绪后再处理写请求）
+	// ── RPC 通道 ──
 	const handleEndpoint = createLumeRpcHandler({
 		get personalities() {
-			return personalities;
+			return builtins;
 		},
 		get store() {
-			// 失败时 ready 已解析为降级存储，不会长期为空
 			return currentStore!;
+		},
+		get registry() {
+			return registry;
+		},
+		get identity() {
+			return identity;
 		},
 	});
 	ctx.effect(
 		() =>
-			ctx.connection.rpc.handle(
-				LUME_CHANNEL,
-				async (endpoint: string, payload: unknown) => {
-					currentStore ??= await storeReady;
-					return handleEndpoint(endpoint, payload);
-				},
-				{ authority: "trusted-host" },
-			),
+			ctx.connection.rpc.handle(LUME_CHANNEL, async (endpoint: string, payload: unknown) => {
+				currentStore ??= await storesReady;
+				identity ??= await identityReady;
+				return handleEndpoint(endpoint, payload);
+			}, { authority: "trusted-host" }),
 		"lume: rpc channel",
 	);
 
-	// 系统提示词段落：人设（order 默认 2，排在思考逻辑之后 —— 近因效应，可配置回退）
+	// ── 系统提示词段落 ──
 	ctx.effect(
 		() =>
 			ctx.systemPrompt.section({
@@ -162,8 +444,6 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			}),
 		"lume.persona-section()",
 	);
-
-	// 系统提示词段落：思考逻辑
 	ctx.effect(
 		() =>
 			ctx.systemPrompt.section({

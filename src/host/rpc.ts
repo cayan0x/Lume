@@ -1,20 +1,22 @@
 /**
- * RPC 信封与 endpoint 处理器工厂。
+ * RPC 信封与 endpoint 处理器。
  *
- * 语义基线（与 v0.1.0 客户端对齐，变化点见 A 项）：
- * - list        → { ok, value: [{name, displayName, description}] }
- * - select      → 校验人设存在后写显式选择；未知人设 → unknown-persona
- * - getSessionPersona → { ok, value: string | null }，只回**显式选择**，
- *   未选择返回 null（v0.1.0 回填 manifest 第一项是默认人设 bug 的根源）；
- *   注入侧的生效默认值（none）不属于 RPC 的回答范围。
+ * 语义：
+ * - list                → 内置 + 自定义人设汇总（含身份档案名）
+ * - select              → 校验人设存在（合并视图）后写显式选择
+ * - getSessionPersona   → 只回显式选择（null = 未选择）
+ * - getProfile          → { name | null } 身份档案
+ * - setProfile          → 设置身份名（人设必须存在）
+ * - deleteCustomPersona → 删除自定义人设（内置拒绝，identity 层再拦一道）
  */
 import type { Persona } from "../core/manifest.js";
+import type { IdentityStore } from "./identity.js";
+import type { PersonaRegistry } from "./registry.js";
 
 export type RpcEnvelope =
 	| { ok: true; value?: unknown }
 	| { ok: false; error: { code: string; message: string } };
 
-/** 会话人设存取的最小结构面：PersonaStore 与降级 FilePersonaStore 均满足。 */
 export interface PersonaSelectionStore {
 	get(sessionId: string): string | null;
 	select(sessionId: string, personaName: string): Promise<void>;
@@ -23,11 +25,18 @@ export interface PersonaSelectionStore {
 export interface LumeRpcDeps {
 	personalities: Record<string, Persona>;
 	store: PersonaSelectionStore;
+	registry: PersonaRegistry;
+	identity: IdentityStore | null;
+}
+
+function requireString(payload: unknown, field: string): string | null {
+	const value = (payload as Record<string, unknown> | undefined)?.[field];
+	return typeof value === "string" && value ? value : null;
 }
 
 export function createLumeRpcHandler(deps: LumeRpcDeps) {
-	// store 必须每次调用时经 deps 取（getter）—— 宿主侧存储在插件启动后才就绪，
-	// 启动时解构会把尚未就绪的值捕获住。
+	// store/identity/registry 必须每次调用时经 deps 取（getter）—— 宿主侧存储在
+	// 插件启动后才就绪，启动时解构会把尚未就绪的值捕获住。
 	return async (endpoint: string, payload: unknown): Promise<RpcEnvelope> => {
 		if (!deps.store) {
 			return {
@@ -35,25 +44,16 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				error: { code: "storage-unavailable", message: "lume storage is not ready" },
 			};
 		}
-		const { personalities, store } = deps;
+		const { store, registry, identity } = deps;
 		switch (endpoint) {
 			case "list": {
-				const list = Object.values(personalities).map((p) => ({
-					name: p.name,
-					displayName: p.displayName,
-					description: p.description,
-				}));
-				return { ok: true, value: list };
+				return { ok: true, value: registry.list() };
 			}
 			case "select": {
-				const { sessionId, personaName } = (payload ?? {}) as {
-					sessionId?: unknown;
-					personaName?: unknown;
-				};
-				if (typeof sessionId !== "string" || !sessionId) {
-					return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
-				}
-				if (typeof personaName !== "string" || !personalities[personaName]) {
+				const sessionId = requireString(payload, "sessionId");
+				const personaName = requireString(payload, "personaName");
+				if (!sessionId) return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
+				if (!personaName || !registry.resolve(personaName)) {
 					return {
 						ok: false,
 						error: { code: "unknown-persona", message: `未知人设: ${String(personaName)}` },
@@ -63,11 +63,38 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				return { ok: true };
 			}
 			case "getSessionPersona": {
-				const { sessionId } = (payload ?? {}) as { sessionId?: unknown };
-				if (typeof sessionId !== "string" || !sessionId) {
-					return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
-				}
+				const sessionId = requireString(payload, "sessionId");
+				if (!sessionId) return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
 				return { ok: true, value: store.get(sessionId) };
+			}
+			case "getProfile": {
+				const personaName = requireString(payload, "personaName");
+				if (!personaName || !registry.resolve(personaName)) {
+					return { ok: false, error: { code: "unknown-persona", message: `未知人设: ${String(personaName)}` } };
+				}
+				return { ok: true, value: { name: identity?.getProfileName(personaName) ?? null } };
+			}
+			case "setProfile": {
+				const personaName = requireString(payload, "personaName");
+				const profileName = requireString(payload, "name");
+				if (!personaName || !registry.resolve(personaName)) {
+					return { ok: false, error: { code: "unknown-persona", message: `未知人设: ${String(personaName)}` } };
+				}
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				if (!profileName) return { ok: false, error: { code: "bad-request", message: "name is required" } };
+				await identity.setProfileName(personaName, profileName);
+				return { ok: true };
+			}
+			case "deleteCustomPersona": {
+				const personaName = requireString(payload, "personaName");
+				if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				try {
+					await identity.deleteCustomPersona(personaName);
+				} catch (error) {
+					return { ok: false, error: { code: "forbidden", message: String((error as Error)?.message ?? error) } };
+				}
+				return { ok: true };
 			}
 			default:
 				return {

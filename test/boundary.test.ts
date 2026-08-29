@@ -7,12 +7,23 @@ import { apply } from "../src/index.js";
 import { FakePersonaTable } from "./fake-table.js";
 
 function makeCtx() {
-	const table = new FakePersonaTable();
+	const tables = new Map<string, FakePersonaTable>();
+	const tableFor = (name: string): FakePersonaTable => {
+		let t = tables.get(name);
+		if (!t) {
+			t = new FakePersonaTable();
+			tables.set(name, t);
+		}
+		return t;
+	};
 	const sections: Record<string, { name: string; order: number; text: (ctx: unknown) => string }> = {};
 	let rpc: ((endpoint: string, payload: unknown) => Promise<{ ok: boolean }>) | null = null;
 	const ctx = {
 		storageDomain: {
-			open: async () => ({ table: () => table, close: async () => {} }),
+			open: async () => ({
+				table: (name: string) => tableFor(name),
+				close: async () => {},
+			}),
 		},
 		effect: (fn: () => unknown) => {
 			fn();
@@ -30,6 +41,11 @@ function makeCtx() {
 				sections[s.name] = s;
 			},
 		},
+		on: () => {},
+		tools: {
+			register: () => () => {},
+		},
+		get: () => undefined,
 		logger: { warn: () => {} },
 	};
 	return {
@@ -80,14 +96,24 @@ describe("persona switch boundary", () => {
 		h.personaText(sid);
 		await h.rpc()("select", { sessionId: sid, personaName: "none" });
 
-		const first = h.personaText(sid);
-		expect(first).toBe("【人设切换】此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话（若当前为默认风格，则用你的默认风格）。");
-
+		expect(h.personaText(sid)).toContain("【人设切换】");
 		expect(h.personaText(sid)).toContain("【人设切换】");
 		expect(h.personaText(sid)).toBe(""); // 两轮过后回归零注入
 
 		// 再切回 loli，边界再次生效
 		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
 		expect(h.personaText(sid)).toContain("【人设切换】");
+	});
+
+	it("边界播报带接班语义：报出上一任与新一任", async () => {
+		const h = await boot();
+		const sid = "s-handoff";
+		await h.rpc()("select", { sessionId: sid, personaName: "senpai" });
+		h.personaText(sid);
+		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
+		const text = h.personaText(sid);
+		expect(text).toContain("御姐");
+		expect(text).toContain("萝莉");
+		expect(text).toContain("接手");
 	});
 });

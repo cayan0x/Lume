@@ -19,6 +19,8 @@ interface PersonaItem {
 	name: string;
 	displayName: string;
 	description: string;
+	/** 身份档案名（小A/小B）；有则优先显示 —— 人设即人。 */
+	profileName?: string | null;
 }
 
 /** 插槽系统注入的控制器（slots.inject 回调返回值）。 */
@@ -66,8 +68,9 @@ function PersonaSelect({ available, load, select, t }: PersonaController & { t: 
 
 	if (!available) return null;
 
-	const currentLabel = items.find((it) => it.name === current)?.displayName ?? t("trigger.fallback");
-
+	const labelOf = (it: PersonaItem | undefined): string =>
+		it ? it.profileName ?? it.displayName : t("trigger.fallback");
+	const currentLabel = labelOf(items.find((it) => it.name === current));
 	const entries = loading
 		? [{ type: "label" as const, id: "lume-loading", text: t("status.loading") }]
 		: items.length === 0
@@ -76,7 +79,7 @@ function PersonaSelect({ available, load, select, t }: PersonaController & { t: 
 					id: item.name,
 					label: (
 						<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-							<span>{item.displayName}</span>
+							<span>{labelOf(item)}</span>
 							{item.description ? (
 								<span style={{ fontSize: 10, opacity: 0.6 }}>{item.description}</span>
 							) : null}

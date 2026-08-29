@@ -14,6 +14,7 @@ import * as storageDomainPkg from "@deepseek-ai/dsh-storage-domain";
 import * as storageJson from "@deepseek-ai/dsh-storage-json";
 import { afterEach, expect, it } from "vitest";
 import { LUME_DOMAIN_SPEC } from "../src/index.js";
+import { IdentityStore, LUME_IDENTITY_SPEC } from "../src/host/identity.js";
 import { PersonaStore } from "../src/host/store.js";
 
 const roots: string[] = [];
@@ -29,22 +30,27 @@ afterEach(() => {
 	}
 });
 
-async function openProbeTable() {
+const PROBE_SPECS = [LUME_DOMAIN_SPEC, LUME_IDENTITY_SPEC];
+
+async function openProbeTables() {
 	const root = mkdtempSync(join(tmpdir(), "lume-it-"));
 	roots.push(root);
 
 	const app = new Context() as any;
-	let table: any;
+	const tables = new Map<string, any>();
 	let opened!: (value: unknown) => void;
 	const ready = new Promise((resolve) => {
 		opened = resolve;
 	});
 
 	const probe = (ctx: any) => {
-		ctx.storageDomain.open(LUME_DOMAIN_SPEC).then((domain: any) => {
-			table = domain.table("session_persona");
-			opened(null);
-		});
+		Promise.all(
+			PROBE_SPECS.map((spec) =>
+				ctx.storageDomain.open(spec).then((domain: any) => {
+					for (const name of Object.keys(spec.tables)) tables.set(name, domain.table(name));
+				}),
+			),
+		).then(() => opened(null));
 		return () => {};
 	};
 	(probe as any).inject = ["storageDomain"];
@@ -58,14 +64,14 @@ async function openProbeTable() {
 		ready,
 		new Promise((_, reject) => setTimeout(() => reject(new Error("probe: storage stack did not open in time")), 10_000)),
 	]);
-	return { root, table };
+	return { root, tables };
 }
 
 it(
 	"PersonaStore drives the real storage stack: LRU + persistence layout",
 	async () => {
-		const { root, table } = await openProbeTable();
-		const store = new PersonaStore(table, { maxSessions: 3 });
+		const { root, tables } = await openProbeTables();
+		const store = new PersonaStore(tables.get("session_persona"), { maxSessions: 3 });
 
 		await store.select("s1", "loli");
 		await store.select("s2", "senpai");
@@ -84,6 +90,41 @@ it(
 		expect(raw.tables.session_persona["s2"]).toBe("senpai");
 		expect(raw.tables.session_persona["s4"]).toBe("loli");
 		expect(raw.tables.session_persona["s1"]).toBeUndefined();
+	},
+	20_000,
+);
+
+it(
+	"IdentityStore drives the real storage stack: schemastery record schemas accept plain objects",
+	async () => {
+		const { root, tables } = await openProbeTables();
+		const identity = new IdentityStore({
+			profile: tables.get("profile"),
+			memory_facts: tables.get("memory_facts"),
+			style_rules: tables.get("style_rules"),
+			custom_personas: tables.get("custom_personas"),
+		});
+
+		await identity.setProfileName("loli", "小A");
+		await identity.addMemory("loli", "用户喜欢深夜写代码", () => false);
+		await identity.addStyleRule("loli", "少用 emoji", () => false);
+		await identity.setCustomPersona("tsundere", {
+			displayName: "傲娇",
+			description: "嘴硬心软",
+			promptText: "以「傲娇」性格回应。",
+			createdAt: 1,
+		});
+
+		expect(identity.getProfileName("loli")).toBe("小A");
+		expect(identity.getMemory("loli")[0].text).toBe("用户喜欢深夜写代码");
+		expect(identity.getStyleRules("loli")[0].rule).toBe("少用 emoji");
+		expect(identity.getCustomPersona("tsundere")?.displayName).toBe("傲娇");
+
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		const raw = JSON.parse(readFileSync(join(root, "lume_persona_identity.json"), "utf8"));
+		expect(raw.unit).toMatchObject({ name: "lume_persona_identity", version: 1 });
+		expect(raw.tables.profile.loli).toEqual({ name: "小A" });
+		expect(raw.tables.custom_personas.tsundere.displayName).toBe("傲娇");
 	},
 	20_000,
 );

@@ -65,6 +65,7 @@ DSH Desktop 增强插件，由两大部分组成：
 - **成熟态稳态：~1,570 tok/请求（比无优化省 39%）**；缓存友好分层（静态前/易变后）叠加 DeepSeek 前缀缓存后，有效计价再降约一个数量级
 - 对比 v0.2.0（~1,400 tok）：v0.3.0 全部新功能的稳态净增仅 **~170 tok/请求**
 - 旋钮：`sampleCount` / `sampleMin` / `memoryInject` / `styleInject` / `injectionStrategy: "topk" | "full"` 均可配置
+- 提取旋钮：`extractionEnabled` / `extractionCooldownMs`；提取默认跟随主对话模型，可用 `extractionProvider` / `extractionModel` 指定更便宜的专用档（可只配其一，另一维回落主对话）
 
 ## 存储
 

@@ -170,6 +170,33 @@ describe("createLumeRpcHandler", () => {
 		expect(await handle("saveCustomPersona", { name: "x" })).toMatchObject({ ok: false, error: { code: "bad-request" } });
 	});
 
+	it("saveCustomPersona preserves a provided createdAt (edit path)", async () => {
+		const { identity, handle } = makeHarness();
+		await handle("saveCustomPersona", { name: "keeper", displayName: "常驻", promptText: "p", createdAt: 12345 });
+		expect(identity!.getCustomPersona("keeper")?.createdAt).toBe(12345);
+		await handle("saveCustomPersona", { name: "fresh", displayName: "新建", promptText: "p" });
+		expect(identity!.getCustomPersona("fresh")?.createdAt).toBeGreaterThan(0);
+		expect(identity!.getCustomPersona("fresh")?.createdAt).not.toBe(12345);
+	});
+
+	it("getCustomPersona returns the full record and rejects non-custom names", async () => {
+		const { identity, handle } = makeHarness();
+		await identity!.setCustomPersona("distilled", {
+			displayName: "晚晴姐姐",
+			description: "测试",
+			promptText: "契约正文",
+			createdAt: 42,
+			corpus: [{ user: "u", assistant: "a" }],
+		});
+		const res = await handle("getCustomPersona", { personaName: "distilled" });
+		expect(res).toEqual({
+			ok: true,
+			value: { displayName: "晚晴姐姐", description: "测试", promptText: "契约正文", createdAt: 42, corpus: [{ user: "u", assistant: "a" }] },
+		});
+		expect(await handle("getCustomPersona", { personaName: "senpai" })).toMatchObject({ ok: false, error: { code: "unknown-persona" } });
+		expect(await handle("getCustomPersona", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
+	});
+
 	it("reads deps.store lazily per call (host storage becomes ready after startup)", async () => {
 		let store: PersonaStore | null = null;
 		const identity = new IdentityStore({

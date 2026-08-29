@@ -8,6 +8,7 @@
 import { Button, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaSample } from "../core/manifest.js";
+import { inputStyle, labelStyle } from "./form-styles.js";
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;
 
@@ -25,17 +26,6 @@ interface DistilledCard {
 type Phase = "input" | "running" | "preview" | "saved";
 
 const TEXT_CAP = 20_000;
-const inputStyle = {
-	width: "100%",
-	boxSizing: "border-box" as const,
-	background: "none",
-	border: "1px solid var(--color-border, #333)",
-	borderRadius: 6,
-	padding: "6px 8px",
-	fontSize: 13,
-	color: "var(--color-text, #ddd)",
-};
-const labelStyle = { display: "block", fontSize: 12, opacity: 0.7, margin: "10px 0 4px" };
 
 export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc }) {
 	const [phase, setPhase] = useState<Phase>("input");

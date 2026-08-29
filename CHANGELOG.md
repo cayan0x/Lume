@@ -2,6 +2,10 @@
 
 ## 未发布
 
+- **feat** 管理自定义人设：人设菜单新增「管理自定义人设…」——弹窗列出全部条目（内置的编辑/删除置灰），自定义卡支持删除（行内二次确认，连带记忆/风格/档案）与编辑契约（复用蒸馏预览字段，键名不可改）；新增 `getCustomPersona` 端点，`saveCustomPersona` 升级为 upsert 并保留原 createdAt
+- **fix** 菜单可达性：portal 菜单定位只在打开瞬间计算，列表异步加载后菜单变高会溢出视口且无法选中——列表到位后补发 resize 信号重新钳制；「不使用人设」固定排在菜单最上方；自定义条目与内置撞名时自动加「（自定义）」后缀
+- **feat** 蒸馏契约强度强化：泛泛形容词必须转写为可执行的具体规则、素材特征放大保留、新增【第一句】入戏小节；语料优先原句复用、禁止中和语气
+
 - **fix** 模型路由缓存监听错事件（潜伏 bug，蒸馏 E2E 发现）：agent-loop 的路由信息在 `request/context` 事件（`{provider, model, contextWindow}`），而插件一直监听 `request/header`（载荷是 `{header, reason}`）——导致 llmRoute 永远为 null，被动提取从未真正执行过。修正后提取/蒸馏的回落路由才真正可用
 - **feat** 蒸馏工具：人设菜单新增「＋ 蒸馏角色卡…」——粘贴/导入小说、剧本或设定文档，宿主两段式 LLM 管线（对话挖掘 → 契约合成 → 语料合成）蒸馏成与内置卡同构的角色卡，预览可编辑后保存即用；RPC 任务制（distillStart/distillStatus/saveCustomPersona），素材不进对话上下文，`distillProvider`/`distillModel` 可配专用路由
 - **fix** 存储 schema 桥接（潜伏 P0）：dsh-storage-domain 打开域时逐记录调 `valueSchema.parse`（zod 契约），而 Lume 传入的 schemastery 实例没有 `.parse`——任何一条数据落盘后重启都会导致身份域静默降级。新增 `zodLike` 适配器（经 Standard Schema `~standard.validate` 桥接），并补「写入→关闭→带数据重开域」回归测试

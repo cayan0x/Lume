@@ -13,6 +13,7 @@
 import { Menu } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import { DistillModal } from "./distill.js";
+import { ManageModal } from "./manage.js";
 import { orderPersonaItems, resolveLabels } from "./menu.js";
 import { NS, en, zh } from "./locales.js";
 
@@ -47,6 +48,7 @@ interface LumeClientCtx {
 }
 
 const DISTILL_ITEM_ID = "lume-distill";
+const MANAGE_ITEM_ID = "lume-manage";
 
 function PersonaSelect({ available, load, select, callRpc, t }: PersonaController & { t: Translate }) {
 	const [open, setOpen] = useState(false);
@@ -54,6 +56,7 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 	const [items, setItems] = useState<PersonaItem[]>([]);
 	const [current, setCurrent] = useState<string | null>(null);
 	const [distillOpen, setDistillOpen] = useState(false);
+	const [manageOpen, setManageOpen] = useState(false);
 	const [reloadToken, setReloadToken] = useState(0);
 	const loadedTokenRef = useRef(-1);
 
@@ -117,12 +120,20 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 				side="top"
 				align="start"
 				items={entries}
-				footer={[{ id: DISTILL_ITEM_ID, label: t("distill.menu") }]}
+				footer={[
+					{ id: MANAGE_ITEM_ID, label: t("manage.menu") },
+					{ id: DISTILL_ITEM_ID, label: t("distill.menu") },
+				]}
 				selectedId={current ?? undefined}
 				onSelect={(id) => {
 					if (id === DISTILL_ITEM_ID) {
 						setOpen(false);
 						setDistillOpen(true);
+						return;
+					}
+					if (id === MANAGE_ITEM_ID) {
+						setOpen(false);
+						setManageOpen(true);
 						return;
 					}
 					select(id).then((ok) => {
@@ -162,6 +173,14 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 				onSaved={() => setReloadToken((v) => v + 1)}
 				t={t}
 				callRpc={callRpc}
+			/>
+			<ManageModal
+				open={manageOpen}
+				onClose={() => setManageOpen(false)}
+				onSaved={() => setReloadToken((v) => v + 1)}
+				t={t}
+				callRpc={callRpc}
+				items={items}
 			/>
 		</>
 	);

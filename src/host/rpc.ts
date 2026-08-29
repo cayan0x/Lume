@@ -10,7 +10,8 @@
  * - deleteCustomPersona → 删除自定义人设（内置拒绝，identity 层再拦一道）
  * - distillStart        → 投递蒸馏任务 {text, hint?} → {jobId}（素材上限校验在 Runner）
  * - distillStatus       → 轮询任务 {jobId} → DistillJob | null（null = 未知/过期）
- * - saveCustomPersona   → 保存蒸馏产出的自定义人设（含语料；内置拒绝）
+ * - saveCustomPersona   → 保存蒸馏/编辑产出的自定义人设（含语料；upsert，内置拒绝）
+ * - getCustomPersona    → 自定义人设完整记录（管理弹窗编辑用；内置/不存在报 unknown-persona）
  */
 import type { Persona } from "../core/manifest.js";
 import type { DistillJobRunner } from "./distill.js";
@@ -130,18 +131,28 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				}
 				const description = (payload as { description?: unknown }).description;
 				const corpus = (payload as { corpus?: unknown }).corpus;
+				const rawCreatedAt = (payload as { createdAt?: unknown }).createdAt;
 				try {
 					await identity.setCustomPersona(name, {
 						displayName,
 						description: typeof description === "string" ? description : "",
 						promptText,
-						createdAt: Date.now(),
+						// 编辑保存时带原 createdAt；新建（蒸馏/对话创建）落当前时间
+						createdAt: typeof rawCreatedAt === "number" ? rawCreatedAt : Date.now(),
 						corpus: Array.isArray(corpus) ? (corpus as { user: string; assistant: string }[]) : undefined,
 					});
 				} catch (error) {
 					return { ok: false, error: { code: "forbidden", message: String((error as Error)?.message ?? error) } };
 				}
 				return { ok: true };
+			}
+			case "getCustomPersona": {
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				const personaName = requireString(payload, "personaName");
+				if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+				const record = identity.getCustomPersona(personaName);
+				if (!record) return { ok: false, error: { code: "unknown-persona", message: `非自定义人设或不存在: ${personaName}` } };
+				return { ok: true, value: record };
 			}
 			default:
 				return {

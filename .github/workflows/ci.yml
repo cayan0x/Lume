@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # peerDependencies 挂在 DSH 生态上，CI 只装构建与测试所需的 devDependencies
+      - name: Install toolchain
+        run: npm install --legacy-peer-deps
+
+      - name: Type-check
+        run: npx tsc -p tsconfig.json
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      # 产物契约：客户端 bundle 必须是 __ModuleLoader__ 工厂格式
+      - name: Verify client bundle contract
+        run: |
+          head -3 lib/client.js | grep -q '__ModuleLoader__.load' || {
+            echo '::error::lib/client.js does not start with the __ModuleLoader__ banner'
+            exit 1
+          }
+          grep -q 'exports.apply' lib/client.js || {
+            echo '::error::lib/client.js does not export apply'
+            exit 1
+          }
+          grep -q 'return module.exports' lib/client.js || {
+            echo '::error::lib/client.js factory does not return module.exports'
+            exit 1
+          }

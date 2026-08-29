@@ -8,7 +8,8 @@
  * - tools         三个模型可调用工具（lume_remember / lume_update_style / lume_create_persona）
  *
  * 被动提取安全网挂在 session/event 的 turn/end 上，三道门（关键词/去重/冷却）
- * 保证 99% 轮次零消耗；模型路由从 request/header 事件缓存（官方 title-llm 模式）。
+ * 保证 99% 轮次零消耗；模型路由可配置（extractionProvider/Model），否则从
+ * request/header 事件缓存的主对话路由回落（官方 title-llm 模式）。
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -23,7 +24,7 @@ import { createLumeRpcHandler } from "./host/rpc.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
 import { IdentityStore, LUME_IDENTITY_SPEC } from "./host/identity.js";
 import { PersonaRegistry } from "./host/registry.js";
-import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, shouldConsider } from "./host/extraction.js";
+import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, resolveExtractionRoute, shouldConsider } from "./host/extraction.js";
 import { jaccard } from "./core/retrieval.js";
 import type { Persona } from "./core/manifest.js";
 
@@ -74,6 +75,9 @@ export interface LumeConfig {
 	injectionStrategy?: "topk" | "full";
 	extractionEnabled?: boolean;
 	extractionCooldownMs?: number;
+	/** 提取专用模型路由：不配置则逐项回落到主对话模型（provider/model 可只配其一）。 */
+	extractionProvider?: string;
+	extractionModel?: string;
 	switchBoundaryTurns?: number;
 }
 
@@ -100,6 +104,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const strategy = config.injectionStrategy ?? "topk";
 	const extractionEnabled = config.extractionEnabled ?? true;
 	const cooldownMs = config.extractionCooldownMs ?? 10 * 60 * 1000;
+	const extractionRouteOverride = { provider: config.extractionProvider, model: config.extractionModel };
 	const boundaryTurns = config.switchBoundaryTurns ?? SWITCH_BOUNDARY_TURNS;
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
@@ -185,9 +190,10 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	// ── 模型路由缓存（request/header）──
 	let llmRoute: { provider: string; model: string } | null = null;
 
-	/** 小模型单次调用（提取/固化用）；不可用时返回 null。 */
+	/** 小模型单次调用（提取/固化用）；路由取提取专用配置，未配置则跟随主对话；不可用时返回 null。 */
 	async function callLlm(system: string, userText: string, maxTokens: number): Promise<string | null> {
-		if (!llmRoute) return null;
+		const route = resolveExtractionRoute(extractionRouteOverride, llmRoute);
+		if (!route) return null;
 		const llm = ctx.get("llm");
 		if (!llm) return null;
 		try {
@@ -198,7 +204,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				}),
 			];
 			const assembler = new BlockAssembler();
-			for await (const chunk of llm.stream({ provider: llmRoute.provider, model: llmRoute.model, messages, system, maxTokens })) {
+			for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens })) {
 				assembler.push(chunk);
 			}
 			return assembler
@@ -229,7 +235,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		st.userText = "";
 		st.assistantText = "";
 		try {
-			if (!extractionEnabled || !identity || !llmRoute) return;
+			if (!extractionEnabled || !identity) return;
 			const personaName = st.lastInjected;
 			if (!personaName || !userText) return;
 			if (!shouldConsider(userText)) return;

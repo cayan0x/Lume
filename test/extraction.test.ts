@@ -6,9 +6,42 @@ import {
 	isDuplicateFact,
 	mergeNewFacts,
 	parseFacts,
+	resolveExtractionRoute,
 	shouldConsider,
 } from "../src/host/extraction.js";
 import type { MemoryFact } from "../src/host/identity.js";
+
+describe("提取路由解析", () => {
+	const conversation = { provider: "openai", model: "gpt-5.6-sol" };
+
+	it("falls back to the conversation route when unconfigured", () => {
+		expect(resolveExtractionRoute({}, conversation)).toEqual(conversation);
+		expect(resolveExtractionRoute({}, null)).toBeNull();
+	});
+
+	it("prefers the dedicated extraction model", () => {
+		expect(resolveExtractionRoute({ provider: "ds-pro", model: "deepseek-v4-lite" }, conversation)).toEqual({
+			provider: "ds-pro",
+			model: "deepseek-v4-lite",
+		});
+	});
+
+	it("allows overriding a single dimension", () => {
+		expect(resolveExtractionRoute({ model: "deepseek-v4-lite" }, conversation)).toEqual({
+			provider: "openai",
+			model: "deepseek-v4-lite",
+		});
+		expect(resolveExtractionRoute({ provider: "ds-pro" }, conversation)).toEqual({
+			provider: "ds-pro",
+			model: "gpt-5.6-sol",
+		});
+	});
+
+	it("needs both dimensions to route", () => {
+		expect(resolveExtractionRoute({ provider: "ds-pro" }, null)).toBeNull();
+		expect(resolveExtractionRoute({ model: "deepseek-v4-lite" }, null)).toBeNull();
+	});
+});
 
 describe("门① 关键词门", () => {
 	it("identity / preference / relationship cues pass", () => {

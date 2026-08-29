@@ -10,6 +10,25 @@ import type { MemoryFact } from "./identity.js";
 export const EXTRACTION_KEYWORD_RE =
 	/你叫|你的名字|叫你|你是|我喜欢|我不喜欢|我讨厌|我是|我在|我叫|记得|上次|以后叫|别忘|最爱|爱好|习惯|讨厌|喜欢/;
 
+/** 一条 LLM 路由（provider + model）。 */
+export interface LlmRoute {
+	provider: string;
+	model: string;
+}
+
+/**
+ * 提取路由解析：配置的独立模型（省钱的提取专用档）优先，未配置的维度逐项
+ * 回落到主对话路由；任一维度都没有 → null（本模型不可用，跳过提取）。
+ */
+export function resolveExtractionRoute(
+	override: { provider?: string; model?: string },
+	conversationRoute: LlmRoute | null,
+): LlmRoute | null {
+	const provider = override.provider ?? conversationRoute?.provider;
+	const model = override.model ?? conversationRoute?.model;
+	return provider && model ? { provider, model } : null;
+}
+
 export const DUPLICATE_JACCARD_THRESHOLD = 0.7;
 export const MAX_FACT_CHARS = 40;
 export const MAX_FACTS_PER_TURN = 3;

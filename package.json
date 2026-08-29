@@ -1,6 +1,6 @@
 {
   "name": "@lume/dsh-plugin",
-  "description": "微光 (Lume) — 人设切换插件，用 lume 的人设引擎接管 DSH 的 persona 系统",
+  "description": "微光 (Lume) — DSH Desktop 增强插件：思维逻辑引擎 + 人设系统",
   "version": "0.3.0",
   "type": "module",
   "main": "lib/index.js",

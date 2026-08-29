@@ -153,6 +153,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	});
 
 	const registry = new PersonaRegistry(builtins, () => identity);
+	ctx.logger?.warn?.(`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}）`);
 
 	// ── 每会话运行时状态（内存，重启即弃）──
 	interface SessionRuntime {
@@ -404,6 +405,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			st.switchTurn = st.turnIndex;
 			st.prevPersona = previous;
 			st.switchGreetingPending = true;
+			ctx.logger?.warn?.(`lume: [${sid}] 人设切换 ${String(previous)} → ${String(personaName)}（播报窗口 ${boundaryTurns} 轮）`);
 		}
 		const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
 		const greeting = st.switchGreetingPending && inWindow;
@@ -448,7 +450,11 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			ctx.connection.rpc.handle(LUME_CHANNEL, async (endpoint: string, payload: unknown) => {
 				currentStore ??= await storesReady;
 				identity ??= await identityReady;
-				return handleEndpoint(endpoint, payload);
+				const result = await handleEndpoint(endpoint, payload);
+				if (endpoint !== "list" && endpoint !== "getSessionPersona") {
+					ctx.logger?.warn?.(`lume: rpc ${endpoint} ${JSON.stringify(payload ?? {})} → ok=${result.ok}${result.ok ? "" : ` code=${result.error.code}`}`);
+				}
+				return result;
 			}, { authority: "trusted-host" }),
 		"lume: rpc channel",
 	);

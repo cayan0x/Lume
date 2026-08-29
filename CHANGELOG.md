@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- **fix** 模型路由缓存监听错事件（潜伏 bug，蒸馏 E2E 发现）：agent-loop 的路由信息在 `request/context` 事件（`{provider, model, contextWindow}`），而插件一直监听 `request/header`（载荷是 `{header, reason}`）——导致 llmRoute 永远为 null，被动提取从未真正执行过。修正后提取/蒸馏的回落路由才真正可用
 - **feat** 蒸馏工具：人设菜单新增「＋ 蒸馏角色卡…」——粘贴/导入小说、剧本或设定文档，宿主两段式 LLM 管线（对话挖掘 → 契约合成 → 语料合成）蒸馏成与内置卡同构的角色卡，预览可编辑后保存即用；RPC 任务制（distillStart/distillStatus/saveCustomPersona），素材不进对话上下文，`distillProvider`/`distillModel` 可配专用路由
 - **fix** 存储 schema 桥接（潜伏 P0）：dsh-storage-domain 打开域时逐记录调 `valueSchema.parse`（zod 契约），而 Lume 传入的 schemastery 实例没有 `.parse`——任何一条数据落盘后重启都会导致身份域静默降级。新增 `zodLike` 适配器（经 Standard Schema `~standard.validate` 桥接），并补「写入→关闭→带数据重开域」回归测试
 - **feat** 自定义人设支持示例对话语料（`custom_personas.corpus` 可选字段，cap 12×240 字，旧记录兼容），蒸馏产出的卡开场即像本人；提取/蒸馏共用的辅助模型路由函数泛化为 `resolveAuxRoute`

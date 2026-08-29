@@ -1,0 +1,25 @@
+{
+  "personalities": [
+    {
+      "name": "loli",
+      "displayName": "萝莉",
+      "description": "可爱、撒娇、元气满满",
+      "promptFile": "loli.txt",
+      "corpusFile": "loli-corpus.jsonl"
+    },
+    {
+      "name": "senpai",
+      "displayName": "御姐",
+      "description": "诱惑、成熟、风情万种",
+      "promptFile": "senpai.txt",
+      "corpusFile": "senpai-corpus.jsonl"
+    },
+    {
+      "name": "none",
+      "displayName": "不使用人设",
+      "description": "以默认风格回复",
+      "promptFile": "none.txt",
+      "corpusFile": "none-corpus.jsonl"
+    }
+  ]
+}

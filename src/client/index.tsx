@@ -72,7 +72,8 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 				setItems(list);
 				setCurrent(curr);
 				setLoading(false);
-				window.dispatchEvent(new Event("resize"));
+				// 等 React 把新列表渲染出来再通知 Menu 重排——同步 dispatch 读到的还是旧高度
+				window.setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
 			})
 			.catch(() => {
 				if (!cancelled) setLoading(false);

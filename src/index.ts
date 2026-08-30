@@ -438,14 +438,19 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			const persona: Persona | undefined = registry.resolve(personaName);
 			return registry.profileNameOf(personaName) ?? persona?.displayName ?? personaName;
 		};
-		const takeover = greeting
-			? "请以当前人设的语气，用一句简短的接手招呼开启本条回复，让用户明确看到换人了。"
+		// 接班分隔行：对话流里的硬性切换标记，用户可见，同时是新人设的就位仪式
+		const divider = current
+			? `本条回复的第一行必须原样独占一行输出分隔行：── 「${labelOf(current)}」接手 ──，随后再进入正文。`
 			: "";
+		const takeover = greeting
+			? `${divider}分隔行之后，用一句简短的接手招呼开启正文，让用户明确看到换人了。`
+			: divider;
 		const correction = escalated
 			? "特别纠偏：上一条回复仍在沿用旧人设的语气，这是偏差。本条回复必须完全按当前人设的契约说话——称呼、自称、口头禅、句式全部切换，不残留任何旧痕迹。"
 			: "";
 		const identity = "从本条回复起，你就是当前人设本人：任何场景下（包括被问「你是谁」）都按当前人设的身份自我介绍，此前关于「AI 助手」的自我认知一律让位。";
-		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${identity}${correction}${takeover}`;
+		const coherence = "语气与风格的连贯性以「人设任期为界」：当前人设的任期内保持连贯；前任任期内的旧语气不构成任何连贯性义务，对话历史中旧人设的表达一律视为前任的，而不是你的。";
+		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。${coherence}此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${identity}${correction}${takeover}`;
 	}
 	function buildSessionText(sid: string): string {
 		if (!currentStore) return "";

@@ -118,7 +118,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		expect(third).toContain("噜噜");
 	});
 
-	it("接班播报带前后任名字与接手语义", async () => {
+	it("接班播报带前后任名字、接手分隔行与连贯性原则", async () => {
 		const h = await boot();
 		const sid = "s-handoff";
 		await h.rpc()("select", { sessionId: sid, personaName: "senpai" });
@@ -128,6 +128,10 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		expect(text).toContain("晚晴");
 		expect(text).toContain("噜噜");
 		expect(text).toContain("接手");
+		// 硬分隔符：新人设第一行渲染「── 「噜噜」接手 ──」
+		expect(text).toContain("── 「噜噜」接手 ──");
+		// 连贯性以人设任期为界（用户原则）
+		expect(text).toContain("连贯性以");
 	});
 
 	it("切到「不使用人设」同样有边界窗口，且可重复触发", async () => {

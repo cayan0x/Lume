@@ -438,12 +438,13 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			const persona: Persona | undefined = registry.resolve(personaName);
 			return registry.profileNameOf(personaName) ?? persona?.displayName ?? personaName;
 		};
-		// 接班分隔行：对话流里的硬性切换标记，用户可见，同时是新人设的就位仪式
+		// 接班分隔行：对话流里的硬性切换标记，用户可见，同时是新人设的就位仪式。
+		// 放在播报第一句、用强制措辞——实测放在长句尾部会被模型忽略。
 		const divider = current
-			? `本条回复的第一行必须原样独占一行输出分隔行：── 「${labelOf(current)}」接手 ──，随后再进入正文。`
+			? `第一件事：本条回复的第一行，一字不改地单独输出这一行：\n── 「${labelOf(current)}」接手 ──\n这一行是给用户的切换提示，不算出戏；从第二行起再进入正文。`
 			: "";
 		const takeover = greeting
-			? `${divider}分隔行之后，用一句简短的接手招呼开启正文，让用户明确看到换人了。`
+			? `${divider}正文第一句用简短的接手招呼，让用户明确听到换人了。`
 			: divider;
 		const correction = escalated
 			? "特别纠偏：上一条回复仍在沿用旧人设的语气，这是偏差。本条回复必须完全按当前人设的契约说话——称呼、自称、口头禅、句式全部切换，不残留任何旧痕迹。"

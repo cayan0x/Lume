@@ -60,12 +60,10 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 	const [reloadToken, setReloadToken] = useState(0);
 	const loadedTokenRef = useRef(-1);
 
-	// 展开时懒加载人设列表 + 当前会话的显式选择（null = 未选择 → 占位文案）；
-	// 蒸馏保存成功后 reloadToken 自增，下次展开强制重载（绕过 loadedTokenRef 缓存门）。
-	// 列表异步到位后菜单高度会突变，补一个 resize 让 portal 菜单重新钳制视口——
-	// 否则「输入栏置底 + 加载后变高」会把菜单下半截推出屏幕外。
+	// 会话可用即主动加载人设列表与当前选择（不等人设菜单被点开）——按钮文字必须
+	// 始终反映真实状态；蒸馏/管理保存成功后 reloadToken 自增，强制重载绕过缓存。
 	useEffect(() => {
-		if (!open || !available) return;
+		if (!available) return;
 		if (loadedTokenRef.current === reloadToken) return;
 		let cancelled = false;
 		setLoading(true);
@@ -87,7 +85,7 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 		return () => {
 			cancelled = true;
 		};
-	}, [open, available, reloadToken, load]);
+	}, [available, reloadToken, load]);
 
 	if (!available) return null;
 

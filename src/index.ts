@@ -59,6 +59,10 @@ const LUME_CHANNEL = "/lume";
 const LUME_PERSONA_SECTION = "lume:persona";
 const LUME_THINKING_SECTION = "lume:thinking";
 const LUME_THINKING_ORDER = 1;
+/** 切换播报独立成段、置于 system prompt 末尾——紧贴对话历史，注意力最强的位置；
+ * 埋在人设段中部会被推理模型忽略（实测连续三轮无视中段播报）。 */
+const LUME_BOUNDARY_SECTION = "lume:boundary";
+const LUME_BOUNDARY_ORDER = 90;
 const MAX_SESSIONS = 200;
 
 const SWITCH_BOUNDARY_TURNS = 2;
@@ -184,6 +188,8 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		prevSignatures: string[];
 		/** 泄漏复发时的升级纠偏标记；出现一轮无泄漏回复即解除。 */
 		leakEscalated: boolean;
+		/** 本轮构建应注入的切换播报（渲染在独立尾部 section，见 LUME_BOUNDARY_SECTION）。 */
+		activeBoundary: string | null;
 		extracting: Promise<void> | null;
 		lastExtractionAt: number | undefined;
 	}
@@ -191,7 +197,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const runtimeFor = (sid: string): SessionRuntime => {
 		let st = runtime.get(sid);
 		if (!st) {
-			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, switchTurn: null, prevPersona: undefined, switchGreetingPending: false, prevSignatures: [], leakEscalated: false, extracting: null, lastExtractionAt: undefined };
+			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, switchTurn: null, prevPersona: undefined, switchGreetingPending: false, prevSignatures: [], leakEscalated: false, activeBoundary: null, extracting: null, lastExtractionAt: undefined };
 			runtime.set(sid, st);
 		}
 		return st;
@@ -308,27 +314,25 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					}
 					case "assistant/message": {
 						const text = messageText((event.data as { message?: unknown } | undefined)?.message);
-						if (text) {
-							st.assistantText = text;
-							// 风格泄漏检测：切换完成后，若回复仍带着旧人设的签名词（称呼/口头禅），
-							// 且边界窗口已关，则重开一轮窗口并升级播报措辞——窗口不再是固定两轮就撒手，
-							// 而是「漏了就纠、不漏不扰」。零 token：纯词法检测，不额外调用模型。
-							if (st.prevSignatures.length > 0 && st.lastInjected !== undefined) {
-								const report = detectLeak(text, st.prevSignatures);
-								const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
-								if (report.leaked && !inWindow) {
-									st.switchTurn = st.turnIndex;
-									st.leakEscalated = true;
-									ctx.logger?.warn?.(`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`);
-								} else if (!report.leaked) {
-									st.leakEscalated = false;
-								}
-							}
-						}
+						if (text) st.assistantText = text;
 						break;
 					}
 					case "turn/end": {
 						st.turnIndex++;
+						// 风格泄漏检测挂在 turn/end（该事件已被窗口机制验证可靠；assistant/message
+						// 的投递在实测中不可靠）。切换完成后逐轮检查回复是否残留旧人设签名词，
+						// 窗口已关仍检出 → 重开窗口 + 升级播报；一轮干净回复自动解除升级。
+						if (st.prevSignatures.length > 0 && st.lastInjected !== undefined && st.assistantText) {
+							const report = detectLeak(st.assistantText, st.prevSignatures);
+							const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
+							if (report.leaked && !inWindow) {
+								st.switchTurn = st.turnIndex;
+								st.leakEscalated = true;
+								ctx.logger?.warn?.(`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`);
+							} else if (!report.leaked) {
+								st.leakEscalated = false;
+							}
+						}
 						scheduleExtraction(sid, st);
 						break;
 					}
@@ -460,6 +464,8 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		const boundaryText = inWindow && st.switchTurn !== null
 			? composeBoundary(st.prevPersona, personaName, greeting, st.leakEscalated)
 			: null;
+		// 播报改由独立的尾部 section 渲染（LUME_BOUNDARY_SECTION），人设段不再内联
+		st.activeBoundary = boundaryText;
 		const text = buildPersonaSection({
 			persona,
 			profileName: personaName ? registry.profileNameOf(personaName) : null,
@@ -468,7 +474,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			query: st.lastQuery,
 			turnIndex: st.turnIndex,
 			sessionKey: sid,
-			boundaryText,
+			boundaryText: null,
 			config: { sampleCount, sampleMin, memoryInject, styleInject, strategy },
 		});
 		st.lastInjected = personaName;
@@ -521,6 +527,21 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				},
 			}),
 		"lume.persona-section()",
+	);
+	ctx.effect(
+		() =>
+			ctx.systemPrompt.section({
+				name: LUME_BOUNDARY_SECTION,
+				order: LUME_BOUNDARY_ORDER,
+				text: (context: any) => {
+					const sid = context.agent?.session?.id ?? context.agent?.id;
+					// 注意：text 回调可能在 buildSessionText 之前求值（section 按 order 排序，
+					// 思维逻辑段 order=1 先跑）——buildSessionText 在人设段（order 2）里执行，
+					// 到达尾部段时 activeBoundary 必已是本轮最新值。
+					return sid ? runtimeFor(String(sid)).activeBoundary ?? "" : "";
+				},
+			}),
+		"lume.boundary-section()",
 	);
 	ctx.effect(
 		() =>

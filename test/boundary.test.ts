@@ -59,8 +59,17 @@ function makeCtx() {
 		ctx,
 		sections,
 		fireTurnEnd,
+		fire: (sid: string, type: string, data: unknown) => {
+			eventHandlers.get("session/event")?.({ id: sid }, { type, data });
+		},
 		rpc: () => rpc as unknown as (endpoint: string, payload: unknown) => Promise<{ ok: boolean }>,
-		personaText: (sid: string) => sections["lume:persona"].text({ agent: { session: { id: sid } } }),
+		personaText: (sid: string) => {
+			// 模型实际看到的人设注入 = 人设段 + 尾部边界播报段（两段拼接）
+			const persona = sections["lume:persona"]?.text({ agent: { session: { id: sid } } }) ?? "";
+			const boundary = sections["lume:boundary"]?.text({ agent: { session: { id: sid } } }) ?? "";
+			return [persona, boundary].filter(Boolean).join("\n");
+		},
+		boundaryText: (sid: string) => sections["lume:boundary"]?.text({ agent: { session: { id: sid } } }) ?? "",
 	};
 }
 
@@ -69,6 +78,7 @@ async function boot() {
 	apply(harness.ctx as never);
 	await new Promise((resolve) => setTimeout(resolve, 0)); // storeReady → currentStore
 	expect(harness.sections["lume:persona"]).toBeTruthy();
+	expect(harness.sections["lume:boundary"]).toBeTruthy();
 	return harness;
 }
 
@@ -136,5 +146,35 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		// 再切回 loli，边界再次生效
 		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
 		expect(h.personaText(sid)).toContain("【人设切换】");
+	});
+
+	it("窗口关闭后回复泄漏旧人设签名词 → 重开窗口并注入升级纠偏", async () => {
+		const h = await boot();
+		const sid = "s-leak";
+		// 噜噜 → 晚晴：切换建立 prevSignatures（噜噜的签名词）
+		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
+		h.personaText(sid);
+		h.fireTurnEnd(sid);
+		await h.rpc()("select", { sessionId: sid, personaName: "senpai" });
+		expect(h.personaText(sid)).toContain("【人设切换】");
+		h.fireTurnEnd(sid);
+		h.fireTurnEnd(sid);
+		h.personaText(sid); // 重建：窗口关闭 → 边界段清空
+		// 窗口已关
+		expect(h.boundaryText(sid)).toBe("");
+
+		// 助手回复仍带噜噜的签名词（哥哥 + 人家）→ turn/end 检出泄漏 → 重开窗口
+		h.fire(sid, "assistant/message", { message: { content: [{ type: "text", text: "哥哥说得对，人家这就改。" }] } });
+		h.fireTurnEnd(sid);
+		h.personaText(sid); // 重建：状态机把重开的窗口渲染进边界段
+		const boundary = h.boundaryText(sid);
+		expect(boundary).toContain("【人设切换】");
+		expect(boundary).toContain("特别纠偏");
+
+		// 一轮干净回复后解除升级
+		h.fire(sid, "assistant/message", { message: { content: [{ type: "text", text: "Understood. I will proceed with the task." }] } });
+		h.fireTurnEnd(sid);
+		h.personaText(sid);
+		expect(h.boundaryText(sid)).not.toContain("特别纠偏");
 	});
 });

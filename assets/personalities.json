@@ -37,15 +37,6 @@
       "signatureWords": ["笨蛋", "哼", "才不是"]
     },
     {
-      "name": "zhuge",
-      "displayName": "诸葛亮",
-      "defaultName": "孔明",
-      "description": "运筹帷幄、鞠躬尽瘁",
-      "promptFile": "zhuge.txt",
-      "corpusFile": "zhuge-corpus.jsonl",
-      "signatureWords": ["主公", "亮有一计", "山人自有妙计"]
-    },
-    {
       "name": "none",
       "displayName": "不使用人设",
       "description": "以默认风格回复",

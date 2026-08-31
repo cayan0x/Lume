@@ -126,7 +126,7 @@
 ### 全新安装（未装过的电脑）
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.3.1
+dsh plugin add github:cayan0x/Lume#v0.3.2
 ```
 
 安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,butler,tsundere,none）` 即表示加载成功。构建产物随仓库发布，此路径不需要 npm 与本地构建。
@@ -136,7 +136,7 @@ dsh plugin add github:cayan0x/Lume#v0.3.1
 重新执行一次安装命令即可升到指定版本，随后**完全重启 DSH（含托盘）**：
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.3.1
+dsh plugin add github:cayan0x/Lume#v0.3.2
 ```
 
 人设选择、记忆与风格数据存放在 `storages/` 目录，升级不会丢失。
@@ -150,7 +150,7 @@ dsh plugin add github:cayan0x/Lume            # 最新 main
 dsh plugin add github:cayan0x/Lume#v0.3.0     # 任意历史标签
 ```
 
-标签与版本的对应关系见 [CHANGELOG](./CHANGELOG.md)。v0.3.1 包含切换可靠性与存储兼容的关键修复，建议始终使用最新标签。
+标签与版本的对应关系见 [CHANGELOG](./CHANGELOG.md)。v0.3.2 包含蒸馏路由修复与预设角色调整，建议始终使用最新标签。
 
 ## 开发
 

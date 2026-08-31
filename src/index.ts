@@ -74,7 +74,7 @@ const SWITCH_BOUNDARY_TURNS = 2;
 /** Cordis 插件名 */
 export const name = "lume";
 /** 依赖的服务 */
-export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "agentDefaultModel"];
+export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "agentDefaultModel", "settings"];
 
 export interface LumeConfig {
 	sampleCount?: number;
@@ -174,6 +174,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 
 	const registry = new PersonaRegistry(builtins, () => identity);
 	ctx.logger?.warn?.(`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}）`);
+	ctx.logger?.warn?.(`lume: 版本 0.3.2 — llmRoute 初始化策略：agentDefaultModel → settings → 回退`);
 
 	// ── 每会话运行时状态（内存，重启即弃）──
 	interface SessionRuntime {
@@ -211,19 +212,43 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	// ── 模型路由缓存（request/context，会话过程中由 agent-loop 更新）──
 	let llmRoute: { provider: string; model: string } | null = null;
 
-	// ── 主动解析默认模型：会话开始前蒸馏/提取也要能用，从宿主 agentDefaultModel 读默认档 ──
-	// request/context 事件只在对话路由时触发，静默状态下 llmRoute 恒为 null，导致
-	// 蒸馏一开即报「模型路由不可用」。这里初始化即读 agentDefaultModel.currentSelection()，
-	// 后续仍被 request/context 覆盖为当次会话的真实路由。
-	try {
-		const agentDefaultModel = ctx.get("agentDefaultModel");
-		const selection = agentDefaultModel?.currentSelection?.() as { provider?: unknown; model?: unknown } | undefined;
-		if (typeof selection?.provider === "string" && typeof selection?.model === "string") {
-			llmRoute = { provider: selection.provider, model: selection.model };
+	// ── 主动解析默认模型：会话开始前蒸馏/提取也要能用 ──
+	// request/context 事件只在对话路由变化时触发（delta event），静默状态下 llmRoute 恒为 null，
+	// 导致蒸馏一开即报「模型路由不可用」。这里初始化即解析默认模型，后续仍被 request/context 覆盖。
+	//
+	// 优先用 agentDefaultModel.currentSelection()（规范 API），不可用时回退 settings.get("agent-default-model")。
+	// 插件沙箱可能限制某些服务，双路径兜底保证至少有一条能走通。
+	(function initLlmRoute() {
+		try {
+			// 路径 A：agentDefaultModel 服务（规范 API，组合配置 + settings）
+			const agentDefaultModel = ctx.get("agentDefaultModel");
+			if (agentDefaultModel) {
+				const selection = agentDefaultModel.currentSelection?.() as { provider?: unknown; model?: unknown } | undefined;
+				if (typeof selection?.provider === "string" && typeof selection?.model === "string") {
+					llmRoute = { provider: selection.provider, model: selection.model };
+					ctx.logger?.warn?.(`lume: llmRoute 从 agentDefaultModel 初始化 → ${llmRoute.provider}/${llmRoute.model}`);
+					return;
+				}
+			}
+		} catch (e) {
+			ctx.logger?.warn?.("lume: agentDefaultModel 不可用，回退 settings", e);
 		}
-	} catch {
-		// agentDefaultModel 服务缺失时静默，保持 llmRoute = null 回退原行为
-	}
+		try {
+			// 路径 B：settings 服务（读原始配置，兜底）
+			const settings = ctx.get("settings");
+			if (settings) {
+				const raw = settings.get("agent-default-model");
+				if (raw && typeof raw.provider === "string" && typeof raw.model === "string") {
+					llmRoute = { provider: raw.provider, model: raw.model };
+					ctx.logger?.warn?.(`lume: llmRoute 从 settings 初始化 → ${llmRoute.provider}/${llmRoute.model}`);
+					return;
+				}
+			}
+		} catch (e) {
+			ctx.logger?.warn?.("lume: settings 也读不到默认模型，蒸馏/提取将不可用", e);
+		}
+		ctx.logger?.warn?.("lume: llmRoute 初始化失败 — 蒸馏/提取在对话前不可用");
+	})();
 
 	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。 */
 	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number): Promise<string | null> {
@@ -313,16 +338,19 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				const sid = String(session.id);
 				const st = runtimeFor(sid);
 				switch (event.type) {
-						case "request/context": {
-							// 路由缓存的真正来源：agent-loop 在路由变化时 append 的 request/context
-							// （{provider, model, contextWindow}）。request/header 的载荷是 {header,
-							// reason}，拿不到 provider/model——v0.3.0 一直监听错了事件，提取从未跑通。
-							const data = event.data as { provider?: unknown; model?: unknown } | undefined;
-							if (typeof data?.provider === "string" && typeof data?.model === "string") {
-								llmRoute = { provider: data.provider, model: data.model };
-							}
-							break;
+					case "request/context": {
+						// 路由缓存的真正来源：agent-loop 在路由变化时 append 的 request/context
+						// （{provider, model, contextWindow}）。request/header 的载荷是 {header,
+						// reason}，拿不到 provider/model——v0.3.0 一直监听错了事件，提取从未跑通。
+						const data = event.data as { provider?: unknown; model?: unknown } | undefined;
+						if (typeof data?.provider === "string" && typeof data?.model === "string") {
+							llmRoute = { provider: data.provider, model: data.model };
+							ctx.logger?.warn?.(`lume: request/context 更新 llmRoute → ${llmRoute.provider}/${llmRoute.model}`);
+						} else {
+							ctx.logger?.warn?.("lume: request/context 未携带 provider/model，保留 llmRoute", data);
 						}
+						break;
+					}
 					case "user/message": {
 						const text = messageText(event.data);
 						if (text) {

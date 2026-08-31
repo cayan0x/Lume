@@ -4,6 +4,8 @@
 
 - **feat** 新增两个预制人设：**管家 沈砚**（儒雅、克制、可靠，口头禅「这就去办」「主人」）与**毒舌傲娇 江野**（嘴硬心软、口嫌体正直，口头禅「……切」「才不是特意帮你」），各配 30 条精选语料与签名词
 - **fix** 补全 `BUILTIN_PERSONA_NAMES`，将 butler 与 tsundere 纳入内置保护表（此前缺失导致同名自定义人设可被创建，管理弹窗中不受保护）
+- **fix** 蒸馏路由 init 修复：`request/context` 是 delta 事件（仅路由变化时触发），默认模型用户 `llmRoute` 永远为 null 导致蒸馏报「模型路由不可用」。现加入双路径启动初始化（`agentDefaultModel.currentSelection()` → `settings.get("agent-default-model")` 兜底），确保对话前蒸馏/提取都能用；同时补全诊断日志便于排查
+- **chore** 移除预设角色「诸葛亮 / 孔明」
 
 ## v0.3.1 (2026-08-30)
 

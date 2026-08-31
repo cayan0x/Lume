@@ -35,6 +35,17 @@
     }
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cayan0x/Lume.git"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "persona",
+    "personality",
+    "identity",
+    "memory"
+  ],
   "engines": {
     "node": ">=20"
   },

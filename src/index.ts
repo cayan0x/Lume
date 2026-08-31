@@ -16,7 +16,6 @@ import { dirname, join } from "node:path";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { BlockAssembler, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import z from "@deepseek-ai/schemastery";
 import { buildPersonaSection } from "./host/injection.js";
 import { loadPersonalities, NONE_PERSONA } from "./host/personalities.js";
@@ -28,7 +27,10 @@ import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, m
 import { DistillJobRunner } from "./host/distill.js";
 import { jaccard } from "./core/retrieval.js";
 import { detectLeak } from "./core/leak-detector.js";
-import type { Persona } from "./core/manifest.js";
+import { messageText } from "./core/text.js";
+import { composeBoundary } from "./host/boundary.js";
+import { SessionRuntimeStore } from "./host/session-runtime.js";
+import type { SessionRuntime } from "./host/session-runtime.js";
 
 /** P0-P3 思考逻辑：始终注入，告诉模型「怎么想」。 */
 const THINKING_TEXT = `[思考逻辑]
@@ -92,18 +94,6 @@ export interface LumeConfig {
 	distillProvider?: string;
 	distillModel?: string;
 	switchBoundaryTurns?: number;
-}
-
-/** 从消息对象提取纯文本（user/message 的 data 即消息；assistant 的 data.message）。 */
-function messageText(message: unknown): string {
-	const content = (message as { content?: unknown } | undefined)?.content;
-	if (!Array.isArray(content)) return "";
-	const parts: string[] = [];
-	for (const block of content) {
-		const text = (block as { text?: unknown } | undefined)?.text;
-		if (typeof text === "string") parts.push(text);
-	}
-	return parts.join(" ").trim();
 }
 
 export function apply(ctx: any, config: LumeConfig = {}): void {
@@ -174,40 +164,10 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 
 	const registry = new PersonaRegistry(builtins, () => identity);
 	ctx.logger?.warn?.(`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}）`);
-	ctx.logger?.warn?.(`lume: 版本 0.3.2 — llmRoute 初始化策略：agentDefaultModel → settings → 回退`);
+	ctx.logger?.warn?.(`lume: 版本 0.3.3 — llmRoute 初始化策略：agentDefaultModel → settings → 回退`);
 
-	// ── 每会话运行时状态（内存，重启即弃）──
-	interface SessionRuntime {
-		userText: string;
-		assistantText: string;
-		lastQuery: string | null;
-		turnIndex: number;
-		/** undefined = 本会话尚无注入先例（不视为切换）；null = 当值人设为「不使用」。 */
-		lastInjected: string | null | undefined;
-		/** 切换发生时的轮次号；边界窗口按「用户轮」计——一条回复内部多次 prompt 构建不会烧掉窗口。 */
-		switchTurn: number | null;
-		/** 切换前的当值人设（接班播报用）。 */
-		prevPersona: string | null | undefined;
-		/** 切换后第一轮的播报需要接手招呼；窗口内后续轮只保留边界句。 */
-		switchGreetingPending: boolean;
-		/** 旧人设的声音签名词：切换后持续检测回复泄漏，漏了就重开边界窗口升级纠偏。 */
-		prevSignatures: string[];
-		/** 泄漏复发时的升级纠偏标记；出现一轮无泄漏回复即解除。 */
-		leakEscalated: boolean;
-		/** 本轮构建应注入的切换播报（渲染在独立尾部 section，见 LUME_BOUNDARY_SECTION）。 */
-		activeBoundary: string | null;
-		extracting: Promise<void> | null;
-		lastExtractionAt: number | undefined;
-	}
-	const runtime = new Map<string, SessionRuntime>();
-	const runtimeFor = (sid: string): SessionRuntime => {
-		let st = runtime.get(sid);
-		if (!st) {
-			st = { userText: "", assistantText: "", lastQuery: null, turnIndex: 0, lastInjected: undefined, switchTurn: null, prevPersona: undefined, switchGreetingPending: false, prevSignatures: [], leakEscalated: false, activeBoundary: null, extracting: null, lastExtractionAt: undefined };
-			runtime.set(sid, st);
-		}
-		return st;
-	};
+	// ── 每会话运行时状态（内存，重启即弃，LRU 上限兜底）──
+	const runtime = new SessionRuntimeStore();
 
 	// ── 模型路由缓存（request/context，会话过程中由 agent-loop 更新）──
 	let llmRoute: { provider: string; model: string } | null = null;
@@ -336,7 +296,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		() =>
 			ctx.on("session/event", (session: any, event: any) => {
 				const sid = String(session.id);
-				const st = runtimeFor(sid);
+				const st = runtime.get(sid);
 				switch (event.type) {
 					case "request/context": {
 						// 路由缓存的真正来源：agent-loop 在路由变化时 append 的 request/context
@@ -474,30 +434,9 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	}, "lume: persona tools");
 
 	// ── 人设五段式注入 + 切换播报 ──
-	function composeBoundary(previous: string | null | undefined, current: string | null, greeting: boolean, escalated = false): string | null {
-		const labelOf = (personaName: string | null | undefined): string => {
-			if (!personaName) return "默认风格";
-			const persona: Persona | undefined = registry.resolve(personaName);
-			return registry.profileNameOf(personaName) ?? persona?.displayName ?? personaName;
-		};
-		// 接班分隔行：对话流里的硬性切换标记，用户可见，同时是新人设的就位仪式。
-		// 放在播报第一句、用强制措辞——实测放在长句尾部会被模型忽略。
-		const divider = current
-			? `第一件事：本条回复的第一行，一字不改地单独输出这一行：\n── 「${labelOf(current)}」接手 ──\n这一行是给用户的切换提示，不算出戏；从第二行起再进入正文。`
-			: "";
-		const takeover = greeting
-			? `${divider}正文第一句用简短的接手招呼，让用户明确听到换人了。`
-			: divider;
-		const correction = escalated
-			? "特别纠偏：上一条回复仍在沿用旧人设的语气，这是偏差。本条回复必须完全按当前人设的契约说话——称呼、自称、口头禅、句式全部切换，不残留任何旧痕迹。"
-			: "";
-		const identity = "从本条回复起，你就是当前人设本人：任何场景下（包括被问「你是谁」）都按当前人设的身份自我介绍，此前关于「AI 助手」的自我认知一律让位。";
-		const coherence = "语气与风格的连贯性以「人设任期为界」：当前人设的任期内保持连贯；前任任期内的旧语气不构成任何连贯性义务，对话历史中旧人设的表达一律视为前任的，而不是你的。";
-		return `【人设切换】此前对话由「${labelOf(previous)}」负责，现在由「${labelOf(current)}」接手。${coherence}此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${identity}${correction}${takeover}`;
-	}
 	function buildSessionText(sid: string): string {
 		if (!currentStore) return "";
-		const st = runtimeFor(sid);
+		const st = runtime.get(sid);
 		const selected = currentStore.get(sid);
 		const personaName = selected ?? defaultName;
 		const previous = st.lastInjected;
@@ -516,7 +455,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		const greeting = st.switchGreetingPending && inWindow;
 		const persona = registry.resolve(personaName);
 		const boundaryText = inWindow && st.switchTurn !== null
-			? composeBoundary(st.prevPersona, personaName, greeting, st.leakEscalated)
+			? composeBoundary({ registry, previous: st.prevPersona, current: personaName, greeting, escalated: st.leakEscalated })
 			: null;
 		// 播报改由独立的尾部 section 渲染（LUME_BOUNDARY_SECTION），人设段不再内联
 		st.activeBoundary = boundaryText;
@@ -591,7 +530,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					const sid = context.agent?.session?.id ?? context.agent?.id;
 					// section 按 order 升序逐个求值：人设段（10000）先跑状态机，
 					// 播报段（10100）读到的 activeBoundary 必是本轮最新值。
-					return sid ? runtimeFor(String(sid)).activeBoundary ?? "" : "";
+					return sid ? runtime.get(String(sid)).activeBoundary ?? "" : "";
 				},
 			}),
 		"lume.boundary-section()",

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.3 (2026-08-31)
+
+- **refactor** 宿主入口模块化：`apply()` 内嵌的 `messageText`、`SessionRuntime` 接口与 `composeBoundary` 抽出为独立模块——`src/core/text.ts`（纯函数）、`src/host/session-runtime.ts`（类型 + 存储容器）、`src/host/boundary.ts`（纯函数）；`index.ts` 从 608 行收缩至 547 行
+- **fix** 会话运行时状态无限增长：`runtime` Map 原先仅靠 `session/disposed` 事件清理，事件丢失即泄漏；现改由 `SessionRuntimeStore` 管理，带 200 条 LRU 上限，超限淘汰最旧
+- **chore** 清理死代码：移除未使用的 `ToolDefinition`、`Persona` 导入；修复 `injection.ts` 语料/连贯性段的缩进不一致
+
 ## v0.3.2 (2026-08-31)
 
 - **feat** 新增两个预制人设：**管家 沈砚**（儒雅、克制、可靠，口头禅「这就去办」「主人」）与**毒舌傲娇 江野**（嘴硬心软、口嫌体正直，口头禅「……切」「才不是特意帮你」），各配 30 条精选语料与签名词

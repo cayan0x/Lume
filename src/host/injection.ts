@@ -94,29 +94,29 @@ export function buildPersonaSection(input: InjectionInput): string {
 	// 5. 接班播报（仅切换窗口）
 	if (input.boundaryText) parts.push(input.boundaryText);
 
-		// 6. 语料示例：少样本衰减 + 会话级稳定采样
-		const sampleCount = decaySampleCount(config.sampleCount, input.turnIndex, config.sampleMin);
-		const samples = sampleForSession(persona.corpus, sampleCount, input.sessionKey, persona.name);
-		if (samples.length > 0) {
-			const lines = samples
-				.map((entry) => {
-					const user = entry.user ?? "";
-					const assistant = entry.assistant ?? "";
-					if (user && assistant) return `用户: ${user}\n回复: ${assistant}`;
-					if (assistant) return `回复: ${assistant}`;
-					return "";
-				})
-				.filter(Boolean)
-				.join("\n\n");
-			if (lines) parts.push(`参考对话示例：\n${lines}`);
-		}
+	// 6. 语料示例：少样本衰减 + 会话级稳定采样
+	const sampleCount = decaySampleCount(config.sampleCount, input.turnIndex, config.sampleMin);
+	const samples = sampleForSession(persona.corpus, sampleCount, input.sessionKey, persona.name);
+	if (samples.length > 0) {
+		const lines = samples
+			.map((entry) => {
+				const user = entry.user ?? "";
+				const assistant = entry.assistant ?? "";
+				if (user && assistant) return `用户: ${user}\n回复: ${assistant}`;
+				if (assistant) return `回复: ${assistant}`;
+				return "";
+			})
+			.filter(Boolean)
+			.join("\n\n");
+		if (lines) parts.push(`参考对话示例：\n${lines}`);
+	}
 
-		// 7. 连贯性原则：连贯以人设任期为界，而非以会话为界——切换人设时，
-		// 历史中前任与默认助手的表达不构成语气连贯性义务（对抗模型的惯性连贯先验）。
-		// 仅在真实人设激活时输出；「不使用人设」保持零注入。
-		if (parts.length > 0) {
-			parts.push("〔连贯性规则〕语气与风格的连贯以你当前人设的任期为界：会话历史中其他人设或默认助手的表达都不构成连贯性义务，不要为了延续历史语气而偏离当前人设。");
-		}
+	// 7. 连贯性原则：连贯以人设任期为界，而非以会话为界——切换人设时，
+	// 历史中前任与默认助手的表达不构成语气连贯性义务（对抗模型的惯性连贯先验）。
+	// 仅在真实人设激活时输出；「不使用人设」保持零注入。
+	if (parts.length > 0) {
+		parts.push("〔连贯性规则〕语气与风格的连贯以你当前人设的任期为界：会话历史中其他人设或默认助手的表达都不构成连贯性义务，不要为了延续历史语气而偏离当前人设。");
+	}
 
-		return parts.filter(Boolean).join("\n\n");
+	return parts.filter(Boolean).join("\n\n");
 }

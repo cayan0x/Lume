@@ -27,6 +27,8 @@ export interface SessionRuntime {
 	activeBoundary: string | null;
 	extracting: Promise<void> | null;
 	lastExtractionAt: number | undefined;
+	/** 近期对话缓冲（反思日志用）：每轮 user/assistant 各推一条，上限 12 条。 */
+	recentTurns: string[];
 }
 
 /** 运行时状态上限：与 PersonaStore 的 maxSessions 对齐，超限淘汰最旧。 */
@@ -47,6 +49,7 @@ function defaultRuntime(): SessionRuntime {
 		activeBoundary: null,
 		extracting: null,
 		lastExtractionAt: undefined,
+		recentTurns: [],
 	};
 }
 

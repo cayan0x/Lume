@@ -15,6 +15,7 @@ import * as storageJson from "@deepseek-ai/dsh-storage-json";
 import { afterEach, expect, it } from "vitest";
 import { LUME_DOMAIN_SPEC } from "../src/index.js";
 import { IdentityStore, LUME_IDENTITY_SPEC } from "../src/host/identity.js";
+import { LUME_REFLECTION_SPEC, ReflectionStore } from "../src/host/reflection.js";
 import { PersonaStore } from "../src/host/store.js";
 
 const roots: string[] = [];
@@ -30,7 +31,7 @@ afterEach(() => {
 	}
 });
 
-const PROBE_SPECS = [LUME_DOMAIN_SPEC, LUME_IDENTITY_SPEC];
+const PROBE_SPECS = [LUME_DOMAIN_SPEC, LUME_IDENTITY_SPEC, LUME_REFLECTION_SPEC];
 
 /** 在给定 root 上拉起真实存储栈并打开两个 Lume 域；close() 关闭全部域以模拟 DSH 重启。 */
 async function bootStack(root: string) {
@@ -184,6 +185,27 @@ it(
 			{ user: "帮我看看这个报错", assistant: "哼，谁让你乱改配置的。……啦，帮你看看还不行嘛。" },
 		]);
 		expect(new PersonaStore(second.tables.get("session_persona")).get("s1")).toBe("loli");
+		await second.close();
+	},
+	20_000,
+);
+
+it(
+	"ReflectionStore persists scores against the real storage stack",
+	async () => {
+		const root = mkdtempSync(join(tmpdir(), "lume-it-"));
+		roots.push(root);
+
+		const first = await bootStack(root);
+		const store = new ReflectionStore(first.tables.get("logs"));
+		await store.log("session-r1", { at: 1, p0: 2, p1: 1, p2: 2, p3: 0, note: "基本达标" });
+		await first.close();
+
+		// 重开域：带数据重开不应炸（schema 桥接回归）
+		const second = await bootStack(root);
+		const raw = JSON.parse(readFileSync(join(root, "lume_reflection.json"), "utf8"));
+		expect(raw.unit).toMatchObject({ name: "lume_reflection", version: 1 });
+		expect(raw.tables.logs["session-r1"]).toMatchObject({ p0: 2, p3: 0, note: "基本达标" });
 		await second.close();
 	},
 	20_000,

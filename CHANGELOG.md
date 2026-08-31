@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.4 (2026-09-01)
+
+- **feat** 反思日志：会话结束时在空闲时间跑一次小模型，评估整段对话是否遵守 P0-P3 四条思考纪律，各打 0-2 分落地到 `lume_reflection` 域。`reflectionEnabled` 默认开启
+- **feat** 提取成功日志：被动提取写入事实时新增 `lume: 提取记忆 →` 日志行，方便观察安全网触发频率与质量
+- **fix** 记忆星图：替换 Modal 380px 硬限制为自绘 960px 宽幅遮罩层 + 卡片加宽（260×72）+ 日期筛选
+
 ## v0.3.3 (2026-08-31)
 
 - **refactor** 宿主入口模块化：`apply()` 内嵌的 `messageText`、`SessionRuntime` 接口与 `composeBoundary` 抽出为独立模块——`src/core/text.ts`（纯函数）、`src/host/session-runtime.ts`（类型 + 存储容器）、`src/host/boundary.ts`（纯函数）；`index.ts` 从 608 行收缩至 547 行

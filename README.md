@@ -10,7 +10,7 @@
 人设只影响自然语言表达，不介入思维逻辑，也不影响代码、命令与工具调用的执行结果。
 
 [![CI](https://github.com/cayan0x/Lume/actions/workflows/ci.yml/badge.svg)](https://github.com/cayan0x/Lume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.3.3-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.4-blue)](./CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 *人设菜单：内置角色卡与蒸馏、管理入口*
@@ -126,7 +126,7 @@
 ### 全新安装（未装过的电脑）
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.3.3
+dsh plugin add github:cayan0x/Lume#v0.3.4
 ```
 
 安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,butler,tsundere,none）` 即表示加载成功。构建产物随仓库发布，此路径不需要 npm 与本地构建。
@@ -136,7 +136,7 @@ dsh plugin add github:cayan0x/Lume#v0.3.3
 重新执行一次安装命令即可升到指定版本，随后**完全重启 DSH（含托盘）**：
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.3.3
+dsh plugin add github:cayan0x/Lume#v0.3.4
 ```
 
 人设选择、记忆与风格数据存放在 `storages/` 目录，升级不会丢失。
@@ -150,7 +150,7 @@ dsh plugin add github:cayan0x/Lume            # 最新 main
 dsh plugin add github:cayan0x/Lume#v0.3.0     # 任意历史标签
 ```
 
-标签与版本的对应关系见 [CHANGELOG](./CHANGELOG.md)。v0.3.3 包含宿主入口模块化与会话运行时 LRU 上限修复，建议始终使用最新标签。
+标签与版本的对应关系见 [CHANGELOG](./CHANGELOG.md)。0.3.4 包含反思日志与记忆星图修复与会话运行时 LRU 上限修复，建议始终使用最新标签。
 
 ## 开发
 

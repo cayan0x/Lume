@@ -31,6 +31,7 @@ import { messageText } from "./core/text.js";
 import { composeBoundary } from "./host/boundary.js";
 import { SessionRuntimeStore } from "./host/session-runtime.js";
 import type { SessionRuntime } from "./host/session-runtime.js";
+import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 
 /** P0-P3 思考逻辑：始终注入，告诉模型「怎么想」。 */
 const THINKING_TEXT = `[思考逻辑]
@@ -93,6 +94,8 @@ export interface LumeConfig {
 	/** 蒸馏专用模型路由：契约合成质量要求高，默认跟随主对话模型。 */
 	distillProvider?: string;
 	distillModel?: string;
+	/** 会话结束反思日志：空闲时间跑一次小模型，给 P0-P3 各打 0-2 分落盘。 */
+	reflectionEnabled?: boolean;
 	switchBoundaryTurns?: number;
 }
 
@@ -110,6 +113,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const cooldownMs = config.extractionCooldownMs ?? 10 * 60 * 1000;
 	const extractionRouteOverride = { provider: config.extractionProvider, model: config.extractionModel };
 	const distillRouteOverride = { provider: config.distillProvider, model: config.distillModel };
+	const reflectionEnabled = config.reflectionEnabled ?? true;
 	const boundaryTurns = config.switchBoundaryTurns ?? SWITCH_BOUNDARY_TURNS;
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
@@ -161,6 +165,20 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	void identityReady.then((store) => {
 		identity = store;
 	});
+
+	// ── 反思域（会话结束后打分，失败降级为无反思功能）──
+	let reflectionStore: ReflectionStore | null = null;
+	const reflectionReady = (async () => {
+		try {
+			const domain = await ctx.storageDomain.open(LUME_REFLECTION_SPEC);
+			ctx.effect(() => async () => { await domain.close(); }, "lume: close reflection domain");
+			return new ReflectionStore(domain.table("logs"));
+		} catch (error) {
+			ctx.logger?.warn?.("lume: 反思域不可用，反思日志降级", error);
+			return null;
+		}
+	})();
+	void reflectionReady.then((s) => { reflectionStore = s; });
 
 	const registry = new PersonaRegistry(builtins, () => identity);
 	ctx.logger?.warn?.(`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}）`);
@@ -271,7 +289,8 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			st.lastExtractionAt = Date.now();
 			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
 			for (const fact of fresh) {
-				await identity.addMemory(personaName, fact, (candidate, all) => isDuplicateFact(candidate, all));
+				const written = await identity.addMemory(personaName, fact, (candidate, all) => isDuplicateFact(candidate, all));
+				if (written) ctx.logger?.warn?.(`lume: 提取记忆 → ${personaName}: ${fact}`);
 			}
 			// 取名类事实同步身份档案：下拉显示档案名 + 【你是谁】段生效
 			const named = extractNaming(fresh);
@@ -316,12 +335,18 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						if (text) {
 							st.userText = text;
 							st.lastQuery = text;
+							st.recentTurns.push(`用户: ${text.slice(0, 300)}`);
+							if (st.recentTurns.length > 12) st.recentTurns.shift();
 						}
 						break;
 					}
 					case "assistant/message": {
 						const text = messageText((event.data as { message?: unknown } | undefined)?.message);
-						if (text) st.assistantText = text;
+						if (text) {
+							st.assistantText = text;
+							st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
+							if (st.recentTurns.length > 12) st.recentTurns.shift();
+						}
 						break;
 					}
 					case "turn/end": {
@@ -352,7 +377,27 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	ctx.effect(
 		() =>
 			ctx.on("session/disposed", (session: any) => {
-				runtime.delete(String(session.id));
+				const sid = String(session.id);
+				const st = runtime.get(sid);
+				const turns = [...st.recentTurns];
+				runtime.delete(sid);
+				// 反思日志：会话结束后空闲时间跑一次小模型，零用户感知 token。
+				// 历史不够长（< 4 条消息）或路由不可用时静默跳过。
+				if (reflectionEnabled && turns.length >= 4) {
+					void (async () => {
+						const store = await reflectionReady;
+						if (!store) return;
+						const route = resolveAuxRoute({}, llmRoute);
+						if (!route) return;
+						const prompt = buildReflectionPrompt(turns);
+						const output = await callLlm(route, prompt.system, prompt.userText, 200);
+						if (output === null) return;
+						const score = parseReflectionScore(output);
+						if (!score) return;
+						await store.log(sid, score);
+						ctx.logger?.warn?.(`lume: 反思日志 ${sid} p0=${score.p0} p1=${score.p1} p2=${score.p2} p3=${score.p3}「${score.note}」`);
+					})();
+				}
 			}),
 		"lume: session disposal",
 	);

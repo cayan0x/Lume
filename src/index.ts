@@ -74,7 +74,7 @@ const SWITCH_BOUNDARY_TURNS = 2;
 /** Cordis 插件名 */
 export const name = "lume";
 /** 依赖的服务 */
-export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "settings"];
+export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "agentDefaultModel"];
 
 export interface LumeConfig {
 	sampleCount?: number;
@@ -211,18 +211,18 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	// ── 模型路由缓存（request/context，会话过程中由 agent-loop 更新）──
 	let llmRoute: { provider: string; model: string } | null = null;
 
-	// ── 主动解析默认模型：会话开始前蒸馏/提取也要能用，从宿主 settings 读默认档 ──
+	// ── 主动解析默认模型：会话开始前蒸馏/提取也要能用，从宿主 agentDefaultModel 读默认档 ──
 	// request/context 事件只在对话路由时触发，静默状态下 llmRoute 恒为 null，导致
-	// 蒸馏一开即报「模型路由不可用」。这里初始化即读 agent-default-model，后续仍被
-	// request/context 覆盖为当次会话的真实路由。
+	// 蒸馏一开即报「模型路由不可用」。这里初始化即读 agentDefaultModel.currentSelection()，
+	// 后续仍被 request/context 覆盖为当次会话的真实路由。
 	try {
-		const settings = ctx.get("settings");
-		const defaultModel = settings?.get?.("agent-default-model") as { provider?: unknown; model?: unknown } | undefined;
-		if (typeof defaultModel?.provider === "string" && typeof defaultModel?.model === "string") {
-			llmRoute = { provider: defaultModel.provider, model: defaultModel.model };
+		const agentDefaultModel = ctx.get("agentDefaultModel");
+		const selection = agentDefaultModel?.currentSelection?.() as { provider?: unknown; model?: unknown } | undefined;
+		if (typeof selection?.provider === "string" && typeof selection?.model === "string") {
+			llmRoute = { provider: selection.provider, model: selection.model };
 		}
 	} catch {
-		// settings 服务缺失或键不存在时静默，保持 llmRoute = null 回退原行为
+		// agentDefaultModel 服务缺失时静默，保持 llmRoute = null 回退原行为
 	}
 
 	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。 */

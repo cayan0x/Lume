@@ -20,6 +20,7 @@ import type { DistillJobRunner } from "./distill.js";
 import type { IdentityStore } from "./identity.js";
 import type { PersonaRegistry } from "./registry.js";
 import { normalizeCard, parseCard } from "../core/card.js";
+import { isCoreMemory } from "./injection.js";
 
 export type RpcEnvelope =
 	| { ok: true; value?: unknown }
@@ -182,7 +183,47 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 					},
 				};
 			}
-			case "importPersona": {
+				case "getMemory": {
+					if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+					const personaName = requireString(payload, "personaName");
+					if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+					return { ok: true, value: identity.getMemory(personaName).map((f) => ({ text: f.text, at: f.at, core: isCoreMemory(f.text) })) };
+				}
+				case "deleteMemory": {
+					if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+					const personaName = requireString(payload, "personaName");
+					if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+					const idx = (payload as { index?: unknown }).index;
+					if (typeof idx !== "number" || !Number.isFinite(idx) || idx < 0) {
+						return { ok: false, error: { code: "bad-request", message: "index must be a non-negative integer" } };
+					}
+					const facts = identity.getMemory(personaName);
+					if (idx >= facts.length) {
+						return { ok: false, error: { code: "bad-request", message: `index ${idx} out of range (${facts.length} items)` } };
+					}
+					facts.splice(idx, 1);
+					await identity.replaceMemory(personaName, facts);
+					return { ok: true };
+				}
+				case "updateMemory": {
+					if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+					const personaName = requireString(payload, "personaName");
+					const text = requireString(payload, "text");
+					if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+					if (!text) return { ok: false, error: { code: "bad-request", message: "text is required" } };
+					const idx = (payload as { index?: unknown }).index;
+					if (typeof idx !== "number" || !Number.isFinite(idx) || idx < 0) {
+						return { ok: false, error: { code: "bad-request", message: "index must be a non-negative integer" } };
+					}
+					const facts = identity.getMemory(personaName);
+					if (idx >= facts.length) {
+						return { ok: false, error: { code: "bad-request", message: `index ${idx} out of range (${facts.length} items)` } };
+					}
+					facts[idx] = { text, at: facts[idx]!.at };
+					await identity.replaceMemory(personaName, facts);
+					return { ok: true };
+				}
+				case "importPersona": {
 				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
 				const raw = (payload as { payload?: unknown }).payload;
 				if (typeof raw !== "string") return { ok: false, error: { code: "bad-request", message: "payload (JSON string) is required" } };

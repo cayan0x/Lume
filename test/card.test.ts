@@ -30,8 +30,8 @@ describe("serializeCard / parseCard round-trip", () => {
 	});
 
 	it("sanitizes corpus via parse (bad entries dropped)", () => {
-		const card = { ...VALID, persona: { ...VALID.persona, corpus: [{ user: "x" }, { assistant: "y" }, { user: "u", assistant: "a" }] } };
-		const parsed = parseCard(serializeCard(card));
+		const card = { ...VALID, persona: { ...VALID.persona, corpus: [{ user: "x" }, { assistant: "y" }, { user: "u", assistant: "a" }] as any } };
+		const parsed = parseCard(serializeCard(card as any));
 		expect(parsed.ok).toBe(true);
 		if (parsed.ok) expect(parsed.value.persona.corpus).toEqual([
 			{ user: "", assistant: "y" },

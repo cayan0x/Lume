@@ -49,6 +49,12 @@ export interface DistillDeps {
 	logger?: { warn?: (message: string, error?: unknown) => void };
 }
 
+/** 蒸馏阶段标识，客户端据此渲染进度（mining → contract → corpus）。 */
+export type DistillStage = "mining" | "contract" | "corpus";
+
+/** 阶段 → 用户可见文案（客户端词典键名，宿主不落文案，交由客户端本地化）。 */
+export const DISTILL_STAGES: DistillStage[] = ["mining", "contract", "corpus"];
+
 // ── prompt 组装 ────────────────────────────────────────────────────────────
 
 const CONTRACT_STRUCTURE = `【身份】身份与性格内核——写具体的行为倾向，不写空洞形容词
@@ -171,22 +177,25 @@ async function callJson(deps: DistillDeps, route: LlmRoute, system: string, user
 	return parseJsonLoose<unknown>(second);
 }
 
-export async function runDistill(deps: DistillDeps, input: DistillInput): Promise<DistilledCard> {
+export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void): Promise<DistilledCard> {
 	const text = input.text.trim();
 	if (!text) throw new Error("distill: 素材为空");
 	if (text.length > DISTILL_TEXT_CAP) throw new Error(`distill: 素材超过 ${DISTILL_TEXT_CAP} 字上限`);
 	const route = deps.route();
 	if (!route) throw new Error("distill: 模型路由不可用");
 
+	onProgress?.("mining");
 	const mined = mineDialogue(text, input.hint);
 	if (mined.lines.length === 0 && !mined.narrative) throw new Error("distill: 素材中没有可分析的内容");
 
+	onProgress?.("contract");
 	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint });
 	const contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS);
 	if (contractOut === null) throw new Error("distill: 契约合成失败（模型输出无法解析）");
 	const contract = normalizeContract(contractOut, { seed: text.slice(0, 200) });
 	if (!contract) throw new Error("distill: 契约输出缺少 displayName 或 promptText");
 
+	onProgress?.("corpus");
 	const corpusPrompt = buildCorpusPrompt({ speaker: mined.speaker, displayName: contract.displayName, lines: mined.lines, hint: input.hint, mixed: mined.mixed });
 	const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS);
 	const corpus = Array.isArray(corpusOut) ? sanitizeCorpus(corpusOut) : [];
@@ -199,6 +208,8 @@ export async function runDistill(deps: DistillDeps, input: DistillInput): Promis
 export interface DistillJob {
 	id: string;
 	status: "running" | "done" | "error";
+	/** 当前阶段（mining → contract → corpus）；done/error 后不再变化。 */
+	stage?: DistillStage;
 	card?: DistilledCard;
 	error?: string;
 	at: number;
@@ -223,9 +234,11 @@ export class DistillJobRunner {
 		if (text.length > DISTILL_TEXT_CAP) throw new Error(`素材超过 ${DISTILL_TEXT_CAP} 字上限`);
 		this.#sweep();
 		const id = `distill-${Date.now().toString(36)}-${++jobSeq}`;
-		const job: DistillJob = { id, status: "running", at: Date.now() };
+		const job: DistillJob = { id, status: "running", at: Date.now(), stage: "mining" };
 		this.#jobs.set(id, job);
-		void runDistill(this.#deps, { text, hint: input.hint })
+		void runDistill(this.#deps, { text, hint: input.hint }, (stage) => {
+			job.stage = stage;
+		})
 			.then((card) => {
 				job.status = "done";
 				job.card = card;

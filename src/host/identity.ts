@@ -63,7 +63,7 @@ export const MEMORY_CAP = 30;
 export const STYLE_CAP = 20;
 
 /** manifest 内置人设名 —— 自定义创建/删除不可触碰。 */
-export const BUILTIN_PERSONA_NAMES = new Set(["loli", "senpai", "butler", "tsundere", "none"]);
+export const BUILTIN_PERSONA_NAMES = new Set(["loli", "senpai", "butler", "tsundere", "zhuge", "none"]);
 
 export interface MemoryFact {
 	text: string;

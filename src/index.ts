@@ -74,7 +74,7 @@ const SWITCH_BOUNDARY_TURNS = 2;
 /** Cordis 插件名 */
 export const name = "lume";
 /** 依赖的服务 */
-export const inject = ["systemPrompt", "connection", "storageDomain", "tools"];
+export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm"];
 
 export interface LumeConfig {
 	sampleCount?: number;

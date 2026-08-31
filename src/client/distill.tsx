@@ -24,6 +24,9 @@ interface DistilledCard {
 }
 
 type Phase = "input" | "running" | "preview" | "saved";
+type DistillStage = "mining" | "contract" | "corpus";
+
+const STAGE_ORDER: DistillStage[] = ["mining", "contract", "corpus"];
 
 const TEXT_CAP = 20_000;
 
@@ -35,6 +38,8 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const [error, setError] = useState<string | null>(null);
 	const [card, setCard] = useState({ key: "", displayName: "", description: "", promptText: "", corpus: [] as PersonaSample[] });
 	const [savedName, setSavedName] = useState("");
+	const [stage, setStage] = useState<DistillStage | null>(null);
+	const [showComplete, setShowComplete] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
 
 	// 关闭即重置（saved 的确认文案显示到关闭为止）
@@ -43,6 +48,8 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setPhase("input");
 			setJobId(null);
 			setError(null);
+			setStage(null);
+			setShowComplete(false);
 			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [] });
 		}
 	}, [open]);
@@ -56,15 +63,21 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 				const res = await callRpc("distillStatus", { jobId });
 				if (cancelled) return;
 				if (!res?.ok) return;
-				const job = res.value as { status: string; card?: DistilledCard; error?: string } | null;
+				const job = res.value as { status: string; card?: DistilledCard; error?: string; stage?: DistillStage } | null;
 				if (job === null || job === undefined) {
 					setError(t("distill.lost"));
 					setPhase("input");
 					return;
 				}
+				if (job.status === "running") {
+					if (job.stage) setStage(job.stage);
+					return;
+				}
 				if (job.status === "done" && job.card) {
 					setCard({ ...job.card });
+					setStage("corpus");
 					setPhase("preview");
+					setShowComplete(true);
 				} else if (job.status === "error") {
 					setError(t("distill.failed", { message: job.error ?? "unknown" }));
 					setPhase("input");
@@ -77,11 +90,20 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			cancelled = true;
 			clearInterval(timer);
 		};
-	}, [phase, jobId, callRpc, t]);
+}, [phase, jobId, callRpc, t]);
 
-	const start = async () => {
-		setError(null);
-		if (!text.trim()) return;
+		// 蒸馏完成横幅 3 秒后自动消失
+		useEffect(() => {
+			if (!showComplete) return;
+			const timer = setTimeout(() => setShowComplete(false), 3000);
+			return () => clearTimeout(timer);
+		}, [showComplete]);
+
+		const start = async () => {
+			setError(null);
+			setStage(null);
+			setShowComplete(false);
+			if (!text.trim()) return;
 		if (text.length > TEXT_CAP) {
 			setError(t("distill.too.long"));
 			return;
@@ -169,13 +191,79 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 					<label style={labelStyle}>{t("distill.hint.label")}</label>
 					<Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder={t("distill.hint.placeholder")} />
 				</div>
-			) : phase === "running" ? (
-				<div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, opacity: 0.8 }}>
-					{t("distill.running")}
-				</div>
-			) : phase === "preview" ? (
-				<div>
-					<label style={labelStyle}>{t("distill.display.label")}</label>
+) : phase === "running" ? (
+					<div style={{ padding: "20px 0 24px", textAlign: "center" }}>
+						<div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginBottom: 12 }}>
+							{STAGE_ORDER.map((s, i) => {
+								const idx = stage ? STAGE_ORDER.indexOf(stage) : -1;
+								const done = STAGE_ORDER.indexOf(s) < idx;
+								const active = STAGE_ORDER.indexOf(s) === idx;
+								const dotColor = done
+									? "var(--color-success, #4caf50)"
+									: active
+										? "var(--color-accent, #7c8cf8)"
+										: "var(--color-border, #444)";
+								const dotBg = done ? dotColor : active ? dotColor : "transparent";
+								const dotBorder = done ? dotColor : active ? dotColor : "var(--color-border, #444)";
+								return (
+									<div key={s} style={{ display: "flex", alignItems: "center", gap: 0 }}>
+										<div
+											style={{
+												width: 12,
+												height: 12,
+												borderRadius: "50%",
+												background: dotBg,
+												border: `2px solid ${dotBorder}`,
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "center",
+												transition: "all 0.3s ease",
+											}}
+										>
+											{done ? (
+												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>✓</span>
+											) : active ? (
+												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>●</span>
+											) : null}
+										</div>
+										{i < STAGE_ORDER.length - 1 && (
+											<div
+												style={{
+													width: 40,
+													height: 2,
+													background: done ? "var(--color-success, #4caf50)" : "var(--color-border, #444)",
+													transition: "background 0.3s ease",
+												}}
+											/>
+										)}
+									</div>
+								);
+							})}
+						</div>
+						<div style={{ fontSize: 13, opacity: 0.8 }}>
+							{stage ? t(`distill.stage.${stage}`) : t("distill.running")}
+						</div>
+					</div>
+				) : phase === "preview" ? (
+					<div>
+						{showComplete ? (
+							<div
+								style={{
+									padding: "8px 12px",
+									marginBottom: 12,
+									borderRadius: 6,
+									background: "var(--color-success-bg, rgba(76, 175, 80, 0.12))",
+									border: "1px solid var(--color-success, #4caf50)",
+									fontSize: 13,
+									color: "var(--color-success, #4caf50)",
+									textAlign: "center",
+									fontWeight: 500,
+								}}
+							>
+								{t("distill.complete")}
+							</div>
+						) : null}
+						<label style={labelStyle}>{t("distill.display.label")}</label>
 					<Input value={card.displayName} onChange={(e) => setCard((c) => ({ ...c, displayName: e.target.value }))} />
 					<label style={labelStyle}>{t("distill.key.label")}</label>
 					<Input value={card.key} onChange={(e) => setCard((c) => ({ ...c, key: e.target.value }))} />

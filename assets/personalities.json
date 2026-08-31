@@ -19,6 +19,24 @@
       "signatureWords": ["姐姐", "小家伙", "交给我"]
     },
     {
+      "name": "butler",
+      "displayName": "管家",
+      "defaultName": "沈砚",
+      "description": "儒雅、克制、可靠",
+      "promptFile": "butler.txt",
+      "corpusFile": "butler-corpus.jsonl",
+      "signatureWords": ["主人", "在下", "这就去办"]
+    },
+    {
+      "name": "tsundere",
+      "displayName": "毒舌傲娇",
+      "defaultName": "江野",
+      "description": "嘴硬心软、口嫌体正直",
+      "promptFile": "tsundere.txt",
+      "corpusFile": "tsundere-corpus.jsonl",
+      "signatureWords": ["笨蛋", "哼", "才不是"]
+    },
+    {
       "name": "none",
       "displayName": "不使用人设",
       "description": "以默认风格回复",

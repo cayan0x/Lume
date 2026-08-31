@@ -10,7 +10,7 @@
 人设只影响自然语言表达，不介入思维逻辑，也不影响代码、命令与工具调用的执行结果。
 
 [![CI](https://github.com/cayan0x/Lume/actions/workflows/ci.yml/badge.svg)](https://github.com/cayan0x/Lume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.3.1-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.2-blue)](./CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 *人设菜单：内置角色卡与蒸馏、管理入口*
@@ -44,7 +44,7 @@
 
 <p align="center"><img src="docs/screenshots/menu.png" width="720" alt="人设菜单：不使用人设置顶，内置角色卡与两个功能入口"></p>
 
-内置两张精修角色卡：**噜噜**（元气管家娘，口头禅「好哒哥哥～」）与**晚晴**（低频高载的姐姐，口头禅「……交给我」），各配 30 条精选语料。
+内置四张精修角色卡：**噜噜**（元气管家娘，口头禅「好哒哥哥～」）、**晚晴**（低频高载的姐姐，口头禅「……交给我」）、**沈砚**（儒雅管家，口头禅「这就去办，主人」）与**江野**（嘴硬心软的傲娇，口头禅「……切」「才不是特意帮你」），各配 30 条精选语料。
 
 ## 三、蒸馏工具：从素材到角色卡
 
@@ -129,7 +129,7 @@
 dsh plugin add github:cayan0x/Lume#v0.3.1
 ```
 
-安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,none）` 即表示加载成功。构建产物随仓库发布，此路径不需要 npm 与本地构建。
+安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,butler,tsundere,none）` 即表示加载成功。构建产物随仓库发布，此路径不需要 npm 与本地构建。
 
 ### 从旧版本升级（已装过微光的电脑）
 

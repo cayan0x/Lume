@@ -64,6 +64,12 @@ export const zh = {
 	"manage.import.read.failed": "读取文件失败。",
 	"manage.import.parse.failed": "文件不是合法的 JSON。",
 	"manage.imported": "已导入「{persona}」。",
+	"memory.title": "记忆",
+	"memory.empty": "还没有记忆，相处中会慢慢沉淀。",
+	"memory.core": "核心记忆",
+	"memory.plain": "普通记忆",
+	"memory.related": "关联记忆",
+	"memory.save": "保存修改",
 };
 
 export const en = {
@@ -129,4 +135,10 @@ export const en = {
 	"manage.import.read.failed": "Failed to read the file.",
 	"manage.import.parse.failed": "The file is not valid JSON.",
 	"manage.imported": "Imported \"{persona}\".",
+	"memory.title": "Memory",
+	"memory.empty": "No memories yet; they accumulate as you talk.",
+	"memory.core": "Core memory",
+	"memory.plain": "Memory",
+	"memory.related": "Related memories",
+	"memory.save": "Save changes",
 };

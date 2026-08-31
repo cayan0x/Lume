@@ -8,6 +8,7 @@
  * - 导入 JSON 卡片文件，同名覆盖需二次确认。
  */
 import { Button, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
+import { MemoryStarMap } from "./memory.js";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaSample } from "../core/manifest.js";
 import { inputStyle, labelStyle } from "./form-styles.js";
@@ -49,6 +50,8 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 	const [editing, setEditing] = useState<{ name: string; card: FullCard } | null>(null);
 	const [exporting, setExporting] = useState<string | null>(null);
 	const [includeMemory, setIncludeMemory] = useState(false);
+	const [memoryOpen, setMemoryOpen] = useState(false);
+	const [memoryTarget, setMemoryTarget] = useState<{ name: string; label: string }>({ name: "", label: "" });
 	const fileRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -219,9 +222,10 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 										<Button size="sm" variant="primary" onClick={() => void doExport(item.name)}>{t("manage.export.confirm")}</Button>
 									</>
 								) : (
-									<Button size="sm" variant="outline" onClick={() => { setExporting(item.name); setIncludeMemory(false); }}>{t("manage.export")}</Button>
-								)}
-								{isCustom ? (
+<Button size="sm" variant="outline" onClick={() => { setExporting(item.name); setIncludeMemory(false); }}>{t("manage.export")}</Button>
+									)}
+									<Button size="sm" variant="outline" onClick={() => { setMemoryTarget({ name: item.name, label: item.profileName ?? item.displayName }); setMemoryOpen(true); }}>{t("memory.title")}</Button>
+									{isCustom ? (
 									<>
 										{confirming === item.name ? (
 											<>
@@ -275,6 +279,14 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			) : null}
 			{notice ? <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>{notice}</div> : null}
 			{error ? <div style={{ marginTop: 10, fontSize: 12, color: "var(--color-danger, #e56)" }}>{error}</div> : null}
+			<MemoryStarMap
+				open={memoryOpen}
+				onClose={() => setMemoryOpen(false)}
+				personaName={memoryTarget.name}
+				personaLabel={memoryTarget.label}
+				t={t}
+				callRpc={callRpc}
+			/>
 		</Modal>
 	);
 }

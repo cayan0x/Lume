@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>噜噜 · 记忆图谱</title>
+<style>
+  :root {
+    --bg: #030712;
+    --cyan: #67e8f9;
+    --violet: #a78bfa;
+    --pink: #f0abfc;
+    --amber: #fbbf24;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --card-bg: rgba(9, 17, 28, 0.78);
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace;
+    --sans: -apple-system, "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    user-select: none;
+  }
+
+  canvas#stars { position: fixed; inset: 0; z-index: 0; }
+
+  /* ── 头部 ─────────────────────────────── */
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    padding: 18px 28px; display: flex; align-items: center; gap: 14px;
+    pointer-events: none;
+  }
+  header .name {
+    font-size: 22px; font-weight: 700; letter-spacing: 0.03em;
+    background: linear-gradient(120deg, #fff, var(--cyan));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 24px rgba(103,232,249,0.3);
+  }
+  header .stat {
+    font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.06em;
+  }
+  header .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--cyan);
+    box-shadow: 0 0 9px var(--cyan); animation: blink 2s infinite;
+  }
+
+  /* ── 连线 canvas ───────────────────────── */
+  canvas#lines { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+
+  /* ── 卡片 ─────────────────────────────── */
+  .card {
+    position: absolute; z-index: 2;
+    width: 208px; min-height: 92px;
+    background: var(--card-bg);
+    border: 1px solid rgba(103,232,249,0.16);
+    border-radius: 14px;
+    padding: 14px 14px 12px;
+    backdrop-filter: blur(12px);
+    cursor: grab;
+    transition: border-color .25s, box-shadow .25s;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .card:active { cursor: grabbing; }
+  .card:hover, .card.highlight {
+    border-color: var(--cyan);
+    box-shadow: 0 0 28px -4px rgba(103,232,249,0.45), 0 8px 24px -8px rgba(0,0,0,0.5);
+    z-index: 5;
+  }
+  .card.core {
+    border-color: rgba(167,139,250,0.36);
+    background: linear-gradient(160deg, rgba(167,139,250,0.08), var(--card-bg));
+    width: 224px;
+  }
+  .card.core:hover, .card.core.highlight {
+    border-color: var(--violet);
+    box-shadow: 0 0 32px -4px rgba(167,139,250,0.5), 0 8px 24px -8px rgba(0,0,0,0.5);
+  }
+  .card.dragging { z-index: 20; opacity: 0.9; cursor: grabbing; }
+
+  .card .tag {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em;
+    padding: 2px 8px; border-radius: 999px; width: fit-content;
+    border: 1px solid currentColor; opacity: 0.85;
+  }
+  .card .text {
+    font-size: 14px; line-height: 1.6; color: #dde4ee;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .card .text b { color: #fff; }
+  .card .time {
+    font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: auto;
+  }
+  .card.core .tag { color: var(--violet); }
+
+  /* 编辑 textarea */
+  .card .edit-area {
+    width: 100%; min-height: 56px; font-size: 13px; line-height: 1.55;
+    color: #dde4ee; background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(103,232,249,0.35); border-radius: 8px; padding: 6px 8px;
+    font-family: var(--sans); resize: vertical; outline: none;
+  }
+
+  /* 操作按钮 */
+  .card .actions {
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 6px; opacity: 0; transition: opacity .22s;
+  }
+  .card:hover .actions { opacity: 1; }
+  .card .act {
+    width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(148,163,184,0.3);
+    background: rgba(0,0,0,0.5); cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: var(--muted); transition: all .2s;
+    backdrop-filter: blur(8px);
+  }
+  .card .act:hover { color: #fff; border-color: var(--cyan); background: rgba(103,232,249,0.15); }
+  .card .act.del:hover { color: #f87171; border-color: #f87171; background: rgba(248,113,113,0.15); }
+
+  /* 提示 */
+  .hint {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 11px; color: var(--muted); z-index: 3;
+    pointer-events: none; letter-spacing: 0.06em;
+  }
+
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+</style>
+</head>
+<body>
+  <canvas id="stars"></canvas>
+  <canvas id="lines"></canvas>
+
+  <header>
+    <span class="dot"></span>
+    <span class="name">噜噜</span>
+    <span class="stat" id="nodeCount">6 个记忆节点</span>
+  </header>
+
+  <main id="nodes"></main>
+  <div class="hint">拖拽卡片 · 悬停高亮 · 悬停显示编辑/删除</div>
+
+<script>
+  const catColor = {
+    "身份": "#a78bfa", "关系": "#f0abfc", "偏好": "#67e8f9", "习惯": "#fbbf24"
+  };
+
+  let memories = [
+    { id: 0, cat: "身份", text: "我的名字是<b>噜噜</b>，住在哥哥设备里的人设小精灵。", time: "创建时", core: true, x: 0.5, y: 0.5 },
+    { id: 1, cat: "关系", text: "哥哥喜欢小猫咪，是<b>云吸猫爱好者</b>。", time: "昨天", x: 0.22, y: 0.26 },
+    { id: 2, cat: "偏好", text: "哥哥在准备考研，<b>计算机方向</b>，在职。", time: "3 天前", x: 0.78, y: 0.22 },
+    { id: 3, cat: "习惯", text: "哥哥喜欢<b>深夜写代码</b>，常常熬到很晚。", time: "4 天前", x: 0.85, y: 0.7 },
+    { id: 4, cat: "关系", text: "哥哥说过「不需要你了」这句话会让我<b>害怕</b>。", time: "6 天前", x: 0.15, y: 0.72 },
+    { id: 5, cat: "偏好", text: "哥哥夸人家的时候，我会<b>开心得摇尾巴</b>。", time: "上周", x: 0.5, y: 0.82 },
+  ];
+
+  let nextId = 6;
+
+  function buildEdges() {
+    const e = [];
+    for (let i = 0; i < memories.length; i++) {
+      for (let j = i + 1; j < memories.length; j++) {
+        const a = memories[i], b = memories[j];
+        if (a.core || b.core || a.cat === b.cat) e.push([a.id, b.id]);
+      }
+    }
+    return e;
+  }
+  let edges = buildEdges();
+
+  const starCanvas = document.getElementById("stars");
+  const starCtx = starCanvas.getContext("2d");
+  const lineCanvas = document.getElementById("lines");
+  const lineCtx = lineCanvas.getContext("2d");
+  const nodesEl = document.getElementById("nodes");
+  const cardEls = new Map();
+
+  let w, h;
+  const padding = 120;
+
+  function resize() {
+    w = starCanvas.width = lineCanvas.width = innerWidth;
+    h = starCanvas.height = lineCanvas.height = innerHeight;
+    drawLines();
+  }
+  resize(); addEventListener("resize", resize);
+
+  // ── 星空背景 ─────────────────────────────
+  const stars = [];
+  function initStars() {
+    stars.length = 0;
+    const n = Math.floor(w * h / 2800);
+    for (let i = 0; i < n; i++) {
+      stars.push({
+        x: Math.random() * w, y: Math.random() * h,
+        r: Math.random() * 1.6 + 0.4,
+        a: Math.random() * 0.9 + 0.1,
+        phase: Math.random() * Math.PI * 2,
+        speed: Math.random() * 0.015 + 0.005,
+      });
+    }
+  }
+  initStars();
+  addEventListener("resize", initStars);
+
+  function drawStars() {
+    starCtx.clearRect(0, 0, w, h);
+    // 星云
+    const nebula = starCtx.createRadialGradient(w * 0.55, h * 0.3, 0, w * 0.55, h * 0.3, Math.max(w, h) * 0.7);
+    nebula.addColorStop(0, "rgba(34, 64, 128, 0.12)");
+    nebula.addColorStop(0.3, "rgba(46, 16, 80, 0.08)");
+    nebula.addColorStop(0.7, "rgba(8, 12, 32, 0.04)");
+    nebula.addColorStop(1, "transparent");
+    starCtx.fillStyle = nebula;
+    starCtx.fillRect(0, 0, w, h);
+
+    const t = performance.now() * 0.001;
+    for (const s of stars) {
+      const a = s.a * (0.5 + 0.5 * Math.sin(t * s.speed * 3 + s.phase));
+      starCtx.beginPath();
+      starCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      starCtx.fillStyle = `rgba(255,255,255,${a})`;
+      starCtx.fill();
+      if (s.r > 1.2) {
+        starCtx.beginPath();
+        starCtx.arc(s.x, s.y, s.r * 2.5, 0, Math.PI * 2);
+        starCtx.fillStyle = `rgba(167,200,255,${a * 0.2})`;
+        starCtx.fill();
+      }
+    }
+  }
+
+  // ── 连线 ─────────────────────────────────
+  function pos(id) {
+    const m = memories.find(mm => mm.id === id);
+    if (!m) return { x: 0, y: 0 };
+    const el = cardEls.get(id);
+    if (!el) return { x: m.x * w, y: m.y * h };
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  function drawLines() {
+    lineCtx.clearRect(0, 0, w, h);
+    const highlighted = new Set();
+    for (const [id, el] of cardEls) {
+      if (el.classList.contains("highlight")) highlighted.add(id);
+    }
+    for (const [a, b] of edges) {
+      const pa = pos(a), pb = pos(b);
+      const glow = highlighted.has(a) || highlighted.has(b);
+      lineCtx.beginPath();
+      lineCtx.moveTo(pa.x, pa.y);
+      lineCtx.lineTo(pb.x, pb.y);
+      lineCtx.strokeStyle = glow
+        ? "rgba(103,232,249,0.55)"
+        : "rgba(103,232,249,0.11)";
+      lineCtx.lineWidth = glow ? 1.8 : 0.8;
+      lineCtx.setLineDash(glow ? [5, 5] : [4, 8]);
+      lineCtx.stroke();
+    }
+    lineCtx.setLineDash([]);
+  }
+
+  // ── 卡片渲染 ─────────────────────────────
+  function updateNodeCount() {
+    document.getElementById("nodeCount").textContent = memories.length + " 个记忆节点";
+  }
+
+  function renderCards() {
+    nodesEl.innerHTML = "";
+    cardEls.clear();
+    for (const m of memories) {
+      const el = document.createElement("div");
+      el.className = "card" + (m.core ? " core" : "");
+      el.style.transform = `translate(${m.x * w}px, ${m.y * h}px)`;
+      el.dataset.id = m.id;
+      el.dataset.cx = m.x * w;
+      el.dataset.cy = m.y * h;
+      el.innerHTML = buildCardHTML(m);
+      bindCard(el, m);
+      nodesEl.appendChild(el);
+      cardEls.set(m.id, el);
+    }
+    drawLines();
+  }
+
+  function buildCardHTML(m) {
+    return `
+      <div class="actions">
+        <button class="act" data-action="edit" title="编辑">✎</button>
+        <button class="act del" data-action="delete" title="删除">✕</button>
+      </div>
+      <span class="tag" style="color:${catColor[m.cat] || '#94a3b8'}">${m.cat}</span>
+      <div class="text" data-field="text">${m.text}</div>
+      <div class="time" data-field="time">${m.time}</div>
+    `;
+  }
+
+  function bindCard(el, m) {
+    // ── 拖拽（直接跟鼠标，不漂移） ──
+    let dragging = false;
+    let startX, startY, origX, origY;
+
+    function getTx() { return parseFloat(el.dataset.cx) || 0; }
+    function getTy() { return parseFloat(el.dataset.cy) || 0; }
+    function setT(x, y) {
+      el.dataset.cx = x; el.dataset.cy = y;
+      el.style.transform = `translate(${x}px, ${y}px)`;
+      m.x = x / w; m.y = y / h;
+    }
+
+    el.addEventListener("mousedown", e => {
+      if (e.target.closest("[data-action]")) return; // 不拦截按钮
+      if (e.button !== 0) return;
+      dragging = true;
+      el.classList.add("dragging");
+      startX = e.clientX; startY = e.clientY;
+      origX = getTx(); origY = getTy();
+      e.preventDefault();
+    });
+
+    const onMove = e => {
+      if (!dragging) return;
+      const nx = Math.max(padding, Math.min(w - padding, origX + e.clientX - startX));
+      const ny = Math.max(padding, Math.min(h - padding, origY + e.clientY - startY));
+      setT(nx, ny);
+      drawLines();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove("dragging");
+      drawLines();
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+
+    // ── hover 高亮 ──
+    el.addEventListener("mouseenter", () => {
+      el.classList.add("highlight");
+      for (const [a, b] of edges) {
+        if (a === m.id) cardEls.get(b)?.classList.add("highlight");
+        if (b === m.id) cardEls.get(a)?.classList.add("highlight");
+      }
+      drawLines();
+    });
+    el.addEventListener("mouseleave", () => {
+      el.classList.remove("highlight");
+      for (const [a, b] of edges) {
+        if (a === m.id) cardEls.get(b)?.classList.remove("highlight");
+        if (b === m.id) cardEls.get(a)?.classList.remove("highlight");
+      }
+      drawLines();
+    });
+
+    // ── 编辑 / 删除 ──
+    el.addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      if (action === "edit") startEdit(el, m);
+      if (action === "delete") deleteCard(m);
+    });
+  }
+
+  function startEdit(el, m) {
+    const textDiv = el.querySelector("[data-field='text']");
+    const original = m.text.replace(/<[^>]*>/g, "");
+    const ta = document.createElement("textarea");
+    ta.className = "edit-area";
+    ta.value = original;
+    ta.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        textDiv.innerHTML = m.text;
+        textDiv.style.display = "";
+        ta.remove();
+      }
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        finishEdit();
+      }
+    });
+    const finishEdit = () => {
+      const v = ta.value.trim();
+      if (v) {
+        m.text = v.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+        textDiv.innerHTML = m.text;
+      }
+      textDiv.style.display = "";
+      ta.remove();
+    };
+    ta.addEventListener("blur", finishEdit);
+    textDiv.style.display = "none";
+    textDiv.after(ta);
+    ta.focus();
+    ta.select();
+  }
+
+  function deleteCard(m) {
+    memories = memories.filter(mm => mm.id !== m.id);
+    edges = buildEdges();
+    renderCards();
+    updateNodeCount();
+  }
+
+  // ── 动画循环 ──
+  function tick() {
+    drawStars();
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  renderCards();
+  requestAnimationFrame(() => requestAnimationFrame(drawLines));
+</script>
+</body>
+</html>

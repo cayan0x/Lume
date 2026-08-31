@@ -115,7 +115,7 @@ it(
 		await identity.setProfileName("loli", "小A");
 		await identity.addMemory("loli", "用户喜欢深夜写代码", () => false);
 		await identity.addStyleRule("loli", "少用 emoji", () => false);
-		await identity.setCustomPersona("tsundere", {
+		await identity.setCustomPersona("kaguya", {
 			displayName: "傲娇",
 			description: "嘴硬心软",
 			promptText: "以「傲娇」性格回应。",
@@ -125,13 +125,13 @@ it(
 		expect(identity.getProfileName("loli")).toBe("小A");
 		expect(identity.getMemory("loli")[0].text).toBe("用户喜欢深夜写代码");
 		expect(identity.getStyleRules("loli")[0].rule).toBe("少用 emoji");
-		expect(identity.getCustomPersona("tsundere")?.displayName).toBe("傲娇");
+		expect(identity.getCustomPersona("kaguya")?.displayName).toBe("傲娇");
 
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		const raw = JSON.parse(readFileSync(join(root, "lume_persona_identity.json"), "utf8"));
 		expect(raw.unit).toMatchObject({ name: "lume_persona_identity", version: 1 });
 		expect(raw.tables.profile.loli).toEqual({ name: "小A" });
-		expect(raw.tables.custom_personas.tsundere.displayName).toBe("傲娇");
+		expect(raw.tables.custom_personas.kaguya.displayName).toBe("傲娇");
 	},
 	20_000,
 );
@@ -153,7 +153,7 @@ it(
 		await identity.setProfileName("loli", "小A");
 		await identity.addMemory("loli", "用户喜欢深夜写代码", () => false);
 		await identity.addStyleRule("loli", "少用 emoji", () => false);
-		await identity.setCustomPersona("tsundere", {
+		await identity.setCustomPersona("kaguya", {
 			displayName: "傲娇",
 			description: "嘴硬心软",
 			promptText: "以「傲娇」性格回应。",
@@ -178,7 +178,7 @@ it(
 		expect(identity2.getProfileName("loli")).toBe("小A");
 		expect(identity2.getMemory("loli")[0].text).toBe("用户喜欢深夜写代码");
 		expect(identity2.getStyleRules("loli")[0].rule).toBe("少用 emoji");
-		const persona = identity2.getCustomPersona("tsundere");
+		const persona = identity2.getCustomPersona("kaguya");
 		expect(persona?.displayName).toBe("傲娇");
 		expect(persona?.corpus).toEqual([
 			{ user: "帮我看看这个报错", assistant: "哼，谁让你乱改配置的。……啦，帮你看看还不行嘛。" },

@@ -189,6 +189,11 @@ export class IdentityStore {
 		await this.#styleTable.put(persona, next);
 	}
 
+	/** 整体替换风格约定（导入人设卡语义），截断到 cap。 */
+	async replaceStyleRules(persona: string, rules: StyleRule[]): Promise<void> {
+		await this.#styleTable.put(persona, rules.slice(-STYLE_CAP));
+	}
+
 	getCustomPersona(name: string): CustomPersona | null {
 		const value = this.#customTable.get(name) as (CustomPersona & { corpus?: unknown }) | undefined;
 		if (!value || typeof value?.displayName !== "string" || typeof value?.promptText !== "string") return null;

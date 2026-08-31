@@ -12,11 +12,14 @@
  * - distillStatus       → 轮询任务 {jobId} → DistillJob | null（null = 未知/过期）
  * - saveCustomPersona   → 保存蒸馏/编辑产出的自定义人设（含语料；upsert，内置拒绝）
  * - getCustomPersona    → 自定义人设完整记录（管理弹窗编辑用；内置/不存在报 unknown-persona）
+ * - exportPersona       → 导出人设卡 {personaName, includeMemory} → 完整 bundle（含内置）
+ * - importPersona       → 导入人设卡 {payload} → 校验后落盘，同名覆盖需确认
  */
 import type { Persona } from "../core/manifest.js";
 import type { DistillJobRunner } from "./distill.js";
 import type { IdentityStore } from "./identity.js";
 import type { PersonaRegistry } from "./registry.js";
+import { normalizeCard, parseCard } from "../core/card.js";
 
 export type RpcEnvelope =
 	| { ok: true; value?: unknown }
@@ -153,6 +156,78 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				const record = identity.getCustomPersona(personaName);
 				if (!record) return { ok: false, error: { code: "unknown-persona", message: `非自定义人设或不存在: ${personaName}` } };
 				return { ok: true, value: record };
+			}
+			case "exportPersona": {
+				const personaName = requireString(payload, "personaName");
+				if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+				const persona = registry.resolve(personaName);
+				if (!persona) return { ok: false, error: { code: "unknown-persona", message: `未知人设: ${personaName}` } };
+				const includeMemory = (payload as { includeMemory?: unknown }).includeMemory === true;
+				return {
+					ok: true,
+					value: {
+						format: "lume-persona-card",
+						version: 1,
+						persona: {
+							name: persona.name,
+							displayName: persona.displayName,
+							description: persona.description,
+							promptText: persona.promptText,
+							corpus: persona.corpus ?? [],
+							profileName: registry.profileNameOf(personaName),
+							styleRules: identity?.getStyleRules(personaName) ?? [],
+							...(includeMemory ? { memory: identity?.getMemory(personaName) ?? [] } : {}),
+							...(persona.signatureWords?.length ? { signatureWords: persona.signatureWords } : {}),
+						},
+					},
+				};
+			}
+			case "getMemory": {
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				const personaName = requireString(payload, "personaName");
+				if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+				return { ok: true, value: identity.getMemory(personaName) };
+			}
+			case "deleteMemory": {
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				const personaName = requireString(payload, "personaName");
+				if (!personaName) return { ok: false, error: { code: "bad-request", message: "personaName is required" } };
+				const idx = (payload as { index?: unknown }).index;
+				if (typeof idx !== "number" || !Number.isFinite(idx) || idx < 0) {
+					return { ok: false, error: { code: "bad-request", message: "index must be a non-negative integer" } };
+				}
+				const facts = identity.getMemory(personaName);
+				if (idx >= facts.length) {
+					return { ok: false, error: { code: "bad-request", message: `index ${idx} out of range (${facts.length} items)` } };
+				}
+				facts.splice(idx, 1);
+				await identity.replaceMemory(personaName, facts);
+				return { ok: true };
+			}
+			case "importPersona": {
+				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };
+				const raw = (payload as { payload?: unknown }).payload;
+				if (typeof raw !== "string") return { ok: false, error: { code: "bad-request", message: "payload (JSON string) is required" } };
+				const parsed = parseCard(raw);
+				if (!parsed.ok) return { ok: false, error: { code: "bad-card", message: parsed.error } };
+				const normalized = normalizeCard(parsed.value.persona);
+				if (!normalized.ok) return { ok: false, error: { code: "forbidden", message: normalized.error } };
+				const card = normalized.value;
+				try {
+					await identity.setCustomPersona(card.name, {
+						displayName: card.displayName,
+						description: card.description,
+						promptText: card.promptText,
+						createdAt: Date.now(),
+						corpus: card.corpus,
+					});
+					if (card.profileName) await identity.setProfileName(card.name, card.profileName);
+					if (card.styleRules.length > 0) await identity.replaceStyleRules(card.name, card.styleRules);
+					if (card.memory && card.memory.length > 0) await identity.replaceMemory(card.name, card.memory);
+				} catch (error) {
+					return { ok: false, error: { code: "forbidden", message: String((error as Error)?.message ?? error) } };
+				}
+				return { ok: true, value: { name: card.name, displayName: card.displayName } };
 			}
 			default:
 				return {

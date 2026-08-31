@@ -7,14 +7,14 @@ describe("orderPersonaItems", () => {
 			{ name: "loli" },
 			{ name: "senpai" },
 			{ name: "none" },
-			{ name: "tsundere" },
+			{ name: "kaguya" },
 		]);
-		expect(ordered.map((i) => i.name)).toEqual(["none", "loli", "senpai", "tsundere"]);
+		expect(ordered.map((i) => i.name)).toEqual(["none", "loli", "senpai", "kaguya"]);
 	});
 
 	it("handles a missing none entry", () => {
-		const ordered = orderPersonaItems([{ name: "loli" }, { name: "tsundere" }]);
-		expect(ordered.map((i) => i.name)).toEqual(["loli", "tsundere"]);
+		const ordered = orderPersonaItems([{ name: "loli" }, { name: "kaguya" }]);
+		expect(ordered.map((i) => i.name)).toEqual(["loli", "kaguya"]);
 	});
 });
 
@@ -36,12 +36,12 @@ describe("resolveLabels", () => {
 		const labels = resolveLabels(
 			[
 				{ name: "senpai", custom: false },
-				{ name: "tsundere", custom: true },
+				{ name: "kaguya", custom: true },
 			],
 			(item) => (item.name === "senpai" ? "晚晴" : "傲娇"),
 			"（自定义）",
 		);
-		expect(labels.get("tsundere")).toBe("傲娇");
+		expect(labels.get("kaguya")).toBe("傲娇");
 	});
 
 	it("suffixes every colliding custom but keeps builtins clean", () => {

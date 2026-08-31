@@ -56,6 +56,14 @@ export const zh = {
 	"manage.corpus.label": "示例对话（{count} 条，只读；语气会随对话继续进化）",
 	"manage.saved": "已保存修改。",
 	"manage.deleted": "已删除「{persona}」。",
+	"manage.export": "导出",
+	"manage.export.confirm": "确认导出",
+	"manage.export.memory": "包含记忆",
+	"manage.exported": "已导出「{persona}」为 JSON 卡片文件。",
+	"manage.import": "导入人设卡…",
+	"manage.import.read.failed": "读取文件失败。",
+	"manage.import.parse.failed": "文件不是合法的 JSON。",
+	"manage.imported": "已导入「{persona}」。",
 };
 
 export const en = {
@@ -113,4 +121,12 @@ export const en = {
 	"manage.corpus.label": "Sample dialogues ({count}; read-only; her tone keeps evolving in conversation)",
 	"manage.saved": "Changes saved.",
 	"manage.deleted": "Deleted \"{persona}\".",
+	"manage.export": "Export",
+	"manage.export.confirm": "Export",
+	"manage.export.memory": "Include memory",
+	"manage.exported": "Exported \"{persona}\" as a JSON card file.",
+	"manage.import": "Import a card…",
+	"manage.import.read.failed": "Failed to read the file.",
+	"manage.import.parse.failed": "The file is not valid JSON.",
+	"manage.imported": "Imported \"{persona}\".",
 };

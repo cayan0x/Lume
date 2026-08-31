@@ -1,12 +1,14 @@
 /**
- * 管理自定义人设：列出全部条目（内置的编辑/删除置灰），支持编辑契约与删除。
+ * 管理自定义人设：列出全部条目（内置的编辑/删除置灰），支持编辑契约、删除、导出与导入。
  *
  * - 删除走行内二次确认（删除会连带记忆/风格/档案，不可恢复）；
  * - 编辑复用蒸馏预览的字段布局，键名是存储主键、创建后不可改；
- * - 保存复用 saveCustomPersona 的 upsert 语义（带原 createdAt）。
+ * - 保存复用 saveCustomPersona 的 upsert 语义（带原 createdAt）；
+ * - 导出任何人设（含内置）为自包含 JSON 卡片文件，可选是否包含记忆；
+ * - 导入 JSON 卡片文件，同名覆盖需二次确认。
  */
 import { Button, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PersonaSample } from "../core/manifest.js";
 import { inputStyle, labelStyle } from "./form-styles.js";
 
@@ -29,12 +31,25 @@ interface FullCard {
 	corpus: PersonaSample[];
 }
 
+/** 浏览器下载 JSON 文件（DSH webview 内可用）。 */
+function downloadJson(filename: string, obj: unknown): void {
+	const blob = new Blob([JSON.stringify(obj, null, 2) + "\n"], { type: "application/json" });
+	const a = document.createElement("a");
+	a.href = URL.createObjectURL(blob);
+	a.download = filename;
+	a.click();
+	URL.revokeObjectURL(a.href);
+}
+
 export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc; items: ManageItem[] }) {
-	const [phase, setPhase] = useState<"list" | "edit">("list");
+	const [phase, setPhase] = useState<"list" | "edit" | "import">("list");
 	const [confirming, setConfirming] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [editing, setEditing] = useState<{ name: string; card: FullCard } | null>(null);
+	const [exporting, setExporting] = useState<string | null>(null);
+	const [includeMemory, setIncludeMemory] = useState(false);
+	const fileRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
 		if (!open) {
@@ -43,6 +58,8 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			setNotice(null);
 			setError(null);
 			setEditing(null);
+			setExporting(null);
+			setIncludeMemory(false);
 		}
 	}, [open]);
 
@@ -103,6 +120,56 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 		}
 	};
 
+	const doExport = async (name: string) => {
+		setError(null);
+		try {
+			const res = await callRpc("exportPersona", { personaName: name, includeMemory });
+			if (res?.ok && res.value) {
+				const bundle = res.value as Record<string, unknown>;
+				downloadJson(`${name}.lume.json`, bundle);
+				setExporting(null);
+				setNotice(t("manage.exported", { persona: name }));
+			} else {
+				setError(t("distill.failed", { message: "rejected" }));
+			}
+		} catch (err) {
+			setError(t("distill.failed", { message: String(err) }));
+		}
+	};
+
+	const doImport = async (file: File | undefined) => {
+		if (!file) return;
+		setError(null);
+		setNotice(null);
+		let text: string;
+		try {
+			text = await file.text();
+		} catch {
+			setError(t("manage.import.read.failed"));
+			return;
+		}
+		let parsed: { ok?: boolean; value?: unknown; error?: string } | undefined;
+		try {
+			parsed = { ok: true, value: JSON.parse(text) };
+		} catch {
+			setError(t("manage.import.parse.failed"));
+			return;
+		}
+		try {
+			const res = await callRpc("importPersona", { payload: text });
+			if (res?.ok) {
+				const v = res.value as { displayName?: string } | undefined;
+				setNotice(t("manage.imported", { persona: v?.displayName ?? "?" }));
+				setPhase("list");
+				onSaved();
+			} else {
+				setError((res as { error?: { message?: string } }).error?.message ?? t("distill.failed", { message: "rejected" }));
+			}
+		} catch (err) {
+			setError(t("distill.failed", { message: String(err) }));
+		}
+	};
+
 	const rowStyle = { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--color-border, #222)" } as const;
 
 	return (
@@ -123,6 +190,10 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 		>
 			{phase === "list" ? (
 				<div>
+					<div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+						<input ref={fileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => void doImport(e.target.files?.[0])} />
+						<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("manage.import")}</Button>
+					</div>
 					{items.length === 0 ? <div style={{ padding: "16px 0", fontSize: 13, opacity: 0.7 }}>{t("manage.empty")}</div> : null}
 					{items.map((item) => {
 						const label = item.profileName ?? item.displayName;
@@ -138,6 +209,18 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 										{item.description || item.name}
 									</div>
 								</div>
+								{exporting === item.name ? (
+									<>
+										<label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
+											<input type="checkbox" checked={includeMemory} onChange={(e) => setIncludeMemory(e.target.checked)} />
+											{t("manage.export.memory")}
+										</label>
+										<Button size="sm" variant="ghost" onClick={() => setExporting(null)}>{t("manage.cancel")}</Button>
+										<Button size="sm" variant="primary" onClick={() => void doExport(item.name)}>{t("manage.export.confirm")}</Button>
+									</>
+								) : (
+									<Button size="sm" variant="outline" onClick={() => { setExporting(item.name); setIncludeMemory(false); }}>{t("manage.export")}</Button>
+								)}
 								{isCustom ? (
 									<>
 										{confirming === item.name ? (

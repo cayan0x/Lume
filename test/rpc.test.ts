@@ -10,7 +10,7 @@ import { PersonaStore } from "../src/host/store.js";
 function makePersonalities(): Record<string, Persona> {
 	return {
 		loli: { name: "loli", displayName: "萝莉", description: "可爱", promptText: "p", corpus: [] },
-		senpai: { name: "senpai", displayName: "御姐", description: "成熟", promptText: "p", corpus: [] },
+		senpai: { name: "senpai", displayName: "御姐", description: "成熟", promptText: "p", corpus: [], signatureWords: ["姐姐", "小家伙"] },
 		none: { name: "none", displayName: "不使用人设", description: "", promptText: "", corpus: [] },
 	};
 }
@@ -77,19 +77,19 @@ describe("createLumeRpcHandler", () => {
 
 	it("select accepts a custom persona created via the identity store", async () => {
 		const { identity, handle, store } = makeHarness();
-		await identity!.setCustomPersona("tsundere", {
+		await identity!.setCustomPersona("kaguya", {
 			displayName: "傲娇",
 			description: "嘴硬心软",
 			promptText: "以「傲娇」性格回应。",
 			createdAt: 1,
 		});
-		expect(await handle("select", { sessionId: "s1", personaName: "tsundere" })).toEqual({ ok: true });
-		expect(store.get("s1")).toBe("tsundere");
+		expect(await handle("select", { sessionId: "s1", personaName: "kaguya" })).toEqual({ ok: true });
+		expect(store.get("s1")).toBe("kaguya");
 		const list = await handle("list", {});
 		expect(list).toMatchObject({
 			ok: true,
 			value: expect.arrayContaining([
-				{ name: "tsundere", displayName: "傲娇", description: "嘴硬心软", profileName: null, custom: true },
+				{ name: "kaguya", displayName: "傲娇", description: "嘴硬心软", profileName: null, custom: true },
 				{ name: "loli", displayName: "萝莉", description: "可爱", profileName: null, custom: false },
 			]),
 		});
@@ -108,7 +108,7 @@ describe("createLumeRpcHandler", () => {
 
 	it("deleteCustomPersona refuses builtins and removes customs", async () => {
 		const { identity, handle } = makeHarness();
-		await identity!.setCustomPersona("tsundere", {
+		await identity!.setCustomPersona("kaguya", {
 			displayName: "傲娇",
 			description: "",
 			promptText: "p",
@@ -118,8 +118,8 @@ describe("createLumeRpcHandler", () => {
 			ok: false,
 			error: { code: "forbidden" },
 		});
-		expect(await handle("deleteCustomPersona", { personaName: "tsundere" })).toEqual({ ok: true });
-		expect(identity!.getCustomPersona("tsundere")).toBeNull();
+		expect(await handle("deleteCustomPersona", { personaName: "kaguya" })).toEqual({ ok: true });
+		expect(identity!.getCustomPersona("kaguya")).toBeNull();
 	});
 
 	it("rejects unknown endpoints", async () => {
@@ -195,6 +195,71 @@ describe("createLumeRpcHandler", () => {
 		});
 		expect(await handle("getCustomPersona", { personaName: "senpai" })).toMatchObject({ ok: false, error: { code: "unknown-persona" } });
 		expect(await handle("getCustomPersona", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
+	});
+
+	it("exportPersona assembles a full bundle for builtins and customs", async () => {
+		const { identity, handle } = makeHarness();
+		await identity!.setProfileName("senpai", "晚晴");
+		await identity!.addMemory("senpai", "用户喜欢深夜写代码", () => false);
+		await identity!.addStyleRule("senpai", "少用 emoji", () => false);
+
+		// 不含记忆：无 memory 字段；内置卡带 signatureWords
+		const noMem = await handle("exportPersona", { personaName: "senpai", includeMemory: false });
+		expect(noMem).toMatchObject({
+			ok: true,
+			value: {
+				format: "lume-persona-card",
+				version: 1,
+				persona: { name: "senpai", displayName: "御姐", profileName: "晚晴", signatureWords: ["姐姐", "小家伙"] },
+			},
+		});
+		expect((noMem as { value: { persona: { memory?: unknown } } }).value.persona.memory).toBeUndefined();
+
+		// 含记忆：memory 出现
+		const withMem = await handle("exportPersona", { personaName: "senpai", includeMemory: true });
+		expect(withMem).toMatchObject({ ok: true });
+		expect((withMem as { value: { persona: { memory: unknown[] } } }).value.persona.memory).toHaveLength(1);
+	});
+
+	it("importPersona writes card + style + memory and returns the name", async () => {
+		const { identity, handle } = makeHarness();
+		const card = {
+			format: "lume-persona-card",
+			version: 1,
+			persona: {
+				name: "jade",
+				displayName: "冷语Jade",
+				description: "锐评家",
+				promptText: "【身份】冷冽、毒舌。",
+				corpus: [{ user: "你好", assistant: "找我什么事？" }],
+				profileName: "冷语Jade",
+				styleRules: [{ rule: "对用户放软", at: 1 }],
+				memory: [{ text: "用户喜欢深夜写代码", at: 2 }],
+			},
+		};
+		const res = await handle("importPersona", { payload: JSON.stringify(card) });
+		expect(res).toEqual({ ok: true, value: { name: "jade", displayName: "冷语Jade" } });
+
+		expect(identity!.getCustomPersona("jade")?.promptText).toBe("【身份】冷冽、毒舌。");
+		expect(identity!.getProfileName("jade")).toBe("冷语Jade");
+		expect(identity!.getStyleRules("jade")).toEqual([{ rule: "对用户放软", at: 1 }]);
+		expect(identity!.getMemory("jade")).toEqual([{ text: "用户喜欢深夜写代码", at: 2 }]);
+	});
+
+	it("importPersona rejects builtin names and bad payloads", async () => {
+		const { handle } = makeHarness();
+		const builtinCard = { format: "lume-persona-card", version: 1, persona: { name: "loli", displayName: "萝莉", promptText: "p" } };
+		expect(await handle("importPersona", { payload: JSON.stringify(builtinCard) })).toMatchObject({
+			ok: false,
+			error: { code: "forbidden" },
+		});
+		const badKey = { format: "lume-persona-card", version: 1, persona: { name: "！！！", displayName: "x", promptText: "p" } };
+		expect(await handle("importPersona", { payload: JSON.stringify(badKey) })).toMatchObject({
+			ok: false,
+			error: { code: "forbidden" },
+		});
+		expect(await handle("importPersona", { payload: "not json" })).toMatchObject({ ok: false, error: { code: "bad-card" } });
+		expect(await handle("importPersona", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
 	});
 
 	it("reads deps.store lazily per call (host storage becomes ready after startup)", async () => {

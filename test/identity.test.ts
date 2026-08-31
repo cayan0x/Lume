@@ -80,16 +80,16 @@ describe("IdentityStore style rules", () => {
 describe("IdentityStore custom personas", () => {
 	it("creates, lists, and deletes custom personas", async () => {
 		const { store } = makeStore();
-		await store.setCustomPersona("tsundere", {
+		await store.setCustomPersona("kaguya", {
 			displayName: "傲娇",
 			description: "嘴硬心软",
 			promptText: "以「傲娇」性格回应……",
 			createdAt: 1,
 		});
 		const listed = store.listCustomPersonas();
-		expect(Object.keys(listed)).toEqual(["tsundere"]);
-		expect(listed.tsundere.displayName).toBe("傲娇");
-		await store.deleteCustomPersona("tsundere");
+		expect(Object.keys(listed)).toEqual(["kaguya"]);
+		expect(listed.kaguya.displayName).toBe("傲娇");
+		await store.deleteCustomPersona("kaguya");
 		expect(store.listCustomPersonas()).toEqual({});
 	});
 

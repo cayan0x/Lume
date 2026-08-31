@@ -70,6 +70,10 @@ export const zh = {
 	"memory.plain": "普通记忆",
 	"memory.related": "关联记忆",
 	"memory.save": "保存修改",
+	"memory.filter.all": "全部",
+	"memory.filter.7d": "最近 7 天",
+	"memory.filter.30d": "最近 30 天",
+	"memory.filter.90d": "最近 90 天",
 };
 
 export const en = {
@@ -141,4 +145,8 @@ export const en = {
 	"memory.plain": "Memory",
 	"memory.related": "Related memories",
 	"memory.save": "Save changes",
+	"memory.filter.all": "All",
+	"memory.filter.7d": "Last 7 days",
+	"memory.filter.30d": "Last 30 days",
+	"memory.filter.90d": "Last 90 days",
 };

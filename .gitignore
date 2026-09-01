@@ -12,3 +12,10 @@ LUME_THINKING_PLAN.md
 
 # ZCode session artifacts
 .zcode/
+
+# Mimosa security scan artifacts
+.mimosa/
+
+# 本地同步脚本（含本机绝对路径）
+sync-to-dsh.bat
+sync-to-dsh.mjs

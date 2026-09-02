@@ -208,16 +208,18 @@ export function normalizeContract(raw: unknown, opts: { seed: string }): { key: 
 
 // ── 管线编排 ────────────────────────────────────────────────────────────────
 
-/** 带一次重试的 JSON 调用：第一次解析失败后追加更严格的格式要求再试。 */
-async function callJson(deps: DistillDeps, route: LlmRoute, system: string, userText: string, maxTokens: number): Promise<unknown | null> {
+/** 带一次重试的 JSON 调用：解析失败时把原始输出片段带进错误信息，UI 可见。 */
+async function callJson(deps: DistillDeps, route: LlmRoute, system: string, userText: string, maxTokens: number): Promise<unknown> {
 	const first = await deps.call(route, system, userText, maxTokens);
-	if (first === null) return null;
+	if (first === null) throw new Error("LLM 调用失败（无输出）");
 	const parsed = parseJsonLoose<unknown>(first);
 	if (parsed !== null) return parsed;
-	deps.logger?.warn?.("distill: 第一次输出无法解析为 JSON，重试一次");
+	deps.logger?.warn?.(`distill: 第一次输出无法解析为 JSON，重试一次。原始输出前 200 字：${first.slice(0, 200).replace(/\n/g, "⏎")}`);
 	const second = await deps.call(route, `${system}\n\n补充：上一次输出无法解析。必须严格只输出一个合法 JSON（对象或数组），不要有任何解释、围栏或多余文本。`, userText, maxTokens);
-	if (second === null) return null;
-	return parseJsonLoose<unknown>(second);
+	if (second === null) throw new Error(`LLM 调用失败（无输出）`);
+	const retried = parseJsonLoose<unknown>(second);
+	if (retried !== null) return retried;
+	throw new Error(`模型输出无法解析为 JSON。原始输出片段：${second.slice(0, 300).replace(/\n/g, "⏎")}`);
 }
 
 export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void): Promise<DistilledCard> {
@@ -233,8 +235,12 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 
 	onProgress?.("contract");
 	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint });
-	const contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS);
-	if (contractOut === null) throw new Error("distill: 契约合成失败（模型输出无法解析）");
+	let contractOut: unknown;
+	try {
+		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS);
+	} catch (error) {
+		throw new Error(`distill: 契约合成失败（${String((error as Error)?.message ?? error)}）`);
+	}
 	const contract = normalizeContract(contractOut, { seed: text.slice(0, 200) });
 	if (!contract) throw new Error("distill: 契约输出缺少 displayName 或 promptText");
 
@@ -245,7 +251,7 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 		corpus = sanitizeCorpus(mined.pairs);
 	} else {
 		const corpusPrompt = buildCorpusPrompt({ speaker: mined.speaker, displayName: contract.displayName, lines: mined.lines, hint: input.hint, mixed: mined.mixed });
-		const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS);
+		const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS).catch(() => null);
 		corpus = Array.isArray(corpusOut) ? sanitizeCorpus(corpusOut) : [];
 	}
 

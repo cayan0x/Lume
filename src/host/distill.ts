@@ -47,8 +47,8 @@ export interface DistillInput {
 export interface DistillDeps {
 	/** 当前可用的 LLM 路由；null = 模型不可用，直接失败。 */
 	route: () => LlmRoute | null;
-	/** 用给定路由执行一次 LLM 调用；返回 null 表示调用失败。 */
-	call: (route: LlmRoute, system: string, userText: string, maxTokens: number) => Promise<string | null>;
+	/** 用给定路由执行一次 LLM 调用；返回 null 表示调用失败。signal 中止时抛 AbortError。 */
+	call: (route: LlmRoute, system: string, userText: string, maxTokens: number, signal?: AbortSignal) => Promise<string | null>;
 	logger?: { warn?: (message: string, error?: unknown) => void };
 }
 
@@ -209,23 +209,24 @@ export function normalizeContract(raw: unknown, opts: { seed: string }): { key: 
 // ── 管线编排 ────────────────────────────────────────────────────────────────
 
 /** 带一次重试的 JSON 调用：解析失败时把原始输出片段带进错误信息，UI 可见。 */
-async function callJson(deps: DistillDeps, route: LlmRoute, system: string, userText: string, maxTokens: number): Promise<unknown> {
-	const first = await deps.call(route, system, userText, maxTokens);
+async function callJson(deps: DistillDeps, route: LlmRoute, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<unknown> {
+	const first = await deps.call(route, system, userText, maxTokens, signal);
 	if (first === null) throw new Error("LLM 调用失败（无输出）");
 	const parsed = parseJsonLoose<unknown>(first);
 	if (parsed !== null) return parsed;
 	deps.logger?.warn?.(`distill: 第一次输出无法解析为 JSON，重试一次。原始输出前 200 字：${first.slice(0, 200).replace(/\n/g, "⏎")}`);
-	const second = await deps.call(route, `${system}\n\n补充：上一次输出无法解析。必须严格只输出一个合法 JSON（对象或数组），不要有任何解释、围栏或多余文本。`, userText, maxTokens);
+	const second = await deps.call(route, `${system}\n\n补充：上一次输出无法解析。必须严格只输出一个合法 JSON（对象或数组），不要有任何解释、围栏或多余文本。`, userText, maxTokens, signal);
 	if (second === null) throw new Error(`LLM 调用失败（无输出）`);
 	const retried = parseJsonLoose<unknown>(second);
 	if (retried !== null) return retried;
 	throw new Error(`模型输出无法解析为 JSON。原始输出片段：${second.slice(0, 300).replace(/\n/g, "⏎")}`);
 }
 
-export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void): Promise<DistilledCard> {
+export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void, signal?: AbortSignal): Promise<DistilledCard> {
 	const text = input.text.trim();
 	if (!text) throw new Error("distill: 素材为空");
 	if (text.length > DISTILL_TEXT_CAP) throw new Error(`distill: 素材超过 ${DISTILL_TEXT_CAP} 字上限`);
+	if (signal?.aborted) throw new Error("distill: 已取消");
 	const route = deps.route();
 	if (!route) throw new Error("distill: 模型路由不可用");
 
@@ -237,7 +238,7 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint });
 	let contractOut: unknown;
 	try {
-		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS);
+		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS, signal);
 	} catch (error) {
 		throw new Error(`distill: 契约合成失败（${String((error as Error)?.message ?? error)}）`);
 	}
@@ -251,7 +252,7 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 		corpus = sanitizeCorpus(mined.pairs);
 	} else {
 		const corpusPrompt = buildCorpusPrompt({ speaker: mined.speaker, displayName: contract.displayName, lines: mined.lines, hint: input.hint, mixed: mined.mixed });
-		const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS).catch(() => null);
+		const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS, signal).catch(() => null);
 		corpus = Array.isArray(corpusOut) ? sanitizeCorpus(corpusOut) : [];
 	}
 
@@ -262,12 +263,14 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 
 export interface DistillJob {
 	id: string;
-	status: "running" | "done" | "error";
+	status: "running" | "done" | "error" | "cancelled";
 	/** 当前阶段（mining → contract → corpus）；done/error 后不再变化。 */
 	stage?: DistillStage;
 	card?: DistilledCard;
 	error?: string;
 	at: number;
+	/** 中止控制器：cancel() 时 abort，runDistill 的 LLM 调用随之中断。 */
+	controller?: AbortController;
 }
 
 let jobSeq = 0;
@@ -289,21 +292,33 @@ export class DistillJobRunner {
 		if (text.length > DISTILL_TEXT_CAP) throw new Error(`素材超过 ${DISTILL_TEXT_CAP} 字上限`);
 		this.#sweep();
 		const id = `distill-${Date.now().toString(36)}-${++jobSeq}`;
-		const job: DistillJob = { id, status: "running", at: Date.now(), stage: "mining" };
+		const controller = new AbortController();
+		const job: DistillJob = { id, status: "running", at: Date.now(), stage: "mining", controller };
 		this.#jobs.set(id, job);
 		void runDistill(this.#deps, { text, hint: input.hint }, (stage) => {
 			job.stage = stage;
-		})
+		}, controller.signal)
 			.then((card) => {
 				job.status = "done";
 				job.card = card;
 			})
 			.catch((error) => {
+				// 用户主动取消不算失败：status 已由 cancel() 置为 cancelled
+				if (job.status === "cancelled") return;
 				job.status = "error";
 				job.error = String((error as Error)?.message ?? error);
 				this.#deps.logger?.warn?.(`distill: 任务 ${id} 失败`, error);
 			});
 		return id;
+	}
+
+	/** 取消运行中的任务；未知/已结束的任务返回 false。 */
+	cancel(id: string): boolean {
+		const job = this.#jobs.get(id);
+		if (!job || job.status !== "running") return false;
+		job.status = "cancelled";
+		job.controller?.abort();
+		return true;
 	}
 
 	/** 轮询任务；未知或已过期返回 null。 */

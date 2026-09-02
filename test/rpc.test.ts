@@ -146,6 +146,15 @@ describe("createLumeRpcHandler", () => {
 		expect(await handle("distillStart", { text: "a".repeat(20_001) })).toMatchObject({ ok: false, error: { code: "bad-request" } });
 	});
 
+	it("distillCancel cancels a running job and validates input", async () => {
+		const { distill, handle } = makeHarness();
+		const started = await handle("distillStart", { text: "晚晴：交给我。" });
+		const jobId = (started as { value: { jobId: string } }).value.jobId;
+		expect(await handle("distillCancel", { jobId })).toEqual({ ok: true, value: { cancelled: expect.any(Boolean) } });
+		expect(distill!.status(jobId)?.status).toBe("cancelled");
+		expect(await handle("distillCancel", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
+	});
+
 	it("distill endpoints degrade when the runner is unavailable", async () => {
 		const { handle } = makeHarness({ withDistill: false });
 		expect(await handle("distillStart", { text: "x" })).toMatchObject({ ok: false, error: { code: "storage-unavailable" } });

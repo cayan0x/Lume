@@ -185,6 +185,37 @@ describe("DistillJobRunner", () => {
 		expect(() => runner.start({ text: "a".repeat(DISTILL_TEXT_CAP + 1) })).toThrow("上限");
 	});
 
+	it("cancel aborts a running job without marking it failed", async () => {
+		let aborted = false;
+		const deps: DistillDeps = {
+			route: () => ({ provider: "test", model: "test-model" }),
+			call: async (_route, _system, _userText, _maxTokens, signal) => {
+				await new Promise<void>((resolve, reject) => {
+					signal?.addEventListener("abort", () => {
+						aborted = true;
+						reject(new Error("aborted"));
+					});
+					setTimeout(resolve, 60_000);
+				});
+				return null;
+			},
+		};
+		const runner = new DistillJobRunner(deps);
+		const id = runner.start({ text: SOURCE });
+		expect(runner.cancel(id)).toBe(true);
+		expect(runner.cancel(id)).toBe(false); // 二次取消返回 false
+		expect(runner.status(id)?.status).toBe("cancelled");
+		await vi.waitFor(() => expect(aborted).toBe(true));
+		// 取消不算失败：status 保持 cancelled，无 error
+		expect(runner.status(id)?.status).toBe("cancelled");
+		expect(runner.status(id)?.error).toBeUndefined();
+	});
+
+	it("cancel returns false for unknown or finished jobs", () => {
+		const runner = new DistillJobRunner(depsWith([]));
+		expect(runner.cancel("distill-nope")).toBe(false);
+	});
+
 	it("returns null for unknown jobs", () => {
 		const runner = new DistillJobRunner(depsWith([]));
 		expect(runner.status("distill-nope")).toBeNull();

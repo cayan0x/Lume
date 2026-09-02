@@ -43,6 +43,8 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const [savedName, setSavedName] = useState("");
 	const [stage, setStage] = useState<DistillStage | null>(null);
 	const [showComplete, setShowComplete] = useState(false);
+	/** 运行中点击 ✕ 时的确认条；确认后取消任务并关闭。 */
+	const [confirmClose, setConfirmClose] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
 
 	// 关闭即重置（saved 的确认文案显示到关闭为止）
@@ -53,10 +55,23 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setError(null);
 			setStage(null);
 			setShowComplete(false);
+			setConfirmClose(false);
 			setChatSpeakers(null);
 			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [] });
 		}
 	}, [open]);
+
+	/** 运行中关闭：先确认，确认后取消宿主任务再关。 */
+	const cancelRunning = async () => {
+		if (jobId) {
+			try {
+				await callRpc("distillCancel", { jobId });
+			} catch {
+				/* 任务可能已结束，忽略 */
+			}
+		}
+		onClose();
+	};
 
 	// 轮询：running 态每 2s 问一次宿主
 	useEffect(() => {
@@ -153,10 +168,13 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	};
 
 	const title = phase === "preview" ? t("distill.preview.title") : t("distill.title");
+	const running = phase === "running";
 	return (
 		<Modal
 			open={open}
-			onClose={onClose}
+			// 运行中：遮罩点击与 Escape 全部失效，只能走自绘 ✕ → 确认条（headless 模式自己画头部）
+			onClose={running ? () => {} : onClose}
+			headless={running}
 			title={title}
 			description={phase === "input" ? t("distill.description") : undefined}
 			footer={
@@ -175,7 +193,82 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 				) : undefined
 			}
 		>
-			{phase === "input" ? (
+			{running ? (
+				<div>
+					<div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: "1px solid var(--color-border, #333)" }}>
+						<span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{title}</span>
+						<button
+							type="button"
+							aria-label={t("distill.close.aria")}
+							onClick={() => setConfirmClose(true)}
+							style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--color-text-secondary, #999)", padding: "2px 6px" }}
+						>
+							✕
+						</button>
+					</div>
+					<div style={{ padding: "20px 0 24px", textAlign: "center" }}>
+						<div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginBottom: 12 }}>
+							{STAGE_ORDER.map((s, i) => {
+								const idx = stage ? STAGE_ORDER.indexOf(stage) : -1;
+								const done = STAGE_ORDER.indexOf(s) < idx;
+								const active = STAGE_ORDER.indexOf(s) === idx;
+								const dotColor = done
+									? "var(--color-success, #4caf50)"
+									: active
+										? "var(--color-accent, #7c8cf8)"
+										: "var(--color-border, #444)";
+								const dotBg = done ? dotColor : active ? dotColor : "transparent";
+								const dotBorder = done ? dotColor : active ? dotColor : "var(--color-border, #444)";
+								return (
+									<div key={s} style={{ display: "flex", alignItems: "center", gap: 0 }}>
+										<div
+											style={{
+												width: 12,
+												height: 12,
+												borderRadius: "50%",
+												background: dotBg,
+												border: `2px solid ${dotBorder}`,
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "center",
+												transition: "all 0.3s ease",
+											}}
+										>
+											{done ? (
+												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>✓</span>
+											) : active ? (
+												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>●</span>
+											) : null}
+										</div>
+										{i < STAGE_ORDER.length - 1 && (
+											<div
+												style={{
+													width: 40,
+													height: 2,
+													background: done ? "var(--color-success, #4caf50)" : "var(--color-border, #444)",
+													transition: "background 0.3s ease",
+												}}
+											/>
+										)}
+									</div>
+								);
+							})}
+						</div>
+						<div style={{ fontSize: 13, opacity: 0.8 }}>
+							{stage ? t(`distill.stage.${stage}`) : t("distill.running")}
+						</div>
+						{confirmClose ? (
+							<div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--color-warning, #e6a23c)", background: "rgba(230,162,60,0.08)" }}>
+								<div style={{ fontSize: 12.5, marginBottom: 10, color: "var(--color-text, #ddd)" }}>{t("distill.close.confirm")}</div>
+								<div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+									<Button size="sm" variant="ghost" onClick={() => setConfirmClose(false)}>{t("distill.close.keep")}</Button>
+									<Button size="sm" variant="primary" onClick={() => void cancelRunning()}>{t("distill.close.stop")}</Button>
+								</div>
+							</div>
+						) : null}
+					</div>
+				</div>
+			) : phase === "input" ? (
 				<div>
 					<label style={labelStyle}>{t("distill.text.label")}</label>
 					<textarea
@@ -229,60 +322,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 						</>
 					)}
 				</div>
-) : phase === "running" ? (
-					<div style={{ padding: "20px 0 24px", textAlign: "center" }}>
-						<div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginBottom: 12 }}>
-							{STAGE_ORDER.map((s, i) => {
-								const idx = stage ? STAGE_ORDER.indexOf(stage) : -1;
-								const done = STAGE_ORDER.indexOf(s) < idx;
-								const active = STAGE_ORDER.indexOf(s) === idx;
-								const dotColor = done
-									? "var(--color-success, #4caf50)"
-									: active
-										? "var(--color-accent, #7c8cf8)"
-										: "var(--color-border, #444)";
-								const dotBg = done ? dotColor : active ? dotColor : "transparent";
-								const dotBorder = done ? dotColor : active ? dotColor : "var(--color-border, #444)";
-								return (
-									<div key={s} style={{ display: "flex", alignItems: "center", gap: 0 }}>
-										<div
-											style={{
-												width: 12,
-												height: 12,
-												borderRadius: "50%",
-												background: dotBg,
-												border: `2px solid ${dotBorder}`,
-												display: "flex",
-												alignItems: "center",
-												justifyContent: "center",
-												transition: "all 0.3s ease",
-											}}
-										>
-											{done ? (
-												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>✓</span>
-											) : active ? (
-												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>●</span>
-											) : null}
-										</div>
-										{i < STAGE_ORDER.length - 1 && (
-											<div
-												style={{
-													width: 40,
-													height: 2,
-													background: done ? "var(--color-success, #4caf50)" : "var(--color-border, #444)",
-													transition: "background 0.3s ease",
-												}}
-											/>
-										)}
-									</div>
-								);
-							})}
-						</div>
-						<div style={{ fontSize: 13, opacity: 0.8 }}>
-							{stage ? t(`distill.stage.${stage}`) : t("distill.running")}
-						</div>
-					</div>
-				) : phase === "preview" ? (
+			) : phase === "preview" ? (
 					<div>
 						{showComplete ? (
 							<div

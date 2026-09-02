@@ -228,8 +228,8 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		ctx.logger?.warn?.("lume: llmRoute 初始化失败 — 蒸馏/提取在对话前不可用");
 	})();
 
-	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。 */
-	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number): Promise<string | null> {
+	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。signal 中止时抛错。 */
+	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<string | null> {
 		if (!route) return null;
 		const llm = ctx.get("llm");
 		if (!llm) return null;
@@ -241,7 +241,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				}),
 			];
 			const assembler = new BlockAssembler();
-			for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens })) {
+			for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, ...(signal ? { signal } : {}) })) {
 				assembler.push(chunk);
 			}
 			return assembler
@@ -253,6 +253,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				.join(" ")
 				.trim();
 		} catch (error) {
+			if (signal?.aborted) throw error; // 用户取消：向上抛，任务状态走 cancelled
 			ctx.logger?.warn?.("lume: 小模型调用失败，本轮跳过", error);
 			return null;
 		}
@@ -306,7 +307,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	/** 蒸馏任务 Runner：素材文本 → 角色卡（契约+语料）。路由可配专用档（distillProvider/Model），默认跟随主对话。 */
 	const distillRunner = new DistillJobRunner({
 		route: () => resolveAuxRoute(distillRouteOverride, llmRoute),
-		call: (route, system, userText, maxTokens) => callLlm(route, system, userText, maxTokens),
+		call: (route, system, userText, maxTokens, signal) => callLlm(route, system, userText, maxTokens, signal),
 		logger: ctx.logger,
 	});
 

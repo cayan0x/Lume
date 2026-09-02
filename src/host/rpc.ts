@@ -10,6 +10,7 @@
  * - deleteCustomPersona → 删除自定义人设（内置拒绝，identity 层再拦一道）
  * - distillStart        → 投递蒸馏任务 {text, hint?} → {jobId}（素材上限校验在 Runner）
  * - distillStatus       → 轮询任务 {jobId} → DistillJob | null（null = 未知/过期）
+ * - distillCancel       → 取消运行中的任务 {jobId} → {cancelled}（中止 LLM 调用）
  * - saveCustomPersona   → 保存蒸馏/编辑产出的自定义人设（含语料；upsert，内置拒绝）
  * - getCustomPersona    → 自定义人设完整记录（管理弹窗编辑用；内置/不存在报 unknown-persona）
  * - exportPersona       → 导出人设卡 {personaName, includeMemory} → 完整 bundle（含内置）
@@ -124,6 +125,12 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				const jobId = requireString(payload, "jobId");
 				if (!jobId) return { ok: false, error: { code: "bad-request", message: "jobId is required" } };
 				return { ok: true, value: distill.status(jobId) };
+			}
+			case "distillCancel": {
+				if (!distill) return { ok: false, error: { code: "storage-unavailable", message: "distill runner unavailable" } };
+				const jobId = requireString(payload, "jobId");
+				if (!jobId) return { ok: false, error: { code: "bad-request", message: "jobId is required" } };
+				return { ok: true, value: { cancelled: distill.cancel(jobId) } };
 			}
 			case "saveCustomPersona": {
 				if (!identity) return { ok: false, error: { code: "storage-unavailable", message: "identity store unavailable" } };

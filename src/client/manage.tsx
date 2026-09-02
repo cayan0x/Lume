@@ -48,7 +48,7 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 	const [notice, setNotice] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [editing, setEditing] = useState<{ name: string; card: FullCard } | null>(null);
-	const [exporting, setExporting] = useState<string | null>(null);
+	const [exportTarget, setExportTarget] = useState<{ name: string; label: string } | null>(null);
 	const [includeMemory, setIncludeMemory] = useState(false);
 	const [memoryOpen, setMemoryOpen] = useState(false);
 	const [memoryTarget, setMemoryTarget] = useState<{ name: string; label: string }>({ name: "", label: "" });
@@ -61,7 +61,7 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			setNotice(null);
 			setError(null);
 			setEditing(null);
-			setExporting(null);
+			setExportTarget(null);
 			setIncludeMemory(false);
 		}
 	}, [open]);
@@ -130,7 +130,7 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			if (res?.ok && res.value) {
 				const bundle = res.value as Record<string, unknown>;
 				downloadJson(`${name}.lume.json`, bundle);
-				setExporting(null);
+				setExportTarget(null);
 				setNotice(t("manage.exported", { persona: name }));
 			} else {
 				setError(t("distill.failed", { message: "rejected" }));
@@ -190,14 +190,29 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 					<Button variant="primary" onClick={onClose}>{t("manage.close")}</Button>
 				)
 			}
-		>
-			{phase === "list" ? (
-				<div>
-					<div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-						<input ref={fileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => void doImport(e.target.files?.[0])} />
-						<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("manage.import")}</Button>
-					</div>
-					{items.length === 0 ? <div style={{ padding: "16px 0", fontSize: 13, opacity: 0.7 }}>{t("manage.empty")}</div> : null}
+			>
+				{phase === "list" ? (
+					<div>
+						{exportTarget ? (
+							<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", marginBottom: 12, borderRadius: 8, background: "var(--color-bg-2, #1a1b1e)", border: "1px solid var(--color-border, #333)" }}>
+								<div style={{ flex: 1, minWidth: 0 }}>
+									<div style={{ fontSize: 13, fontWeight: 500 }}>{exportTarget.label}</div>
+									<label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 12, opacity: 0.8, cursor: "pointer" }}>
+										<input type="checkbox" checked={includeMemory} onChange={(e) => setIncludeMemory(e.target.checked)} />
+										{t("manage.export.memory")}
+									</label>
+								</div>
+								<div style={{ display: "flex", gap: 8 }}>
+									<Button size="sm" variant="ghost" onClick={() => setExportTarget(null)}>{t("manage.cancel")}</Button>
+									<Button size="sm" variant="primary" onClick={() => void doExport(exportTarget.name)}>{t("manage.export.confirm")}</Button>
+								</div>
+							</div>
+						) : null}
+						<div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+							<input ref={fileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => void doImport(e.target.files?.[0])} />
+							<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("manage.import")}</Button>
+						</div>
+						{items.length === 0 ? <div style={{ padding: "16px 0", fontSize: 13, opacity: 0.7 }}>{t("manage.empty")}</div> : null}
 					{items.map((item) => {
 						const label = item.profileName ?? item.displayName;
 						const isCustom = item.custom === true;
@@ -212,18 +227,7 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 										{item.description || item.name}
 									</div>
 								</div>
-								{exporting === item.name ? (
-									<>
-										<label style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 4 }}>
-											<input type="checkbox" checked={includeMemory} onChange={(e) => setIncludeMemory(e.target.checked)} />
-											{t("manage.export.memory")}
-										</label>
-										<Button size="sm" variant="ghost" onClick={() => setExporting(null)}>{t("manage.cancel")}</Button>
-										<Button size="sm" variant="primary" onClick={() => void doExport(item.name)}>{t("manage.export.confirm")}</Button>
-									</>
-								) : (
-<Button size="sm" variant="outline" onClick={() => { setExporting(item.name); setIncludeMemory(false); }}>{t("manage.export")}</Button>
-									)}
+								<Button size="sm" variant="outline" onClick={() => { setExportTarget({ name: item.name, label: item.profileName ?? item.displayName }); setIncludeMemory(false); }}>{t("manage.export")}</Button>
 									<Button size="sm" variant="outline" onClick={() => { setMemoryTarget({ name: item.name, label: item.profileName ?? item.displayName }); setMemoryOpen(true); }}>{t("memory.title")}</Button>
 									{isCustom ? (
 									<>

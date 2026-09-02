@@ -1,7 +1,7 @@
 {
   "name": "@lume/dsh-plugin",
   "description": "微光 (Lume) — DSH Desktop 增强插件：思维逻辑引擎 + 人设系统",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

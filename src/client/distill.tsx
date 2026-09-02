@@ -8,6 +8,7 @@
 import { Button, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaSample } from "../core/manifest.js";
+import { detectChatLog } from "../core/dialogue-mining.js";
 import { inputStyle, labelStyle } from "./form-styles.js";
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;
@@ -34,6 +35,8 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const [phase, setPhase] = useState<Phase>("input");
 	const [text, setText] = useState("");
 	const [hint, setHint] = useState("");
+	/** 检测到的聊天记录说话人（按消息数降序）；null = 非聊天记录素材。 */
+	const [chatSpeakers, setChatSpeakers] = useState<string[] | null>(null);
 	const [jobId, setJobId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [card, setCard] = useState({ key: "", displayName: "", description: "", promptText: "", corpus: [] as PersonaSample[] });
@@ -50,6 +53,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setError(null);
 			setStage(null);
 			setShowComplete(false);
+			setChatSpeakers(null);
 			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [] });
 		}
 	}, [open]);
@@ -176,7 +180,13 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 					<label style={labelStyle}>{t("distill.text.label")}</label>
 					<textarea
 						value={text}
-						onChange={(e) => setText(e.target.value)}
+						onChange={(e) => {
+							const v = e.target.value;
+							setText(v);
+							const speakers = detectChatLog(v);
+							setChatSpeakers(speakers);
+							if (!speakers) setHint("");
+						}}
 						placeholder={t("distill.text.placeholder")}
 						rows={10}
 						style={{ ...inputStyle, resize: "vertical" }}
@@ -188,8 +198,36 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("distill.file")}</Button>
 						</>
 					</div>
-					<label style={labelStyle}>{t("distill.hint.label")}</label>
-					<Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder={t("distill.hint.placeholder")} />
+					{chatSpeakers && chatSpeakers.length > 0 ? (
+						<>
+							<label style={labelStyle}>{t("distill.chat.who")}</label>
+							<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+								{chatSpeakers.map((name) => (
+									<button
+										key={name}
+										onClick={() => setHint(hint === name ? "" : name)}
+										style={{
+											fontSize: 12,
+											padding: "4px 12px",
+											borderRadius: 999,
+											cursor: "pointer",
+											border: `1px solid ${hint === name ? "var(--color-accent, #7c8cf8)" : "var(--color-border, #444)"}`,
+											background: hint === name ? "var(--color-accent-bg, rgba(124,140,248,0.15))" : "transparent",
+											color: hint === name ? "var(--color-accent, #7c8cf8)" : "var(--color-text, #ddd)",
+										}}
+									>
+										{name}
+									</button>
+								))}
+							</div>
+							<div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>{t("distill.chat.hint")}</div>
+						</>
+					) : (
+						<>
+							<label style={labelStyle}>{t("distill.hint.label")}</label>
+							<Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder={t("distill.hint.placeholder")} />
+						</>
+					)}
 				</div>
 ) : phase === "running" ? (
 					<div style={{ padding: "20px 0 24px", textAlign: "center" }}>

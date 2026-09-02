@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_MINED_LINES, mineDialogue } from "../src/core/dialogue-mining.js";
+import { MAX_MINED_LINES, detectChatLog, mineDialogue, parseChatLog } from "../src/core/dialogue-mining.js";
 
 const NOVEL = `
 林晚晴靠在窗边，手里转着一支钢笔。
@@ -103,5 +103,95 @@ describe("通用行为", () => {
 		const mined = mineDialogue(many);
 		expect(mined.lines.length).toBeLessThanOrEqual(MAX_MINED_LINES);
 		expect(mined.lines[0]).toContain("第0句");
+	});
+});
+
+describe("聊天记录解析", () => {
+	const CHAT = `
+THE
+2026年08月31日 00:40
+[语音] 3"
+
+ AAA煤炭批发蒲先生
+2026年08月31日 00:40
+很多时候，怎么说呢，就是最真实的想法是没办法往外说的
+
+ AAA煤炭批发蒲先生
+2026年08月31日 00:41
+往往在分手的时候，找一个比较体面的理由
+
+ THE
+2026年08月31日 00:42
+[语音] 11"
+
+ AAA煤炭批发蒲先生
+2026年08月31日 00:43
+每个人对孩子看重的程度肯定是不一样的
+
+ THE
+2026年08月31日 00:43
+这完全取决于能力
+
+ THE
+2026年08月31日 00:43
+他能力没有很大的时候也是丁克
+
+ AAA煤炭批发蒲先生
+2026年08月31日 00:44
+正常看能力，那多大的能力算有能力呢
+
+ AAA煤炭批发蒲先生
+2026年08月31日 00:47
+[图片] 微信图片_20260902233244_3759.jpg 
+￼
+ 
+
+ THE
+2026年08月31日 00:50
+我要睡了！！
+`;
+
+	it("detects chat-log structure and lists speakers by frequency", () => {
+		const speakers = detectChatLog(CHAT);
+		expect(speakers).not.toBeNull();
+		expect(speakers![0]).toBe("AAA煤炭批发蒲先生");
+		expect(speakers).toContain("THE");
+	});
+
+	it("parses messages and strips placeholders", () => {
+		const chat = parseChatLog(CHAT);
+		expect(chat).not.toBeNull();
+		const texts = chat!.messages.map((m) => m.text).join("\n");
+		expect(texts).toContain("最真实的想法是没办法往外说的");
+		expect(texts).toContain("我要睡了！！");
+		expect(texts).not.toContain("语音");
+		expect(texts).not.toContain("微信图片");
+		expect(texts).not.toContain("￼");
+	});
+
+	it("mines target speaker lines and real user→target pairs", () => {
+		const mined = mineDialogue(CHAT, "AAA煤炭批发蒲先生");
+		expect(mined.kind).toBe("chat");
+		expect(mined.speaker).toBe("AAA煤炭批发蒲先生");
+		expect(mined.lines.some((l) => l.includes("每个人对孩子看重的程度"))).toBe(true);
+		// 用户侧消息归 otherLines
+		expect(mined.otherLines).toContain("这完全取决于能力");
+		// 真实对话对：用户消息紧跟目标消息
+		expect(mined.pairs?.length).toBeGreaterThan(0);
+		for (const p of mined.pairs ?? []) {
+			expect(typeof p.user).toBe("string");
+			expect(typeof p.assistant).toBe("string");
+		}
+	});
+
+	it("mines the other speaker when hinted", () => {
+		const mined = mineDialogue(CHAT, "THE");
+		expect(mined.speaker).toBe("THE");
+		expect(mined.lines.some((l) => l.includes("取决于能力"))).toBe(true);
+	});
+
+	it("returns null for non-chat text", () => {
+		expect(detectChatLog("这是一段没有时间戳的普通文字。\n第二行。")).toBeNull();
+		expect(detectChatLog("晚晴：交给我。\n噜噜：好哒～\n晚晴：别慌。")).toBeNull();
 	});
 });

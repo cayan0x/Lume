@@ -197,9 +197,15 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 	if (!contract) throw new Error("distill: 契约输出缺少 displayName 或 promptText");
 
 	onProgress?.("corpus");
-	const corpusPrompt = buildCorpusPrompt({ speaker: mined.speaker, displayName: contract.displayName, lines: mined.lines, hint: input.hint, mixed: mined.mixed });
-	const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS);
-	const corpus = Array.isArray(corpusOut) ? sanitizeCorpus(corpusOut) : [];
+	// 聊天记录模式：真实对话对直接当语料（原样保留本人语气），跳过 LLM 合成
+	let corpus: PersonaSample[];
+	if (mined.kind === "chat" && mined.pairs && mined.pairs.length > 0) {
+		corpus = sanitizeCorpus(mined.pairs);
+	} else {
+		const corpusPrompt = buildCorpusPrompt({ speaker: mined.speaker, displayName: contract.displayName, lines: mined.lines, hint: input.hint, mixed: mined.mixed });
+		const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS);
+		corpus = Array.isArray(corpusOut) ? sanitizeCorpus(corpusOut) : [];
+	}
 
 	return { ...contract, corpus };
 }

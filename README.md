@@ -10,7 +10,7 @@
 人设只影响自然语言表达，不介入思维逻辑，也不影响代码、命令与工具调用的执行结果。
 
 [![CI](https://github.com/cayan0x/Lume/actions/workflows/ci.yml/badge.svg)](https://github.com/cayan0x/Lume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.3.5-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.6-blue)](./CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 *人设系统：内置角色卡、蒸馏与管理入口，以及记忆星图*
@@ -60,8 +60,12 @@
 2. **契约合成**：从语言证据归纳身份、称呼、第一句入戏、emoji 规范、语气词、节奏、立场，附硬性约束与发出前自查。强化规则：泛泛形容词必须转写为可执行的具体规则，素材中有依据的特征予以放大保留
 3. **语料合成**：生成 8 条「用户↔角色」示例对话，优先复用素材原句、保留语气强度，禁止中和为通用回复
 
+### 从聊天记录蒸馏一个人
+
+粘贴微信 / QQ 导出或复制的聊天记录，蒸馏工具会**自动识别时间戳锚点切分说话人**（剔除 [语音] / [图片] / [表情] 等占位符），并在弹窗中列出检测到的说话人供点选——**点选要蒸馏的人，对方的每一句话成为语气样本，你发出的每一句话归为用户侧，真实对话对直接作为语料**，无需 LLM 改写，原汁原味保留本人的说话方式。对话量建议 50 条以上，蒸馏出的角色才足够立体。
+
 - 预览中所有字段可编辑，保存后立即出现在人设菜单
-- 素材经 RPC 以任务制交由宿主后台蒸馏（约 10~90 秒），不进入对话上下文，不影响当前会话
+- 素材经 RPC 以任务制交由宿主后台蒸馏（约 10~90 秒），不进入对话上下文，不影响当前会话；蒸馏过程中弹窗不可误关，关闭需二次确认并会中止任务
 - 素材上限 20,000 字；素材按不可信文本处理，其中出现的任何指令不会被执行
 - 蒸馏路由可通过 `distillProvider` / `distillModel` 指定专用模型档，默认跟随主对话模型
 
@@ -152,7 +156,7 @@
 ### 全新安装（未装过的电脑）
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.3.5
+dsh plugin add github:cayan0x/Lume#v0.3.6
 ```
 
 安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,butler,tsundere,none）` 即表示加载成功。构建产物随仓库发布，此路径不需要 npm 与本地构建。
@@ -162,7 +166,7 @@ dsh plugin add github:cayan0x/Lume#v0.3.5
 重新执行一次安装命令即可升到指定版本，随后**完全重启 DSH（含托盘）**：
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.3.5
+dsh plugin add github:cayan0x/Lume#v0.3.6
 ```
 
 人设选择、记忆与风格数据存放在 `storages/` 目录，升级不会丢失。
@@ -176,7 +180,7 @@ dsh plugin add github:cayan0x/Lume            # 最新 main
 dsh plugin add github:cayan0x/Lume#v0.3.0     # 任意历史标签
 ```
 
-标签与版本的对应关系见 [CHANGELOG](./CHANGELOG.md)。0.3.5 新增导出弹窗 UI 整洁化；0.3.4 新增反思日志、记忆星图、人设卡片导出/导入、提取成功日志，建议始终使用最新标签。
+标签与版本的对应关系见 [CHANGELOG](./CHANGELOG.md)。0.3.6 新增聊天记录蒸馏；0.3.5 导出弹窗 UI 整洁化；0.3.4 反思日志、记忆星图、人设卡片导出/导入，建议始终使用最新标签。
 
 ## 开发
 

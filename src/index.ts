@@ -284,7 +284,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				assistantText,
 				existing.map((f) => f.text),
 			);
-			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute), prompt.system, prompt.userText, 200);
+			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute), prompt.system, prompt.userText, 800);
 			if (output === null) return;
 			st.lastExtractionAt = Date.now();
 			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
@@ -390,7 +390,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						const route = resolveAuxRoute({}, llmRoute);
 						if (!route) return;
 						const prompt = buildReflectionPrompt(turns);
-						const output = await callLlm(route, prompt.system, prompt.userText, 200);
+						const output = await callLlm(route, prompt.system, prompt.userText, 800);
 						if (output === null) return;
 						const score = parseReflectionScore(output);
 						if (!score) return;

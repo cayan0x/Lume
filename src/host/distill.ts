@@ -16,10 +16,13 @@ import type { LlmRoute } from "./extraction.js";
 
 /** 素材文本上限（≈2 万字）；超出由 RPC 层拒绝。 */
 export const DISTILL_TEXT_CAP = 20_000;
-/** 契约合成的输出预算。 */
-export const CONTRACT_TOKENS = 1600;
-/** 语料合成的输出预算。 */
-export const CORPUS_TOKENS = 1200;
+/**
+ * 契约/语料合成的输出预算。推理型模型（如 deepseek-v4-pro）会先输出一段
+ * 推理再输出 JSON——推理也计入 maxTokens，1600 会被推理吃光导致 JSON 截断、
+ * 解析必然失败。预算给足推理 + 输出两部分的量。
+ */
+export const CONTRACT_TOKENS = 4000;
+export const CORPUS_TOKENS = 3000;
 /** 归一上限：与 identity 存储和注入预算对齐。 */
 export const PROMPT_TEXT_CAP = 2000;
 export const DISPLAY_NAME_CAP = 12;
@@ -117,13 +120,29 @@ export function buildCorpusPrompt(input: { speaker: string | null; displayName: 
 
 // ── 输出解析与归一 ──────────────────────────────────────────────────────────
 
-/** 容错 JSON：剥围栏 → 抓首尾括号 → JSON.parse；失败返回 null。 */
+/** 容错 JSON：剥围栏 → 整段解析 → 末尾平衡块回退 → 首尾括号兜底。 */
 export function parseJsonLoose<T>(output: string): T | null {
 	const trimmed = output
 		.trim()
 		.replace(/^```(?:json)?/i, "")
 		.replace(/```$/, "")
 		.trim();
+	// 1) 整段就是合法 JSON（理想情况）
+	try {
+		return JSON.parse(trimmed) as T;
+	} catch {
+		/* 继续 */
+	}
+	// 2) 推理型模型会在 JSON 前后输出推理文本：取「最后一个配对的 {} 块」
+	const tail = extractLastBalanced(trimmed);
+	if (tail !== null) {
+		try {
+			return JSON.parse(tail) as T;
+		} catch {
+			/* 继续 */
+		}
+	}
+	// 3) 兜底：首 { 到末 } 切片（历史行为）
 	const first = Math.min(...["{", "["].map((ch) => trimmed.indexOf(ch)).filter((i) => i >= 0));
 	const last = Math.max(trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]"));
 	if (!Number.isFinite(first) || last <= first) return null;
@@ -132,6 +151,29 @@ export function parseJsonLoose<T>(output: string): T | null {
 	} catch {
 		return null;
 	}
+}
+
+/** 从文本末尾向前找最后一个配对的 {} 块；无配对返回 null。 */
+export function extractLastBalanced(text: string): string | null {
+	let end = text.lastIndexOf("}");
+	while (end !== -1) {
+		let depth = 0;
+		let start = -1;
+		for (let i = end; i >= 0; i--) {
+			const ch = text[i];
+			if (ch === "}") depth++;
+			else if (ch === "{") {
+				depth--;
+				if (depth === 0) {
+					start = i;
+					break;
+				}
+			}
+		}
+		if (start !== -1) return text.slice(start, end + 1);
+		end = text.lastIndexOf("}", end - 1);
+	}
+	return null;
 }
 
 /** 键名归一：小写、非法字符转连字符；彻底不合法时用 seed 哈希兜底。 */

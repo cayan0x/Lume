@@ -45,6 +45,17 @@ describe("parseJsonLoose", () => {
 		expect(parseJsonLoose('前言 {"a":1} 后记')).toEqual({ a: 1 });
 	});
 
+	it("extracts the last balanced object after reasoning text", () => {
+		const reasoning = "用户在问一个技术问题。我需要先分析：{\"thinking\":true}，然后给出结论。";
+		const output = `${reasoning}\n\n{"key":"jade","displayName":"冷语Jade","promptText":"p"}`;
+		expect(parseJsonLoose(output)).toEqual({ key: "jade", displayName: "冷语Jade", promptText: "p" });
+	});
+
+	it("handles reasoning with unbalanced braces in the middle", () => {
+		const output = "分析：代码里出现 { 和 } 符号很正常。\n{\"a\":1}\n总结完毕";
+		expect(parseJsonLoose(output)).toEqual({ a: 1 });
+	});
+
 	it("returns null for garbage", () => {
 		expect(parseJsonLoose("这不是 JSON")).toBeNull();
 		expect(parseJsonLoose('{"a":')).toBeNull();

@@ -9,6 +9,7 @@ import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import z from "@deepseek-ai/schemastery";
 import { zodLike } from "./identity.js";
 import type { IdentityTable } from "./identity.js";
+import { extractLastBalanced } from "./distill.js";
 
 export const LUME_REFLECTION_SPEC = defineDomain({
 	name: "lume_reflection",
@@ -71,14 +72,18 @@ export function buildReflectionPrompt(turns: string[]): { system: string; userTe
 
 export function parseReflectionScore(output: string): ReflectionEntry | null {
 	const trimmed = output.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-	const first = Math.min(...["{", "["].map((ch) => trimmed.indexOf(ch)).filter((i) => i >= 0));
-	const last = Math.max(trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]"));
-	if (!Number.isFinite(first) || last <= first) return null;
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(trimmed.slice(first, last + 1));
+		parsed = JSON.parse(trimmed);
 	} catch {
-		return null;
+		// 推理型模型会在 JSON 前后输出推理文本：取最后一个配对块兜底
+		const tail = extractLastBalanced(trimmed);
+		if (tail === null) return null;
+		try {
+			parsed = JSON.parse(tail);
+		} catch {
+			return null;
+		}
 	}
 	const r = parsed as Record<string, unknown>;
 	const p0 = clampScore(r.p0);

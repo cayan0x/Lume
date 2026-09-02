@@ -140,6 +140,14 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 		}
 	};
 
+	/** 文本变更统一入口：粘贴与文件导入共用，聊天记录检测在此触发。 */
+	const applyText = (value: string) => {
+		setText(value);
+		const speakers = detectChatLog(value);
+		setChatSpeakers(speakers);
+		if (!speakers) setHint("");
+	};
+
 	const importFile = async (file: File | undefined) => {
 		if (!file) return;
 		const content = await file.text();
@@ -148,7 +156,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			return;
 		}
 		setError(null);
-		setText(content);
+		applyText(content);
 	};
 
 	const save = async () => {
@@ -273,13 +281,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 					<label style={labelStyle}>{t("distill.text.label")}</label>
 					<textarea
 						value={text}
-						onChange={(e) => {
-							const v = e.target.value;
-							setText(v);
-							const speakers = detectChatLog(v);
-							setChatSpeakers(speakers);
-							if (!speakers) setHint("");
-						}}
+						onChange={(e) => applyText(e.target.value)}
 						placeholder={t("distill.text.placeholder")}
 						rows={10}
 						style={{ ...inputStyle, resize: "vertical" }}

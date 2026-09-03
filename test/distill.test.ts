@@ -145,9 +145,18 @@ describe("prompt 组装", () => {
 	it("forbids topic-as-personality and derives character from speech attitude", () => {
 		const { system } = buildContractPrompt({ speaker: "蒲先生", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true });
 		expect(system).toContain("禁止把聊天话题定性为性格");
-		expect(system).toContain("说话方式本身就是性格证据");
+		expect(system).toContain("说话方式】推导");
 		expect(system).toContain("【性格画像】");
 		expect(system).toContain("作为聊天对象如何定位");
+	});
+
+	it("requires original-voice anchors and forbids escalated personality labels", () => {
+		const { system } = buildContractPrompt({ speaker: "蒲先生", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true });
+		expect(system).toContain("【原声】");
+		expect(system).toContain("一字不改");
+		expect(system).toContain("禁止把说话特征上升成性格缺陷");
+		expect(system).toContain("没有耐心");
+		expect(system).toContain("模仿优先，概括次之");
 	});
 
 	it("marks mixed material for discrimination", () => {

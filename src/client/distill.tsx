@@ -51,6 +51,10 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const [showComplete, setShowComplete] = useState(false);
 	/** 运行中点击 ✕ 时的确认条；确认后取消任务并关闭。 */
 	const [confirmClose, setConfirmClose] = useState(false);
+	/** 预览阶段正在内联编辑的记忆条目下标；-1 = 无编辑。DSH webview 不支持
+	 * window.prompt（调用直接抛异常，会把整个插件 UI 崩掉），编辑走内联 textarea。 */
+	const [editingIdx, setEditingIdx] = useState(-1);
+	const [editingText, setEditingText] = useState("");
 	const fileRef = useRef<HTMLInputElement>(null);
 
 	const cap = chatSpeakers ? CHAT_TEXT_CAP : TEXT_CAP;
@@ -65,6 +69,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setShowComplete(false);
 			setConfirmClose(false);
 			setChatSpeakers(null);
+			setEditingIdx(-1);
 			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [], memory: undefined });
 		}
 	}, [open]);
@@ -327,14 +332,39 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							{card.memory && card.memory.length > 0 ? (
 								<>
 									<label style={labelStyle}>{t("distill.memory.label", { count: card.memory.length })}</label>
-									<div style={{ maxHeight: 140, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 6 }}>
-										{card.memory.map((m, i) => (
-											<div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
-												<span style={{ flex: 1 }}>🎞️ {m.text}</span>
-												<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: window.prompt(t("distill.memory.edit"), mm.text) ?? mm.text } : mm)) }))} style={miniBtn}>{t("manage.edit")}</button>
-												<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))} style={{ ...miniBtn, color: "#ff6b6b" }}>{t("manage.delete")}</button>
-											</div>
-										))}
+									<div style={{ maxHeight: 180, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 6 }}>
+										{card.memory.map((m, i) =>
+											editingIdx === i ? (
+												<div key={i} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.45)" }}>
+													<textarea
+														value={editingText}
+														onChange={(e) => setEditingText(e.target.value)}
+														rows={2}
+														style={{ ...inputStyle, fontSize: 12, resize: "vertical" }}
+													/>
+													<div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 4 }}>
+														<button type="button" onClick={() => setEditingIdx(-1)} style={miniBtn}>{t("manage.cancel")}</button>
+														<button
+															type="button"
+															disabled={!editingText.trim()}
+															onClick={() => {
+																setCard((c) => ({ ...c, memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: editingText.trim() } : mm)) }));
+																setEditingIdx(-1);
+															}}
+															style={{ ...miniBtn, color: "var(--color-accent, #7c8cf8)" }}
+														>
+															{t("memory.save")}
+														</button>
+													</div>
+												</div>
+											) : (
+												<div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
+													<span style={{ flex: 1 }}>🎞️ {m.text}</span>
+													<button type="button" onClick={() => { setEditingIdx(i); setEditingText(m.text); }} style={miniBtn}>{t("manage.edit")}</button>
+													<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))} style={{ ...miniBtn, color: "#ff6b6b" }}>{t("manage.delete")}</button>
+												</div>
+											),
+										)}
 									</div>
 								</>
 							) : null}

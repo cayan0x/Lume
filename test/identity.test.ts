@@ -86,11 +86,18 @@ describe("IdentityStore custom personas", () => {
 			promptText: "以「傲娇」性格回应……",
 			createdAt: 1,
 		});
+		// 连带数据：删除时应一并清掉（管理弹窗承诺「删除会连带记忆/风格/档案」）
+		await store.addMemory("kaguya", "用户的生日是2月14号", () => false);
+		await store.addStyleRule("kaguya", "少用感叹号", () => false);
+		await store.setProfileName("kaguya", "小K");
 		const listed = store.listCustomPersonas();
 		expect(Object.keys(listed)).toEqual(["kaguya"]);
 		expect(listed.kaguya.displayName).toBe("傲娇");
 		await store.deleteCustomPersona("kaguya");
 		expect(store.listCustomPersonas()).toEqual({});
+		expect(store.getMemory("kaguya")).toEqual([]);
+		expect(store.getStyleRules("kaguya")).toEqual([]);
+		expect(store.getProfileName("kaguya")).toBeNull();
 	});
 
 	it("refuses to shadow or delete builtin personas", async () => {

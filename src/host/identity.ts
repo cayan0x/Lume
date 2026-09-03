@@ -223,6 +223,10 @@ export class IdentityStore {
 
 	async deleteCustomPersona(name: string): Promise<void> {
 		if (BUILTIN_PERSONA_NAMES.has(name)) throw new Error(`cannot delete builtin persona: ${name}`);
+		// 管理弹窗承诺「删除会连带记忆/风格/档案」——四表同键全清，避免孤儿记忆
 		await this.#customTable.delete(name);
+		await this.#memoryTable.delete(name);
+		await this.#styleTable.delete(name);
+		await this.#table.delete(name);
 	}
 }

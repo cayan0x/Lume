@@ -11,7 +11,8 @@
  * react 系与 primitives 为外部 require，由模块图解析。
  */
 import { Menu } from "@deepseek-ai/dsh-client-ui-primitives";
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { DistillModal } from "./distill.js";
 import { ManageModal } from "./manage.js";
 import { orderPersonaItems, resolveLabels } from "./menu.js";
@@ -49,6 +50,21 @@ interface LumeClientCtx {
 
 const DISTILL_ITEM_ID = "lume-distill";
 const MANAGE_ITEM_ID = "lume-manage";
+
+/**
+ * 错误边界：任何子组件渲染异常只隐藏 Lume 的 UI 附件，不让 DSH 整个界面崩掉。
+ * （曾发生：webview 不支持 window.prompt，调用抛异常把插件 UI 整体卸载——
+ * 人设选择按钮与记忆卡一起消失。边界把爆炸范围圈在插件内。）
+ */
+class LumeErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+	state = { failed: false };
+	static getDerivedStateFromError() {
+		return { failed: true };
+	}
+	render() {
+		return this.state.failed ? null : this.props.children;
+	}
+}
 
 function PersonaSelect({ available, load, select, callRpc, t }: PersonaController & { t: Translate }) {
 	const [open, setOpen] = useState(false);
@@ -247,12 +263,16 @@ function apply(ctx: LumeClientCtx) {
 								return conn.rpc.call("/lume", endpoint, payload, void 0);
 							}
 
-							return { available, load, select, callRpc };
+								return { available, load, select, callRpc };
+							},
 						},
-					},
-					PersonaSelect,
-				),
-		);
+						(props: Parameters<typeof PersonaSelect>[0]) => (
+							<LumeErrorBoundary>
+								<PersonaSelect {...props} />
+							</LumeErrorBoundary>
+						),
+					),
+			);
 	});
 }
 

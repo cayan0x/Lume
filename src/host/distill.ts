@@ -124,7 +124,13 @@ export function buildCorpusPrompt(input: { speaker: string | null; displayName: 
 
 // ── 输出解析与归一 ──────────────────────────────────────────────────────────
 
-/** 容错 JSON：剥围栏 → 整段解析 → 末尾平衡块回退 → 首尾括号兜底。 */
+/**
+ * 容错 JSON 提取。推理型模型（deepseek-v4-pro 等）的输出常为
+ * 「推理文本 + JSON + 总结文本」，且推理/总结里可能夹带 {} 字符——
+ * 从末尾向前找块会误匹配总结中的花括号；取首个可解析块又会抢到推理里的
+ * 小 JSON（如 {"thinking":true}）。策略：扫描所有合法平衡块，逐个解析，
+ * 返回「长度最长」的可解析块——真正的契约/语料 JSON 几乎总是最长的。
+ */
 export function parseJsonLoose<T>(output: string): T | null {
 	const trimmed = output
 		.trim()
@@ -137,15 +143,25 @@ export function parseJsonLoose<T>(output: string): T | null {
 	} catch {
 		/* 继续 */
 	}
-	// 2) 推理型模型会在 JSON 前后输出推理文本：取「最后一个配对的 {} 块」
-	const tail = extractLastBalanced(trimmed);
-	if (tail !== null) {
+	// 2) 扫描所有 { 起点（含数组形态用 [），取最长的可解析块
+	let best: T | null = null;
+	let bestLen = -1;
+	for (let i = 0; i < trimmed.length; i++) {
+		const ch = trimmed[i]!;
+		if (ch !== "{" && ch !== "[") continue;
+		const block = extractBalancedAt(trimmed, i);
+		if (block === null) continue;
 		try {
-			return JSON.parse(tail) as T;
+			const parsed = JSON.parse(block) as T;
+			if (block.length > bestLen) {
+				best = parsed;
+				bestLen = block.length;
+			}
 		} catch {
-			/* 继续 */
+			/* 该块不是合法 JSON，跳过 */
 		}
 	}
+	if (best !== null) return best;
 	// 3) 兜底：首 { 到末 } 切片（历史行为）
 	const first = Math.min(...["{", "["].map((ch) => trimmed.indexOf(ch)).filter((i) => i >= 0));
 	const last = Math.max(trimmed.lastIndexOf("}"), trimmed.lastIndexOf("]"));
@@ -157,25 +173,31 @@ export function parseJsonLoose<T>(output: string): T | null {
 	}
 }
 
-/** 从文本末尾向前找最后一个配对的 {} 块；无配对返回 null。 */
-export function extractLastBalanced(text: string): string | null {
-	let end = text.lastIndexOf("}");
-	while (end !== -1) {
-		let depth = 0;
-		let start = -1;
-		for (let i = end; i >= 0; i--) {
-			const ch = text[i];
-			if (ch === "}") depth++;
-			else if (ch === "{") {
-				depth--;
-				if (depth === 0) {
-					start = i;
-					break;
-				}
-			}
+/**
+ * 从给定起点提取一个配对的 {} / [] 块（前向扫描，跳过字符串字面量内的括号）。
+ * 起点没有匹配结束的 } 返回 null。
+ */
+export function extractBalancedAt(text: string, start: number): string | null {
+	const open = text[start];
+	const close = open === "{" ? "}" : open === "[" ? "]" : null;
+	if (start < 0 || close === null) return null;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let i = start; i < text.length; i++) {
+		const ch = text[i]!;
+		if (inString) {
+			if (escaped) { escaped = false; continue; }
+			if (ch === "\\") { escaped = true; continue; }
+			if (ch === '"') inString = false;
+			continue;
 		}
-		if (start !== -1) return text.slice(start, end + 1);
-		end = text.lastIndexOf("}", end - 1);
+		if (ch === '"') { inString = true; continue; }
+		if (ch === open) depth++;
+		else if (ch === close) {
+			depth--;
+			if (depth === 0) return text.slice(start, i + 1);
+		}
 	}
 	return null;
 }

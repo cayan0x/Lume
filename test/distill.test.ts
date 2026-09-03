@@ -5,6 +5,7 @@ import {
 	DistillJobRunner,
 	buildContractPrompt,
 	buildCorpusPrompt,
+	extractBalancedAt,
 	normalizeContract,
 	normalizeKey,
 	parseJsonLoose,
@@ -55,6 +56,21 @@ describe("parseJsonLoose", () => {
 	it("handles reasoning with unbalanced braces in the middle", () => {
 		const output = "分析：代码里出现 { 和 } 符号很正常。\n{\"a\":1}\n总结完毕";
 		expect(parseJsonLoose(output)).toEqual({ a: 1 });
+	});
+
+	it("recovers JSON followed by summary text containing braces", () => {
+		const output = '分析：先看语气。\n{"key":"a","displayName":"打工人","promptText":"p"}\n总结：以上为完整角色卡，字段含义见规范。{}无遗漏。';
+		expect(parseJsonLoose(output)).toEqual({ key: "a", displayName: "打工人", promptText: "p" });
+	});
+
+	it("skips a bogus trailing brace pair and still finds the real JSON", () => {
+		const output = '思考：先看语气。{"key":"a","displayName":"打工人","promptText":"p"}\n注意：{这里不是JSON！} 结尾。';
+		expect(parseJsonLoose(output)).toEqual({ key: "a", displayName: "打工人", promptText: "p" });
+	});
+
+	it("extractBalancedAt respects string literals", () => {
+		const s = '{"a":1,"b":"{not the end}"}';
+		expect(extractBalancedAt(s, 0)).toBe(s);
 	});
 
 	it("returns null for garbage", () => {

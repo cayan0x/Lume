@@ -249,7 +249,7 @@ async function callJson(deps: DistillDeps, route: LlmRoute, system: string, user
 	if (second === null) throw new Error(`LLM 调用失败（无输出）`);
 	const retried = parseJsonLoose<unknown>(second);
 	if (retried !== null) return retried;
-	throw new Error(`模型输出无法解析为 JSON。原始输出片段：${second.slice(0, 300).replace(/\n/g, "⏎")}`);
+	throw new Error(`模型输出无法解析为 JSON（${route.provider}/${route.model}，maxTokens=${maxTokens}）。原始输出片段：${second.slice(0, 300).replace(/\n/g, "⏎")}`);
 }
 
 export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void, signal?: AbortSignal): Promise<DistilledCard> {

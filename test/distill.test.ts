@@ -152,6 +152,16 @@ describe("prompt 组装", () => {
 		expect(userText).toContain("5月16号");
 	});
 
+	it("relationship address terms become contract evidence", () => {
+		const { userText } = buildContractPrompt({
+			speaker: "老公", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true,
+			relationship: { userToTarget: ["老公"], targetToUser: ["亲爱的"] },
+		});
+		expect(userText).toContain("关系称呼线索");
+		expect(userText).toContain("用户如何称呼 TA：「老公」");
+		expect(userText).toContain("TA 如何称呼用户：「亲爱的」");
+	});
+
 	it("forbids topic-as-personality and derives character from speech attitude", () => {
 		const { system } = buildContractPrompt({ speaker: "蒲先生", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true });
 		expect(system).toContain("禁止把聊天话题定性为性格");

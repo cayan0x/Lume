@@ -40,6 +40,14 @@ export interface DialogueMining {
 	 * 候选只是线索（含原文），由 LLM 提炼成记忆条目写入身份域。
 	 */
 	memoryPoints?: string[];
+	/**
+	 * 关系称呼（聊天记录模式）：双方互相怎么叫（「老公/老婆/宝宝」揭示关系定位）。
+	 * userToTarget = 用户如何称呼目标；targetToUser = 目标如何称呼用户。
+	 */
+	relationship?: {
+		userToTarget: string[];
+		targetToUser: string[];
+	};
 }
 
 export const MAX_MINED_LINES = 48;
@@ -278,6 +286,24 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		.map((m) => m.text.slice(0, 160))
 		.slice(0, 12);
 
+	// 关系称呼：双方谁扮演什么角色。微信「备注名/对方昵称」本身即关系线索——
+	// 用户给 TA 的备注是「老公」→ 用户叫 TA 老公（userToTarget）；TA 对用户的称呼
+	// 只能看 TA 消息里的称呼词（「老婆，…」）。消息内容中的称呼词同样计入另一侧。
+	const otherSpeakers = chat.speakers.filter((s) => s !== speaker);
+	const userLines = chat.messages.filter((m) => m.speaker !== speaker).map((m) => m.text);
+	const targetLinesAll = targetLines;
+	const greetingOf = (text: string | undefined): string | null => {
+		if (!text) return null;
+		for (const word of RELATION_WORDS) {
+			if (text.includes(word)) return word;
+		}
+		return null;
+	};
+	// 用户给目标的备注（如「老公」）= 用户如何称呼目标；目标消息里的称呼词（如「老婆」）= 目标如何称呼用户
+	const userToTarget = [...new Set([...RELATION_WORDS.filter((w) => speaker !== null && speaker.includes(w)), ...userLines.map(greetingOf).filter((w): w is string => Boolean(w))])].slice(0, 6);
+	const targetToUser = [...new Set(targetLinesAll.map(greetingOf).filter((w): w is string => Boolean(w)))].slice(0, 6);
+	const relationship = { userToTarget, targetToUser };
+
 	return {
 		speaker,
 		lines: evenSample(targetLines, MAX_MINED_LINES),
@@ -287,8 +313,18 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		mixed: false,
 		pairs,
 		memoryPoints,
+		relationship,
 	};
 }
+
+/** 关系称呼词：出现在对话中即揭示双方关系定位。 */
+const RELATION_WORDS = [
+	"老公", "老婆", "媳妇", "弟妹", "宝宝", "宝贝", "亲爱的",
+	"爸爸", "妈妈", "爸", "妈", "爹", "娘",
+	"哥", "姐", "弟", "妹", "哥哥", "姐姐", "弟弟", "妹妹",
+	"师傅", "师父", "老板", "同事", "闺蜜", "兄弟", "哥们", "姐妹",
+	"女神", "男神", "前男/女友", "前男友", "前女友",
+];
 
 /** 真实事件信号：生日/纪念/年份/岁数/共同经历/对方身份事实/约定。 */
 const MEMORY_EVENT_RE =

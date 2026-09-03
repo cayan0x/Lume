@@ -34,6 +34,8 @@ const TEXT_CAP = 20_000;
 /** 聊天记录素材的宽容上限：原始文本含双人对话+时间戳，噪音过半。 */
 const CHAT_TEXT_CAP = 200_000;
 
+const miniBtn: React.CSSProperties = { background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary, #999)", padding: "2px 4px" };
+
 export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc }) {
 	const [phase, setPhase] = useState<Phase>("input");
 	const [text, setText] = useState("");
@@ -375,10 +377,12 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 					{card.memory && card.memory.length > 0 ? (
 						<>
 							<label style={labelStyle}>{t("distill.memory.label", { count: card.memory.length })}</label>
-							<div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 4 }}>
+							<div style={{ maxHeight: 140, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 6 }}>
 								{card.memory.map((m, i) => (
-									<div key={i} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
-										🎞️ {m.text}
+									<div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
+										<span style={{ flex: 1 }}>🎞️ {m.text}</span>
+										<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: window.prompt(t("distill.memory.edit"), mm.text) ?? mm.text } : mm)) }))} style={miniBtn}>{t("manage.edit")}</button>
+										<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))} style={{ ...miniBtn, color: "#ff6b6b" }}>{t("manage.delete")}</button>
 									</div>
 								))}
 							</div>

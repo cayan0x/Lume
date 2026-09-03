@@ -222,6 +222,32 @@ THE
 		expect(mined.memoryPoints!.some((p) => p.includes("不赞同"))).toBe(false);
 	});
 
+	it("extracts mutual relationship address terms", () => {
+		const REL = `
+ 老公
+ 2026年06月01日 10:00
+ 老公，你今晚回来吃饭吗？
+
+ 老公
+ 2026年06月01日 10:01
+ 老婆，我想你了
+
+ 亲爱的
+ 2026年06月01日 10:02
+ 回！半小时到
+
+ 亲爱的
+ 2026年06月01日 10:03
+ 给你带了奶茶
+`;
+		const mined = mineDialogue(REL, "老公");
+		expect(mined.relationship).toBeDefined();
+		// 用户给目标的备注「老公」= 用户如何称呼目标
+		expect(mined.relationship!.userToTarget).toContain("老公");
+		// 目标消息里称「老婆」= 目标如何称呼用户
+		expect(mined.relationship!.targetToUser).toContain("老婆");
+	});
+
 	it("returns null for non-chat text", () => {
 		expect(detectChatLog("这是一段没有时间戳的普通文字。\n第二行。")).toBeNull();
 		expect(detectChatLog("晚晴：交给我。\n噜噜：好哒～\n晚晴：别慌。")).toBeNull();

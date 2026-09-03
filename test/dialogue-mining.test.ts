@@ -248,6 +248,51 @@ THE
 		expect(mined.relationship!.targetToUser).toContain("老婆");
 	});
 
+	it("builds a two-sided flow with speaker ownership", () => {
+		const CHAT = `
+ 张姨
+ 2026年05月02日 12:00
+ 我记得你生日是5月16号
+
+ THE
+ 2026年05月02日 12:01
+ 好呀好呀，谢谢张姨
+
+ 张姨
+ 2026年05月02日 12:02
+ 你搬完家告诉我一声
+
+ THE
+ 2026年05月02日 12:03
+ 一定一定
+`;
+		const mined = mineDialogue(CHAT, "THE");
+		expect(mined.flow).toBeDefined();
+		// 双方消息都保留，归属正确：THE 的消息 me=true，张姨（用户侧）me=false
+		expect(mined.flow!.some((l) => l.me && l.text.includes("好呀好呀"))).toBe(true);
+		expect(mined.flow!.some((l) => !l.me && l.text.includes("生日是5月16号"))).toBe(true);
+		// 时间顺序保持
+		const texts = mined.flow!.map((l) => l.text);
+		expect(texts.indexOf(texts.find((t) => t.includes("生日"))!)).toBeLessThan(texts.indexOf(texts.find((t) => t.includes("搬完家"))!));
+	});
+
+	it("keeps event-signal messages when the flow budget is exceeded", () => {
+		// 大量普通闲聊（每条约 70 字、上百条，总字数远超预算）+ 事件信号消息：
+		// 抽样后事件消息必须还在，且总字数收敛到预算附近。
+		let chatter = "";
+		for (let i = 0; i < 80; i++) {
+			chatter += `\n THE\n 2026年05月02日 12:0${i % 10}\n 今天天气不错我们随便聊点什么好呢也不知道说啥就多凑几个字让这条消息变得长一点吧第${i}句啦\n\n 张姨\n 2026年05月02日 12:1${i % 10}\n 是啊是啊随便聊聊也挺好的反正现在也没什么事就再多说几句把消息拉长一些吧第${i}句呀\n`;
+		}
+		const CHAT = ` 张姨\n 2026年05月02日 12:00\n 你的入职日期我记一下${chatter}\n THE\n 2026年05月02日 13:00\n 我入职是七夕节当天\n`;
+		const mined = mineDialogue(CHAT, "THE");
+		expect(mined.flow).toBeDefined();
+		const joined = mined.flow!.map((l) => l.text).join("\n");
+		expect(joined).toContain("入职日期");
+		expect(joined).toContain("七夕节当天");
+		// 预算生效：抽样后总字数收敛到预算附近（事件消息必留，允许小幅溢出）
+		expect(joined.length).toBeLessThan(7000);
+	});
+
 	it("returns null for non-chat text", () => {
 		expect(detectChatLog("这是一段没有时间戳的普通文字。\n第二行。")).toBeNull();
 		expect(detectChatLog("晚晴：交给我。\n噜噜：好哒～\n晚晴：别慌。")).toBeNull();

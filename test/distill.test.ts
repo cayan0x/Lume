@@ -7,11 +7,13 @@ import {
 	buildMemoryPrompt,
 	buildStoryPrompt,
 	buildCorpusPrompt,
+	dedupeMemories,
 	extractBalancedAt,
 	normalizeContract,
 	normalizeKey,
 	parseJsonLoose,
 	runDistill,
+	settleMemoryText,
 } from "../src/host/distill.js";
 import type { DistillDeps } from "../src/host/distill.js";
 
@@ -144,13 +146,23 @@ describe("prompt 组装", () => {
 		expect(without.userText).toContain("目标台词");
 	});
 
-	it("memory prompt is prefill-shaped and carries the display name", () => {
-		const { system, userText } = buildMemoryPrompt(["用户的生日是5月16号", "去年一起去过海边"], "张姨");
+	it("memory prompt is prefill-shaped, carries the display name and labels both sides", () => {
+		const { system, userText } = buildMemoryPrompt(
+			[
+				{ me: false, text: "我生日是5月16号" },
+				{ me: true, text: "去年一起去过海边" },
+			],
+			"张姨",
+		);
 		expect(system).toContain("记忆提炼器");
 		expect(system).toContain("「张姨」");
+		expect(system).toContain("说话人归属");
+		expect(system).toContain("同一事件出现多个表述时合并为一条");
 		expect(system).toContain('[{"text":"');
 		expect(system).toContain("第一个字符必须是 [");
 		expect(userText).toContain("5月16号");
+		expect(userText).toContain("用户：");
+		expect(userText).toContain("张姨：");
 	});
 
 	it("relationship address terms become contract evidence", () => {
@@ -163,13 +175,38 @@ describe("prompt 组装", () => {
 		expect(userText).toContain("TA 如何称呼用户：「亲爱的」");
 	});
 
-	it("story prompt adopts the distilled person's perspective", () => {
-		const { system, userText } = buildStoryPrompt(["很多时候，怎么说呢", "每个人对孩子看重的程度不一样"], "AAA煤炭批发蒲先生");
+	it("story prompt adopts the distilled person's perspective over the full flow", () => {
+		const { system, userText } = buildStoryPrompt(
+			[
+				{ me: true, text: "很多时候，怎么说呢" },
+				{ me: false, text: "每个人对孩子看重的程度不一样" },
+			],
+			"AAA煤炭批发蒲先生",
+		);
 		expect(system).toContain("第一人称「我」");
 		expect(system).toContain("AAA煤炭批发蒲先生");
 		expect(system).toContain("只输出一个 JSON 数组");
 		expect(system).toContain('[{"text":"');
+		expect(system).toContain("事实锚定");
 		expect(userText).toContain("每个人对孩子看重");
+		expect(userText).toContain("对方：");
+		expect(userText).toContain("AAA煤炭批发蒲先生：");
+	});
+
+	it("settleMemoryText keeps complete sentences and repairs fragments", () => {
+		expect(settleMemoryText("和对方聊过租房的话题。", 80)).toBe("和对方聊过租房的话题。");
+		// 超过 cap：回退到 cap 内最后一个句末标点
+		expect(settleMemoryText("第一句。第二句太长超了上限。", 6)).toBe("第一句。");
+		// 缺句末标点：补句号而不是丢事实
+		expect(settleMemoryText("用户在台风天的一周里搬家，遇到下雨刮风", 80)).toBe("用户在台风天的一周里搬家，遇到下雨刮风。");
+		expect(settleMemoryText("   ", 80)).toBeNull();
+	});
+
+	it("dedupeMemories merges literal overlaps keeping the longer entry", () => {
+		expect(dedupeMemories([{ text: "用户的入职日期是19号。" }, { text: "用户的入职日期是19号，七夕节当天。" }])).toEqual([
+			{ text: "用户的入职日期是19号，七夕节当天。" },
+		]);
+		expect(dedupeMemories([{ text: "聊过租房。" }, { text: "用户养猫。" }])).toEqual([{ text: "聊过租房。" }, { text: "用户养猫。" }]);
 	});
 
 	it("forbids topic-as-personality and derives character from speech attitude", () => {

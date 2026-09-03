@@ -48,6 +48,18 @@ export interface DialogueMining {
 		userToTarget: string[];
 		targetToUser: string[];
 	};
+	/**
+	 * 完整对话流（聊天记录模式）：双方消息按时间顺序、带归属保留，供记忆提炼。
+	 * 单边台词会丢失「聊了什么」的语境（另一半说了什么、谁说了什么），
+	 * 记忆提炼必须看双边。超预算时成对等距抽样，事件信号消息必留。
+	 */
+	flow?: ChatFlowLine[];
+}
+
+/** 对话流中的一行：me = 目标角色（被蒸馏者），false = 对话另一方（用户）。 */
+export interface ChatFlowLine {
+	me: boolean;
+	text: string;
 }
 
 export const MAX_MINED_LINES = 48;
@@ -66,9 +78,9 @@ const SAID_RE =
 const PRONOUNS = new Set(["她", "他", "它", "你", "我"]);
 
 /** 均匀取样：n 超限时按索引等距抽取，保持时序。 */
-function evenSample(items: string[], n: number): string[] {
+function evenSample<T>(items: T[], n: number): T[] {
 	if (items.length <= n) return items;
-	const out: string[] = [];
+	const out: T[] = [];
 	for (let i = 0; i < n; i++) {
 		out.push(items[Math.floor((i * items.length) / n)]!);
 	}
@@ -314,6 +326,7 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		pairs,
 		memoryPoints,
 		relationship,
+		flow: buildChatFlow(chat.messages, speaker),
 	};
 }
 
@@ -330,6 +343,49 @@ const RELATION_WORDS = [
 const MEMORY_EVENT_RE =
 	/生日|纪念|周年|过完生日|周岁|去[^。，]{0,12}(过|去|玩|旅游)|第一次|那一年|去年|前年|过年|春节|中秋|国庆|跨年|毕业|结婚|认识[^。，]{0,10}年|领养|搬[^。，]{0,6}家|换工作|辞职|入职|生[了过][^。，]{0,8}(孩子|小孩|女儿|儿子)|考[上完研][^。，]{0,8}|我做|我是[^。，]{0,10}(医生|老师|老师|程序员|设计师)|我[在学过][^。，]{0,10}(编程|画画|钢琴|吉他)/;
 export const MEMORY_POINT_CAP = 12;
+
+/** 对话流单条消息字数上限（超限截断，保留开头）。 */
+const FLOW_LINE_CAP = 160;
+/** 对话流总字数预算：聊天记录可达 20 万字，记忆提炼 prompt 吃不下全文；
+ * 超出时按「一问一答」成对等距抽样，事件信号消息必留，保证关键事实不丢。 */
+const FLOW_CHAR_BUDGET = 6000;
+
+/**
+ * 构建记忆提炼用的完整对话流：双方消息按时间顺序、带归属（me）保留。
+ * 抽样策略：事件信号消息（生日/入职/搬家…）一律保留；其余消息在超预算时
+ * 按「一方的消息 + 紧随的另一方消息」成对等距抽取，保住一问一答的语境。
+ */
+function buildChatFlow(messages: ChatMessage[], target: string): ChatFlowLine[] {
+	const tagged = messages.map((m) => ({
+		me: m.speaker === target,
+		text: m.text.length > FLOW_LINE_CAP ? m.text.slice(0, FLOW_LINE_CAP) + "…" : m.text,
+		event: MEMORY_EVENT_RE.test(m.text),
+	}));
+	const total = tagged.reduce((sum, m) => sum + m.text.length, 0);
+	if (total <= FLOW_CHAR_BUDGET) return tagged.map(({ me, text }) => ({ me, text }));
+
+	const keep = new Set<number>();
+	let eventChars = 0;
+	tagged.forEach((m, i) => {
+		if (m.event) {
+			keep.add(i);
+			eventChars += m.text.length;
+		}
+	});
+	// 剩余预算按「对方消息+我的消息」成对抽样（对话天然是问↔答结构）
+	const pairBudget = Math.max(0, FLOW_CHAR_BUDGET - eventChars);
+	const pairs: number[] = [];
+	for (let i = 0; i < tagged.length - 1; i++) {
+		if (keep.has(i) || keep.has(i + 1)) continue;
+		if (tagged[i]!.me !== tagged[i + 1]!.me) pairs.push(i);
+	}
+	const targetPairs = Math.max(1, Math.floor(pairBudget / 80)); // 每对约 80 字
+	for (const start of evenSample(pairs, targetPairs)) {
+		keep.add(start);
+		keep.add(start + 1);
+	}
+	return tagged.filter((_, i) => keep.has(i)).map(({ me, text }) => ({ me, text }));
+}
 
 /** 探测文本是否为聊天记录导出；是则返回说话人列表（供 UI 点选），否则 null。 */
 export function detectChatLog(text: string): string[] | null {

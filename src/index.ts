@@ -254,12 +254,17 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, reasoningEffort: ReasoningEffortId("low"), temperature: 0, ...(signal ? { signal } : {}) })) {
 					assembler.push(chunk);
 				}
-			} catch (error) {
-				// 模型不支持 reasoningEffort：去掉 effort 重发一次（UNSUPPORTED_REASONING_EFFORT）
-				if ((error as { code?: string })?.code === "UNSUPPORTED_REASONING_EFFORT") {
+				// 错误经流内 finish chunk 传输（不 throw）——检查 finish.kind === "error"
+				if (assembler.finish.kind === "error") {
+					const code = (assembler.finish as { failure?: { code?: string } }).failure?.code;
+					if (code !== "UNSUPPORTED_REASONING_EFFORT") throw new Error(String((assembler.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
+					// 不支持 effort：降级无 effort 重发
 					const assembler2 = new BlockAssembler();
 					for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
 						assembler2.push(chunk);
+					}
+					if (assembler2.finish.kind === "error") {
+						throw new Error(String((assembler2.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
 					}
 					return assembler2
 						.blocks()
@@ -271,7 +276,25 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						.join(" ")
 						.trim();
 				}
-				throw error;
+			} catch (error) {
+				// throw 形态的错误：非 UNSUPPORTED 直接抛；是则降级重试
+				if ((error as { code?: string })?.code !== "UNSUPPORTED_REASONING_EFFORT") throw error;
+				const assembler2 = new BlockAssembler();
+				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
+					assembler2.push(chunk);
+				}
+				if (assembler2.finish.kind === "error") {
+					throw new Error(String((assembler2.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
+				}
+				return assembler2
+					.blocks()
+					.map((block: unknown) => {
+						const text = (block as { text?: unknown })?.text;
+						return typeof text === "string" ? text : "";
+					})
+					.filter((text) => text.length > 0)
+					.join(" ")
+					.trim();
 			}
 			const allBlocks = assembler
 				.blocks()

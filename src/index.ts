@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
-import { BlockAssembler, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { BlockAssembler, createUserMessage, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import z from "@deepseek-ai/schemastery";
 import { buildPersonaSection } from "./host/injection.js";
@@ -235,7 +235,9 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 
 	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。signal 中止时抛错。
 	 * 组装时保留全部块（text + reasoning），蒸馏解析需要完整的模型输出——
-	 * 推理型模型可能把 JSON 拆在 reasoning 块尾部，只取 text 会拿到半成品。 */
+	 * 推理型模型可能把 JSON 拆在 reasoning 块尾部，只取 text 会拿到半成品。
+	 * 蒸馏类调用传完整控制参数：reasoningEffort=low（复述风模型常吃 4000+ token 复述指令，低推理显著缩短）、
+	 * temperature=0（稳定）。模型不支持低推理时会抛 UNSUPPORTED_REASONING_EFFORT，捕获降级重试（去掉 effort 重发）。 */
 	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<string | null> {
 		if (!route) return null;
 		const llm = ctx.get("llm");
@@ -248,8 +250,28 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				}),
 			];
 			const assembler = new BlockAssembler();
-			for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, ...(signal ? { signal } : {}) })) {
-				assembler.push(chunk);
+			try {
+				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, reasoningEffort: ReasoningEffortId("low"), temperature: 0, ...(signal ? { signal } : {}) })) {
+					assembler.push(chunk);
+				}
+			} catch (error) {
+				// 模型不支持 reasoningEffort：去掉 effort 重发一次（UNSUPPORTED_REASONING_EFFORT）
+				if ((error as { code?: string })?.code === "UNSUPPORTED_REASONING_EFFORT") {
+					const assembler2 = new BlockAssembler();
+					for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
+						assembler2.push(chunk);
+					}
+					return assembler2
+						.blocks()
+						.map((block: unknown) => {
+							const text = (block as { text?: unknown })?.text;
+							return typeof text === "string" ? text : "";
+						})
+						.filter((text) => text.length > 0)
+						.join(" ")
+						.trim();
+				}
+				throw error;
 			}
 			const allBlocks = assembler
 				.blocks()

@@ -4,6 +4,7 @@ import {
 	DISTILL_TEXT_CAP,
 	DistillJobRunner,
 	buildContractPrompt,
+	buildMemoryPrompt,
 	buildCorpusPrompt,
 	extractBalancedAt,
 	normalizeContract,
@@ -140,6 +141,15 @@ describe("prompt 组装", () => {
 		const without = buildContractPrompt({ speaker: "晚晴", lines: ["目标台词"], otherLines: ["别人的话"], narrative: "", mixed: false, excludeOthers: true });
 		expect(without.userText).not.toContain("别人的话");
 		expect(without.userText).toContain("目标台词");
+	});
+
+	it("memory prompt is prefill-shaped and carries the display name", () => {
+		const { system, userText } = buildMemoryPrompt(["用户的生日是5月16号", "去年一起去过海边"], "张姨");
+		expect(system).toContain("记忆提炼器");
+		expect(system).toContain("「张姨」");
+		expect(system).toContain('[{"text":"');
+		expect(system).toContain("第一个字符必须是 [");
+		expect(userText).toContain("5月16号");
 	});
 
 	it("forbids topic-as-personality and derives character from speech attitude", () => {

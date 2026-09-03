@@ -190,6 +190,38 @@ THE
 		expect(mined.lines.some((l) => l.includes("取决于能力"))).toBe(true);
 	});
 
+	it("extracts real-event memory points from chat logs", () => {
+		const EVENTS = `
+ 张姨
+ 2026年05月02日 12:00
+ 我记得你生日是5月16号，到时候一起去吃饭
+
+ 张姨
+ 2026年05月02日 12:01
+ 去年我们不是一起去海边玩了吗
+
+ 张姨
+ 2026年05月02日 12:02
+ 你搬完家告诉我一声
+
+ 张姨
+ 2026年05月02日 12:03
+ 这个观点我不赞同，我觉得不对
+
+ THE
+ 2026年05月02日 12:04
+ 好呀好呀
+`;
+		const mined = mineDialogue(EVENTS, "张姨");
+		expect(mined.kind).toBe("chat");
+		expect(mined.memoryPoints).toBeDefined();
+		expect(mined.memoryPoints!.some((p) => p.includes("生日"))).toBe(true);
+		expect(mined.memoryPoints!.some((p) => p.includes("海边"))).toBe(true);
+		expect(mined.memoryPoints!.some((p) => p.includes("搬完家"))).toBe(true);
+		// 纯观点不入选
+		expect(mined.memoryPoints!.some((p) => p.includes("不赞同"))).toBe(false);
+	});
+
 	it("returns null for non-chat text", () => {
 		expect(detectChatLog("这是一段没有时间戳的普通文字。\n第二行。")).toBeNull();
 		expect(detectChatLog("晚晴：交给我。\n噜噜：好哒～\n晚晴：别慌。")).toBeNull();

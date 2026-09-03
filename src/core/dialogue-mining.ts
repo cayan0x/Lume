@@ -35,6 +35,11 @@ export interface DialogueMining {
 	 * 仅 kind="chat" 时存在；语料合成会优先复用它们。
 	 */
 	pairs?: Array<{ user: string; assistant: string }>;
+	/**
+	 * 记忆点候选（真实事件类对话）：生日/纪念/共同经历/对方身份事实/约定。
+	 * 候选只是线索（含原文），由 LLM 提炼成记忆条目写入身份域。
+	 */
+	memoryPoints?: string[];
 }
 
 export const MAX_MINED_LINES = 48;
@@ -267,6 +272,12 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		}
 	}
 
+	// 记忆点候选：真实事件类消息（生日/纪念/共同经历/对方的事实/约定）
+	const memoryPoints = chat.messages
+		.filter((m) => MEMORY_EVENT_RE.test(m.text))
+		.map((m) => m.text.slice(0, 160))
+		.slice(0, 12);
+
 	return {
 		speaker,
 		lines: evenSample(targetLines, MAX_MINED_LINES),
@@ -275,8 +286,14 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		kind: "chat",
 		mixed: false,
 		pairs,
+		memoryPoints,
 	};
 }
+
+/** 真实事件信号：生日/纪念/年份/岁数/共同经历/对方身份事实/约定。 */
+const MEMORY_EVENT_RE =
+	/生日|纪念|周年|过完生日|周岁|去[^。，]{0,12}(过|去|玩|旅游)|第一次|那一年|去年|前年|过年|春节|中秋|国庆|跨年|毕业|结婚|认识[^。，]{0,10}年|领养|搬[^。，]{0,6}家|换工作|辞职|入职|生[了过][^。，]{0,8}(孩子|小孩|女儿|儿子)|考[上完研][^。，]{0,8}|我做|我是[^。，]{0,10}(医生|老师|老师|程序员|设计师)|我[在学过][^。，]{0,10}(编程|画画|钢琴|吉他)/;
+export const MEMORY_POINT_CAP = 12;
 
 /** 探测文本是否为聊天记录导出；是则返回说话人列表（供 UI 点选），否则 null。 */
 export function detectChatLog(text: string): string[] | null {

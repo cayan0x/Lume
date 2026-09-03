@@ -142,6 +142,7 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				}
 				const description = (payload as { description?: unknown }).description;
 				const corpus = (payload as { corpus?: unknown }).corpus;
+				const memory = (payload as { memory?: unknown }).memory;
 				const rawCreatedAt = (payload as { createdAt?: unknown }).createdAt;
 				try {
 					await identity.setCustomPersona(name, {
@@ -152,6 +153,16 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 						createdAt: typeof rawCreatedAt === "number" ? rawCreatedAt : Date.now(),
 						corpus: Array.isArray(corpus) ? (corpus as { user: string; assistant: string }[]) : undefined,
 					});
+					// 真实记忆点：蒸馏产出的事件条写入身份域（人设即人——她记得你们的事）
+					if (Array.isArray(memory)) {
+						const facts = identity.getMemory(name);
+						for (const item of memory) {
+							const text = typeof (item as { text?: unknown })?.text === "string" ? (item as { text: string }).text : "";
+							if (!text.trim()) continue;
+							if (facts.some((f) => f.text.includes(text) || text.includes(f.text))) continue;
+							await identity.addMemory(name, text.trim().slice(0, 40), (candidate, all) => all.some((f) => f.text.includes(candidate) || candidate.includes(f.text)));
+						}
+					}
 				} catch (error) {
 					return { ok: false, error: { code: "forbidden", message: String((error as Error)?.message ?? error) } };
 				}

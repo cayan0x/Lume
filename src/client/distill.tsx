@@ -22,6 +22,7 @@ interface DistilledCard {
 	description: string;
 	promptText: string;
 	corpus: PersonaSample[];
+	memory?: Array<{ text: string }>;
 }
 
 type Phase = "input" | "running" | "preview" | "saved";
@@ -42,7 +43,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	/** 用户补充的对方信息（性别/年龄段），可选；蒸馏时作为事实锚点传给宿主。 */
 	const [jobId, setJobId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [card, setCard] = useState({ key: "", displayName: "", description: "", promptText: "", corpus: [] as PersonaSample[] });
+	const [card, setCard] = useState({ key: "", displayName: "", description: "", promptText: "", corpus: [] as PersonaSample[], memory: undefined as Array<{ text: string }> | undefined });
 	const [savedName, setSavedName] = useState("");
 	const [stage, setStage] = useState<DistillStage | null>(null);
 	const [showComplete, setShowComplete] = useState(false);
@@ -62,7 +63,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setShowComplete(false);
 			setConfirmClose(false);
 			setChatSpeakers(null);
-			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [] });
+			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [], memory: undefined });
 		}
 	}, [open]);
 
@@ -98,7 +99,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 					return;
 				}
 				if (job.status === "done" && job.card) {
-					setCard({ ...job.card });
+					setCard({ ...job.card, memory: job.card.memory ?? undefined });
 					setStage("corpus");
 					setPhase("preview");
 					setShowComplete(true);
@@ -168,7 +169,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const save = async () => {
 		setError(null);
 		try {
-			const res = await callRpc("saveCustomPersona", { name: card.key, displayName: card.displayName, description: card.description, promptText: card.promptText, corpus: card.corpus });
+			const res = await callRpc("saveCustomPersona", { name: card.key, displayName: card.displayName, description: card.description, promptText: card.promptText, corpus: card.corpus, ...(card.memory?.length ? { memory: card.memory } : {}) });
 			if (res?.ok) {
 				setSavedName(card.displayName);
 				setPhase("saved");
@@ -371,6 +372,18 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							</div>
 						))}
 					</div>
+					{card.memory && card.memory.length > 0 ? (
+						<>
+							<label style={labelStyle}>{t("distill.memory.label", { count: card.memory.length })}</label>
+							<div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 4 }}>
+								{card.memory.map((m, i) => (
+									<div key={i} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
+										🎞️ {m.text}
+									</div>
+								))}
+							</div>
+						</>
+					) : null}
 				</div>
 			) : (
 				<div style={{ padding: "24px 0", textAlign: "center", fontSize: 13 }}>

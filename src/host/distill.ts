@@ -45,8 +45,6 @@ export interface DistillInput {
 	text: string;
 	/** 用户指定的目标角色名（素材中的称呼）；缺省自动选最高频说话人。 */
 	hint?: string;
-	/** 用户补充的对方信息（性别/年龄段），可选；仅作称呼与语气基准。 */
-	profile?: { gender?: string; ageRange?: string };
 }
 
 export interface DistillDeps {
@@ -67,7 +65,7 @@ export const DISTILL_STAGES: DistillStage[] = ["mining", "contract", "corpus"];
 
 const CONTRACT_STRUCTURE = `【性格画像】从说话态度推导的性格：情绪倾向（喜怒哀乐的触发点与表达强度）、对他人/世界的态度（豁达/计较/温和/尖锐/防备…）、社交距离（亲昵/客气/疏离）、价值观痕迹（看重什么/相信什么）。这里是「人是什么样的人」的核心，直接行为化：什么话他会怎么接、什么情况下他会怎么反应。
 【身份】作为聊天对象如何定位（例如「家常话里的长辈」「有事相商的朋友」「爱斗嘴的损友」），不要写职业/居住地/话题偏好——除非对话内容本身就是长期身份证据。
-【称呼】对用户的称呼与自称（从素材中「对方如何称呼你、自称什么」直接提取；用户补充了性别/年龄则用于确定称呼体系的适配方向）
+【称呼】对用户的称呼与自称（从素材中「对方如何称呼你、自称什么」直接提取）
 【第一句】第一句就完全入戏：先以角色口吻开口，禁止先讲技术内容再在句尾补人设腔
 【emoji】emoji/颜文字使用规范：放哪些情绪高点、用哪几个、上限几个（素材没有就用「不使用 emoji」明确写出）
 【语气词】句尾语气词与口头禅——逐个列出，写明用在什么位置
@@ -88,13 +86,12 @@ const CONTRACT_SYSTEM_HEAD = [
 	"推导方法说明：说话方式本身就是性格证据——语气词密度反映情绪表达习惯，句式长短反映急躁或从容，省略号/反问反映留白与拉扯，称呼与自称反映社交距离，怼人/接茬方式反映亲和或防备。把这些【态度层面的证据】写成具体规则。",
 	"- 泛泛形容词（温柔/可靠/聪明）必须转写成具体行为指令（什么场合说什么称呼、口头禅放句尾哪个位置、emoji 用在哪类情绪点）；",
 	"- 素材中带证据的性格特征要放大保留、宁可鲜明不可平庸；证据不足就保守；",
-	"- 用户如果补了性别/年龄（见素材中的「对方信息」），用作称呼体系与语气基准；没有就当未知，不臆造。",
 	"输出 JSON 字段：key（英文键名，小写字母开头，≤32 字符）、displayName（中文显示名 ≤12 字）、description（一句话简介 ≤60 字）、promptText（风格契约正文 ≤1600 字）。",
 	"promptText 必须包含以下小节（每节一行，格式：【节名】内容）：",
 	CONTRACT_STRUCTURE,
 ].join("\n");
 
-export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean; excludeOthers?: boolean; profile?: { gender?: string; ageRange?: string } }): { system: string; userText: string } {
+export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean; excludeOthers?: boolean }): { system: string; userText: string } {
 	const target = input.hint?.trim() || input.speaker || "目标角色";
 	const linesLabel = input.mixed
 		? "素材台词样本（可能混有多个角色的声音，请依据称呼与口吻甄别目标角色的部分）："
@@ -104,9 +101,6 @@ export function buildContractPrompt(input: { speaker: string | null; lines: stri
 		input.lines.length > 0 ? `${linesLabel}\n${input.lines.map((l) => `- ${l}`).join("\n")}` : "",
 		!input.excludeOthers && input.otherLines.length > 0 ? `其他角色的台词（对照口吻用，不要提炼成目标角色）：\n${input.otherLines.map((l) => `- ${l}`).join("\n")}` : "",
 		input.narrative ? `叙述/设定线索：\n${input.narrative}` : "",
-		input.profile?.gender || input.profile?.ageRange
-			? `对方信息（用户补充，事实锚点，仅用于称呼与语气基准）：\n${[input.profile.gender ? `性别：${input.profile.gender}` : "", input.profile.ageRange ? `年龄段：${input.profile.ageRange}` : ""].filter(Boolean).join("\n")}`
-			: "",
 	]
 		.filter(Boolean)
 		.join("\n\n");
@@ -277,7 +271,7 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 
 	onProgress?.("contract");
 	// 聊天记录点选模式：证据只含目标角色的台词，另一人的对话剔除
-	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint, excludeOthers: mined.kind === "chat", profile: input.profile });
+	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint, excludeOthers: mined.kind === "chat" });
 	let contractOut: unknown;
 	try {
 		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS, signal);

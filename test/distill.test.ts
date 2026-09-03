@@ -150,16 +150,6 @@ describe("prompt 组装", () => {
 		expect(system).toContain("作为聊天对象如何定位");
 	});
 
-	it("carries the user-provided gender/age profile into the contract evidence", () => {
-		const { userText } = buildContractPrompt({
-			speaker: "蒲先生", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true,
-			profile: { gender: "male", ageRange: "mid" },
-		});
-		expect(userText).toContain("性别：male");
-		expect(userText).toContain("年龄段：mid");
-		expect(userText).toContain("对方信息");
-	});
-
 	it("marks mixed material for discrimination", () => {
 		const mixed = buildContractPrompt({ speaker: null, lines: ["x"], otherLines: [], narrative: "", mixed: true });
 		expect(mixed.userText).toContain("多个角色的声音");

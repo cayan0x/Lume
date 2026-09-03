@@ -40,7 +40,6 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	/** 检测到的聊天记录说话人（按消息数降序）；null = 非聊天记录素材。 */
 	const [chatSpeakers, setChatSpeakers] = useState<string[] | null>(null);
 	/** 用户补充的对方信息（性别/年龄段），可选；蒸馏时作为事实锚点传给宿主。 */
-	const [profile, setProfile] = useState<{ gender?: string; ageRange?: string }>({});
 	const [jobId, setJobId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [card, setCard] = useState({ key: "", displayName: "", description: "", promptText: "", corpus: [] as PersonaSample[] });
@@ -63,7 +62,6 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setShowComplete(false);
 			setConfirmClose(false);
 			setChatSpeakers(null);
-			setProfile({});
 			setCard({ key: "", displayName: "", description: "", promptText: "", corpus: [] });
 		}
 	}, [open]);
@@ -135,7 +133,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 				return;
 			}
 		try {
-			const res = await callRpc("distillStart", { text, hint: hint.trim() || undefined, profile: profile.gender || profile.ageRange ? profile : undefined });
+			const res = await callRpc("distillStart", { text, hint: hint.trim() || undefined });
 			if (res?.ok && typeof (res.value as { jobId?: unknown })?.jobId === "string") {
 				setJobId((res.value as { jobId: string }).jobId);
 				setPhase("running");
@@ -324,48 +322,6 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 								))}
 							</div>
 							<div style={{ fontSize: 11, opacity: 0.55, marginTop: 6 }}>{t("distill.chat.hint")}</div>
-							<label style={labelStyle}>{t("distill.profile.gender")}</label>
-							<div style={{ display: "flex", gap: 6 }}>
-								{["male", "female", "other"].map((g) => (
-									<button
-										key={g}
-										type="button"
-										onClick={() => setProfile((p) => ({ ...p, gender: p.gender === g ? undefined : g }))}
-										style={{
-											fontSize: 12,
-											padding: "4px 12px",
-											borderRadius: 999,
-											cursor: "pointer",
-											border: `1px solid ${profile.gender === g ? "var(--color-accent, #7c8cf8)" : "var(--color-border, #444)"}`,
-											background: profile.gender === g ? "var(--color-accent-bg, rgba(124,140,248,0.15))" : "transparent",
-											color: profile.gender === g ? "var(--color-accent, #7c8cf8)" : "var(--color-text, #ddd)",
-										}}
-									>
-										{t(`distill.profile.gender.${g}`)}
-									</button>
-								))}
-							</div>
-							<label style={labelStyle}>{t("distill.profile.age")}</label>
-							<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-								{["teen", "young", "mid", "older"].map((a) => (
-									<button
-										key={a}
-										type="button"
-										onClick={() => setProfile((p) => ({ ...p, ageRange: p.ageRange === a ? undefined : a }))}
-										style={{
-											fontSize: 12,
-											padding: "4px 12px",
-											borderRadius: 999,
-											cursor: "pointer",
-											border: `1px solid ${profile.ageRange === a ? "var(--color-accent, #7c8cf8)" : "var(--color-border, #444)"}`,
-											background: profile.ageRange === a ? "var(--color-accent-bg, rgba(124,140,248,0.15))" : "transparent",
-											color: profile.ageRange === a ? "var(--color-accent, #7c8cf8)" : "var(--color-text, #ddd)",
-										}}
-									>
-										{t(`distill.profile.age.${a}`)}
-									</button>
-								))}
-							</div>
 						</>
 					) : (
 						<>

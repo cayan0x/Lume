@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	CHAT_TEXT_CAP,
 	DISTILL_TEXT_CAP,
 	DistillJobRunner,
 	buildContractPrompt,
@@ -116,6 +117,14 @@ describe("prompt 组装", () => {
 		expect(prompt.system).toContain("禁止把强烈的语气中和成平淡的通用回复");
 	});
 
+	it("excludeOthers drops the other speaker's lines from evidence", () => {
+		const withOthers = buildContractPrompt({ speaker: "晚晴", lines: ["目标台词"], otherLines: ["别人的话"], narrative: "", mixed: false });
+		expect(withOthers.userText).toContain("别人的话");
+		const without = buildContractPrompt({ speaker: "晚晴", lines: ["目标台词"], otherLines: ["别人的话"], narrative: "", mixed: false, excludeOthers: true });
+		expect(without.userText).not.toContain("别人的话");
+		expect(without.userText).toContain("目标台词");
+	});
+
 	it("marks mixed material for discrimination", () => {
 		const mixed = buildContractPrompt({ speaker: null, lines: ["x"], otherLines: [], narrative: "", mixed: true });
 		expect(mixed.userText).toContain("多个角色的声音");
@@ -159,7 +168,11 @@ describe("runDistill", () => {
 
 	it("rejects empty and oversized material", async () => {
 		await expect(runDistill(depsWith([]), { text: "   " })).rejects.toThrow("素材为空");
-		await expect(runDistill(depsWith([]), { text: "a".repeat(DISTILL_TEXT_CAP + 1) })).rejects.toThrow("上限");
+		// 超出聊天记录宽容上限：预检直接拒绝
+		await expect(runDistill(depsWith([]), { text: "a".repeat(CHAT_TEXT_CAP + 1) })).rejects.toThrow("上限");
+		// 非聊天记录形态仍受 2 万字约束（多行文本，挖掘后有内容）
+		const longNovel = Array.from({ length: 300 }, () => "「这是测试台词」她说道。").join("\n");
+		await expect(runDistill(depsWith([]), { text: "x".repeat(DISTILL_TEXT_CAP + 1) + "\n" + longNovel })).rejects.toThrow("上限");
 	});
 });
 
@@ -182,7 +195,7 @@ describe("DistillJobRunner", () => {
 	it("rejects invalid material synchronously", () => {
 		const runner = new DistillJobRunner(depsWith([]));
 		expect(() => runner.start({ text: "  " })).toThrow("素材为空");
-		expect(() => runner.start({ text: "a".repeat(DISTILL_TEXT_CAP + 1) })).toThrow("上限");
+		expect(() => runner.start({ text: "a".repeat(CHAT_TEXT_CAP + 1) })).toThrow("上限");
 	});
 
 	it("cancel aborts a running job without marking it failed", async () => {

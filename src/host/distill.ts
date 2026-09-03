@@ -16,6 +16,9 @@ import type { LlmRoute } from "./extraction.js";
 
 /** 素材文本上限（≈2 万字）；超出由 RPC 层拒绝。 */
 export const DISTILL_TEXT_CAP = 20_000;
+/** 聊天记录素材的上限：原始文本含双人对话+时间戳+昵称，噪音过半，
+ * 挖掘后只取目标角色 ≤48 条台词，故原始输入放宽到 20 万。 */
+export const CHAT_TEXT_CAP = 200_000;
 /**
  * 契约/语料合成的输出预算。推理型模型（如 deepseek-v4-pro）会先输出一段
  * 推理再输出 JSON——推理也计入 maxTokens，1600 会被推理吃光导致 JSON 截断、
@@ -72,14 +75,15 @@ const CONTRACT_STRUCTURE = `【身份】身份与性格内核——写具体的�
 硬性约束：<显示名>只影响自然语言回复；思考方式、推理过程、工具调用、代码内容与一切结构化输出保持精确、朴素，不受性格影响。
 每次发出前自查：去掉代码后，这段话像不像<显示名>说的？第一句就够「她/他」了吗？不够像就按角色卡重写。`;
 
-export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean }): { system: string; userText: string } {
+export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean; excludeOthers?: boolean }): { system: string; userText: string } {
 	const target = input.hint?.trim() || input.speaker || "目标角色";
 	const linesLabel = input.mixed
 		? "素材台词样本（可能混有多个角色的声音，请依据称呼与口吻甄别目标角色的部分）："
 		: `目标角色（${target}）的台词样本：`;
+	// excludeOthers（聊天记录点选模式）：另一人的对话不进入证据，聚焦目标语气
 	const evidence = [
 		input.lines.length > 0 ? `${linesLabel}\n${input.lines.map((l) => `- ${l}`).join("\n")}` : "",
-		input.otherLines.length > 0 ? `其他角色的台词（对照口吻用，不要提炼成目标角色）：\n${input.otherLines.map((l) => `- ${l}`).join("\n")}` : "",
+		!input.excludeOthers && input.otherLines.length > 0 ? `其他角色的台词（对照口吻用，不要提炼成目标角色）：\n${input.otherLines.map((l) => `- ${l}`).join("\n")}` : "",
 		input.narrative ? `叙述/设定线索：\n${input.narrative}` : "",
 	]
 		.filter(Boolean)
@@ -225,7 +229,8 @@ async function callJson(deps: DistillDeps, route: LlmRoute, system: string, user
 export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void, signal?: AbortSignal): Promise<DistilledCard> {
 	const text = input.text.trim();
 	if (!text) throw new Error("distill: 素材为空");
-	if (text.length > DISTILL_TEXT_CAP) throw new Error(`distill: 素材超过 ${DISTILL_TEXT_CAP} 字上限`);
+	// 上限先按聊天记录宽容检查；精确上限在挖掘后按形态判定
+	if (text.length > CHAT_TEXT_CAP) throw new Error(`distill: 素材超过 ${CHAT_TEXT_CAP} 字上限`);
 	if (signal?.aborted) throw new Error("distill: 已取消");
 	const route = deps.route();
 	if (!route) throw new Error("distill: 模型路由不可用");
@@ -233,9 +238,12 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 	onProgress?.("mining");
 	const mined = mineDialogue(text, input.hint);
 	if (mined.lines.length === 0 && !mined.narrative) throw new Error("distill: 素材中没有可分析的内容");
+	// 非聊天记录形态仍受 2 万字约束（聊天记录已由挖掘收敛到 ≤48 条台词）
+	if (mined.kind !== "chat" && text.length > DISTILL_TEXT_CAP) throw new Error(`distill: 素材超过 ${DISTILL_TEXT_CAP} 字上限`);
 
 	onProgress?.("contract");
-	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint });
+	// 聊天记录点选模式：证据只含目标角色的台词，另一人的对话剔除
+	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint, excludeOthers: mined.kind === "chat" });
 	let contractOut: unknown;
 	try {
 		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS, signal);
@@ -289,7 +297,8 @@ export class DistillJobRunner {
 	start(input: DistillInput): string {
 		const text = input.text?.trim() ?? "";
 		if (!text) throw new Error("素材为空");
-		if (text.length > DISTILL_TEXT_CAP) throw new Error(`素材超过 ${DISTILL_TEXT_CAP} 字上限`);
+		// 聊天记录先按 20 万宽容上限放行，精确上限由 runDistill 按形态判定
+		if (text.length > CHAT_TEXT_CAP) throw new Error(`素材超过 ${CHAT_TEXT_CAP} 字上限`);
 		this.#sweep();
 		const id = `distill-${Date.now().toString(36)}-${++jobSeq}`;
 		const controller = new AbortController();

@@ -143,7 +143,7 @@ describe("createLumeRpcHandler", () => {
 	it("distillStart validates input and maps errors to bad-request", async () => {
 		const { handle } = makeHarness();
 		expect(await handle("distillStart", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });
-		expect(await handle("distillStart", { text: "a".repeat(20_001) })).toMatchObject({ ok: false, error: { code: "bad-request" } });
+		expect(await handle("distillStart", { text: "a".repeat(200_001) })).toMatchObject({ ok: false, error: { code: "bad-request" } });
 	});
 
 	it("distillCancel cancels a running job and validates input", async () => {

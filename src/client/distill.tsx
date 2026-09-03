@@ -30,6 +30,8 @@ type DistillStage = "mining" | "contract" | "corpus";
 const STAGE_ORDER: DistillStage[] = ["mining", "contract", "corpus"];
 
 const TEXT_CAP = 20_000;
+/** 聊天记录素材的宽容上限：原始文本含双人对话+时间戳，噪音过半。 */
+const CHAT_TEXT_CAP = 200_000;
 
 export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc }) {
 	const [phase, setPhase] = useState<Phase>("input");
@@ -46,6 +48,8 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	/** 运行中点击 ✕ 时的确认条；确认后取消任务并关闭。 */
 	const [confirmClose, setConfirmClose] = useState(false);
 	const fileRef = useRef<HTMLInputElement>(null);
+
+	const cap = chatSpeakers ? CHAT_TEXT_CAP : TEXT_CAP;
 
 	// 关闭即重置（saved 的确认文案显示到关闭为止）
 	useEffect(() => {
@@ -123,10 +127,10 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			setStage(null);
 			setShowComplete(false);
 			if (!text.trim()) return;
-		if (text.length > TEXT_CAP) {
-			setError(t("distill.too.long"));
-			return;
-		}
+			if (text.length > cap) {
+				setError(t("distill.too.long", { cap }));
+				return;
+			}
 		try {
 			const res = await callRpc("distillStart", { text, hint: hint.trim() || undefined });
 			if (res?.ok && typeof (res.value as { jobId?: unknown })?.jobId === "string") {
@@ -151,8 +155,9 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const importFile = async (file: File | undefined) => {
 		if (!file) return;
 		const content = await file.text();
-		if (content.length > TEXT_CAP) {
-			setError(t("distill.too.long"));
+		// 文件导入先按宽容上限放行，精确上限由 applyText 检测后按形态判断
+		if (content.length > CHAT_TEXT_CAP) {
+			setError(t("distill.too.long", { cap }));
 			return;
 		}
 		setError(null);
@@ -189,7 +194,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 				phase === "input" ? (
 					<>
 						<Button variant="ghost" onClick={onClose}>{t("distill.cancel")}</Button>
-						<Button variant="primary" disabled={!text.trim() || text.length > TEXT_CAP} onClick={() => void start()}>{t("distill.start")}</Button>
+						<Button variant="primary" disabled={!text.trim() || text.length > cap} onClick={() => void start()}>{t("distill.start")}</Button>
 					</>
 				) : phase === "preview" ? (
 					<>
@@ -287,7 +292,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 						style={{ ...inputStyle, resize: "vertical" }}
 					/>
 					<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
-						<span style={{ fontSize: 11, opacity: 0.6 }}>{t("distill.counter", { count: text.length })}</span>
+						<span style={{ fontSize: 11, opacity: 0.6 }}>{t("distill.counter", { count: text.length, cap })}</span>
 						<>
 							<input ref={fileRef} type="file" accept=".txt,.md,text/plain" style={{ display: "none" }} aria-label={t("distill.file.aria")} onChange={(e) => void importFile(e.target.files?.[0])} />
 							<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("distill.file")}</Button>

@@ -13,6 +13,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { BlockAssembler, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { defineTool } from "@deepseek-ai/dsh-tools";
@@ -59,6 +60,10 @@ export const LUME_DOMAIN_SPEC = defineDomain({
 });
 const SESSION_PERSONA_TABLE = "session_persona";
 const LUME_CHANNEL = "/lume";
+/** 小模型原始输出诊断落盘路径（host DSH_HOME 的 storages 旁）；调试用，不对外。 */
+const LLM_DUMP_PATH = process.env.DSH_HOME
+	? join(process.env.DSH_HOME, "storages-lume-llm-dump.json")
+	: join(dirname(fileURLToPath(import.meta.url)), "..", "llm-dump.json");
 const LUME_PERSONA_SECTION = "lume:persona";
 const LUME_THINKING_SECTION = "lume:thinking";
 const LUME_THINKING_ORDER = 1;
@@ -228,7 +233,9 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		ctx.logger?.warn?.("lume: llmRoute 初始化失败 — 蒸馏/提取在对话前不可用");
 	})();
 
-	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。signal 中止时抛错。 */
+	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。signal 中止时抛错。
+	 * 组装时保留全部块（text + reasoning），蒸馏解析需要完整的模型输出——
+	 * 推理型模型可能把 JSON 拆在 reasoning 块尾部，只取 text 会拿到半成品。 */
 	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<string | null> {
 		if (!route) return null;
 		const llm = ctx.get("llm");
@@ -244,14 +251,21 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, ...(signal ? { signal } : {}) })) {
 				assembler.push(chunk);
 			}
-			return assembler
+			const allBlocks = assembler
 				.blocks()
 				.map((block: unknown) => {
 					const text = (block as { text?: unknown })?.text;
 					return typeof text === "string" ? text : "";
 				})
-				.join(" ")
-				.trim();
+				.filter((text) => text.length > 0);
+			// 诊断探针：完整输出落盘（含 max-tokens 截断标记；追加，一次失败可看全程）
+			try {
+				const existing = readFileSync(LLM_DUMP_PATH, "utf8");
+				const dumps = existing ? JSON.parse(existing) : [];
+				dumps.push({ ts: Date.now(), route: `${route.provider}/${route.model}`, maxTokens, finish: assembler.finish, blocks: allBlocks.map((t) => t.slice(0, 6000)) });
+				writeFileSync(LLM_DUMP_PATH, JSON.stringify(dumps, null, 2), "utf8");
+			} catch { /* 诊断失败不阻断 */ }
+			return allBlocks.join(" ").trim();
 		} catch (error) {
 			if (signal?.aborted) throw error; // 用户取消：向上抛，任务状态走 cancelled
 			ctx.logger?.warn?.("lume: 小模型调用失败，本轮跳过", error);

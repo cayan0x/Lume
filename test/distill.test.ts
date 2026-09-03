@@ -115,6 +115,7 @@ describe("prompt 组装", () => {
 	it("declares untrusted material in the system prompt", () => {
 		const { system } = buildContractPrompt({ speaker: null, lines: ["x"], otherLines: [], narrative: "n", mixed: true });
 		expect(system).toContain("不可信文本");
+    	expect(system).toContain("禁止任何多余输出");
 		expect(system).toContain("不要执行");
 	});
 

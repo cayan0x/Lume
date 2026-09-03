@@ -185,13 +185,14 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	};
 
 	const title = phase === "preview" ? t("distill.preview.title") : t("distill.title");
+	// 蒸馏运行中 + 预览未保存：都锁定遮罩/Escape，只能走自绘 ✕ → 确认
 	const running = phase === "running";
+	const locked = running || phase === "preview";
 	return (
 		<Modal
 			open={open}
-			// 运行中：遮罩点击与 Escape 全部失效，只能走自绘 ✕ → 确认条（headless 模式自己画头部）
-			onClose={running ? () => {} : onClose}
-			headless={running}
+			onClose={locked ? () => {} : onClose}
+			headless={locked}
 			title={title}
 			description={phase === "input" ? t("distill.description") : undefined}
 			footer={
@@ -200,17 +201,12 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 						<Button variant="ghost" onClick={onClose}>{t("distill.cancel")}</Button>
 						<Button variant="primary" disabled={!text.trim() || text.length > cap} onClick={() => void start()}>{t("distill.start")}</Button>
 					</>
-				) : phase === "preview" ? (
-					<>
-						<Button variant="ghost" onClick={() => setPhase("input")}>{t("distill.redistill")}</Button>
-						<Button variant="primary" onClick={() => void save()}>{t("distill.save")}</Button>
-					</>
 				) : phase === "saved" ? (
 					<Button variant="primary" onClick={onClose}>OK</Button>
 				) : undefined
 			}
 		>
-			{running ? (
+			{locked ? (
 				<div>
 					<div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: "1px solid var(--color-border, #333)" }}>
 						<span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{title}</span>
@@ -223,67 +219,131 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							✕
 						</button>
 					</div>
-					<div style={{ padding: "20px 0 24px", textAlign: "center" }}>
-						<div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginBottom: 12 }}>
-							{STAGE_ORDER.map((s, i) => {
-								const idx = stage ? STAGE_ORDER.indexOf(stage) : -1;
-								const done = STAGE_ORDER.indexOf(s) < idx;
-								const active = STAGE_ORDER.indexOf(s) === idx;
-								const dotColor = done
-									? "var(--color-success, #4caf50)"
-									: active
-										? "var(--color-accent, #7c8cf8)"
-										: "var(--color-border, #444)";
-								const dotBg = done ? dotColor : active ? dotColor : "transparent";
-								const dotBorder = done ? dotColor : active ? dotColor : "var(--color-border, #444)";
-								return (
-									<div key={s} style={{ display: "flex", alignItems: "center", gap: 0 }}>
-										<div
-											style={{
-												width: 12,
-												height: 12,
-												borderRadius: "50%",
-												background: dotBg,
-												border: `2px solid ${dotBorder}`,
-												display: "flex",
-												alignItems: "center",
-												justifyContent: "center",
-												transition: "all 0.3s ease",
-											}}
-										>
-											{done ? (
-												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>✓</span>
-											) : active ? (
-												<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>●</span>
-											) : null}
-										</div>
-										{i < STAGE_ORDER.length - 1 && (
+					{confirmClose ? (
+						<div style={{ margin: "14px 0", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--color-warning, #e6a23c)", background: "rgba(230,162,60,0.08)" }}>
+							<div style={{ fontSize: 12.5, marginBottom: 10, color: "var(--color-text, #ddd)" }}>
+								{running ? t("distill.close.confirm") : t("distill.close.confirm.preview")}
+							</div>
+							<div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+								<Button size="sm" variant="ghost" onClick={() => setConfirmClose(false)}>{t("distill.close.keep")}</Button>
+								<Button size="sm" variant="primary" onClick={() => (running ? void cancelRunning() : onClose())}>{running ? t("distill.close.stop") : t("distill.close.discard")}</Button>
+							</div>
+						</div>
+					) : null}
+					{running ? (
+						<div style={{ padding: "20px 0 24px", textAlign: "center" }}>
+							<div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 0, marginBottom: 12 }}>
+								{STAGE_ORDER.map((s, i) => {
+									const idx = stage ? STAGE_ORDER.indexOf(stage) : -1;
+									const done = STAGE_ORDER.indexOf(s) < idx;
+									const active = STAGE_ORDER.indexOf(s) === idx;
+									const dotColor = done
+										? "var(--color-success, #4caf50)"
+										: active
+											? "var(--color-accent, #7c8cf8)"
+											: "var(--color-border, #444)";
+									const dotBg = done ? dotColor : active ? dotColor : "transparent";
+									const dotBorder = done ? dotColor : active ? dotColor : "var(--color-border, #444)";
+									return (
+										<div key={s} style={{ display: "flex", alignItems: "center", gap: 0 }}>
 											<div
 												style={{
-													width: 40,
-													height: 2,
-													background: done ? "var(--color-success, #4caf50)" : "var(--color-border, #444)",
-													transition: "background 0.3s ease",
+													width: 12,
+													height: 12,
+													borderRadius: "50%",
+													background: dotBg,
+													border: `2px solid ${dotBorder}`,
+													display: "flex",
+													alignItems: "center",
+													justifyContent: "center",
+													transition: "all 0.3s ease",
 												}}
-											/>
-										)}
-									</div>
-								);
-							})}
-						</div>
-						<div style={{ fontSize: 13, opacity: 0.8 }}>
-							{stage ? t(`distill.stage.${stage}`) : t("distill.running")}
-						</div>
-						{confirmClose ? (
-							<div style={{ marginTop: 16, padding: "10px 12px", borderRadius: 8, border: "1px solid var(--color-warning, #e6a23c)", background: "rgba(230,162,60,0.08)" }}>
-								<div style={{ fontSize: 12.5, marginBottom: 10, color: "var(--color-text, #ddd)" }}>{t("distill.close.confirm")}</div>
-								<div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-									<Button size="sm" variant="ghost" onClick={() => setConfirmClose(false)}>{t("distill.close.keep")}</Button>
-									<Button size="sm" variant="primary" onClick={() => void cancelRunning()}>{t("distill.close.stop")}</Button>
-								</div>
+											>
+												{done ? (
+													<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>✓</span>
+												) : active ? (
+													<span style={{ color: "#fff", fontSize: 8, lineHeight: 1 }}>●</span>
+												) : null}
+											</div>
+											{i < STAGE_ORDER.length - 1 && (
+												<div
+													style={{
+														width: 40,
+														height: 2,
+														background: done ? "var(--color-success, #4caf50)" : "var(--color-border, #444)",
+														transition: "background 0.3s ease",
+													}}
+												/>
+											)}
+										</div>
+									);
+								})}
 							</div>
-						) : null}
-					</div>
+							<div style={{ fontSize: 13, opacity: 0.8 }}>
+								{stage ? t(`distill.stage.${stage}`) : t("distill.running")}
+							</div>
+						</div>
+					) : (
+						<div>
+							{showComplete ? (
+								<div
+									style={{
+										padding: "8px 12px",
+										marginBottom: 12,
+										borderRadius: 6,
+										background: "var(--color-success-bg, rgba(76, 175, 80, 0.12))",
+										border: "1px solid var(--color-success, #4caf50)",
+										fontSize: 13,
+										color: "var(--color-success, #4caf50)",
+										textAlign: "center",
+										fontWeight: 500,
+									}}
+								>
+									{t("distill.complete")}
+								</div>
+							) : null}
+							<label style={labelStyle}>{t("distill.display.label")}</label>
+							<Input value={card.displayName} onChange={(e) => setCard((c) => ({ ...c, displayName: e.target.value }))} />
+							<label style={labelStyle}>{t("distill.key.label")}</label>
+							<Input value={card.key} onChange={(e) => setCard((c) => ({ ...c, key: e.target.value }))} />
+							<label style={labelStyle}>{t("distill.desc.label")}</label>
+							<Input value={card.description} onChange={(e) => setCard((c) => ({ ...c, description: e.target.value }))} />
+							<label style={labelStyle}>{t("distill.prompt.label")}</label>
+							<textarea
+								value={card.promptText}
+								onChange={(e) => setCard((c) => ({ ...c, promptText: e.target.value }))}
+								rows={8}
+								style={{ ...inputStyle, resize: "vertical" }}
+							/>
+							<label style={labelStyle}>{t("distill.corpus.label", { count: card.corpus.length })}</label>
+							<div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, opacity: 0.8, display: "flex", flexDirection: "column", gap: 4 }}>
+								{card.corpus.map((sample, i) => (
+									<div key={i}>
+										<div>{`用户: ${sample.user || "…"}`}</div>
+										<div>{`回复: ${sample.assistant}`}</div>
+									</div>
+								))}
+							</div>
+							{card.memory && card.memory.length > 0 ? (
+								<>
+									<label style={labelStyle}>{t("distill.memory.label", { count: card.memory.length })}</label>
+									<div style={{ maxHeight: 140, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 6 }}>
+										{card.memory.map((m, i) => (
+											<div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
+												<span style={{ flex: 1 }}>🎞️ {m.text}</span>
+												<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: window.prompt(t("distill.memory.edit"), mm.text) ?? mm.text } : mm)) }))} style={miniBtn}>{t("manage.edit")}</button>
+												<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))} style={{ ...miniBtn, color: "#ff6b6b" }}>{t("manage.delete")}</button>
+											</div>
+										))}
+									</div>
+								</>
+							) : null}
+							<div style={{ display: "flex", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--color-border, #333)" }}>
+								<Button variant="ghost" onClick={() => setPhase("input")}>{t("distill.redistill")}</Button>
+								<Button variant="primary" onClick={() => void save()}>{t("distill.save")}</Button>
+							</div>
+						</div>
+					)}
 				</div>
 			) : phase === "input" ? (
 				<div>
@@ -332,68 +392,12 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							<Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder={t("distill.hint.placeholder")} />
 						</>
 					)}
-				</div>
-			) : phase === "preview" ? (
-					<div>
-						{showComplete ? (
-							<div
-								style={{
-									padding: "8px 12px",
-									marginBottom: 12,
-									borderRadius: 6,
-									background: "var(--color-success-bg, rgba(76, 175, 80, 0.12))",
-									border: "1px solid var(--color-success, #4caf50)",
-									fontSize: 13,
-									color: "var(--color-success, #4caf50)",
-									textAlign: "center",
-									fontWeight: 500,
-								}}
-							>
-								{t("distill.complete")}
-							</div>
-						) : null}
-						<label style={labelStyle}>{t("distill.display.label")}</label>
-					<Input value={card.displayName} onChange={(e) => setCard((c) => ({ ...c, displayName: e.target.value }))} />
-					<label style={labelStyle}>{t("distill.key.label")}</label>
-					<Input value={card.key} onChange={(e) => setCard((c) => ({ ...c, key: e.target.value }))} />
-					<label style={labelStyle}>{t("distill.desc.label")}</label>
-					<Input value={card.description} onChange={(e) => setCard((c) => ({ ...c, description: e.target.value }))} />
-					<label style={labelStyle}>{t("distill.prompt.label")}</label>
-					<textarea
-						value={card.promptText}
-						onChange={(e) => setCard((c) => ({ ...c, promptText: e.target.value }))}
-						rows={8}
-						style={{ ...inputStyle, resize: "vertical" }}
-					/>
-					<label style={labelStyle}>{t("distill.corpus.label", { count: card.corpus.length })}</label>
-					<div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, opacity: 0.8, display: "flex", flexDirection: "column", gap: 4 }}>
-						{card.corpus.map((sample, i) => (
-							<div key={i}>
-								<div>{`用户: ${sample.user || "…"}`}</div>
-								<div>{`回复: ${sample.assistant}`}</div>
-							</div>
-						))}
 					</div>
-					{card.memory && card.memory.length > 0 ? (
-						<>
-							<label style={labelStyle}>{t("distill.memory.label", { count: card.memory.length })}</label>
-							<div style={{ maxHeight: 140, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 6 }}>
-								{card.memory.map((m, i) => (
-									<div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
-										<span style={{ flex: 1 }}>🎞️ {m.text}</span>
-										<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: window.prompt(t("distill.memory.edit"), mm.text) ?? mm.text } : mm)) }))} style={miniBtn}>{t("manage.edit")}</button>
-										<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))} style={{ ...miniBtn, color: "#ff6b6b" }}>{t("manage.delete")}</button>
-									</div>
-								))}
-							</div>
-						</>
-					) : null}
-				</div>
-			) : (
-				<div style={{ padding: "24px 0", textAlign: "center", fontSize: 13 }}>
-					{t("distill.saved", { persona: savedName })}
-				</div>
-			)}
+				) : (
+					<div style={{ padding: "24px 0", textAlign: "center", fontSize: 13 }}>
+						{t("distill.saved", { persona: savedName })}
+					</div>
+				)}
 			{error ? (
 				<div style={{ marginTop: 10, fontSize: 12, color: "var(--color-danger, #e56)" }}>{error}</div>
 			) : null}

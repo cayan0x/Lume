@@ -5,6 +5,7 @@ import {
 	DistillJobRunner,
 	buildContractPrompt,
 	buildMemoryPrompt,
+	buildStoryPrompt,
 	buildCorpusPrompt,
 	extractBalancedAt,
 	normalizeContract,
@@ -160,6 +161,15 @@ describe("prompt 组装", () => {
 		expect(userText).toContain("关系称呼线索");
 		expect(userText).toContain("用户如何称呼 TA：「老公」");
 		expect(userText).toContain("TA 如何称呼用户：「亲爱的」");
+	});
+
+	it("story prompt adopts the distilled person's perspective", () => {
+		const { system, userText } = buildStoryPrompt(["很多时候，怎么说呢", "每个人对孩子看重的程度不一样"], "AAA煤炭批发蒲先生");
+		expect(system).toContain("第一人称「我」");
+		expect(system).toContain("AAA煤炭批发蒲先生");
+		expect(system).toContain("只输出一个 JSON 数组");
+		expect(system).toContain('[{"text":"');
+		expect(userText).toContain("每个人对孩子看重");
 	});
 
 	it("forbids topic-as-personality and derives character from speech attitude", () => {

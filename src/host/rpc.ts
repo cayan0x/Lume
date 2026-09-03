@@ -114,8 +114,14 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				if (!text) return { ok: false, error: { code: "bad-request", message: "text is required" } };
 				const rawHint = (payload as { hint?: unknown } | undefined)?.hint;
 				const hint = typeof rawHint === "string" && rawHint.trim() ? rawHint.trim() : undefined;
+				const rawProfile = (payload as { profile?: unknown } | undefined)?.profile;
+				const p = typeof rawProfile === "object" && rawProfile !== null ? rawProfile as { gender?: unknown; ageRange?: unknown } : undefined;
+				const profile =
+					p && (typeof p.gender === "string" && p.gender || typeof p.ageRange === "string" && p.ageRange)
+						? { gender: typeof p.gender === "string" ? p.gender : undefined, ageRange: typeof p.ageRange === "string" ? p.ageRange : undefined }
+						: undefined;
 				try {
-					return { ok: true, value: { jobId: distill.start({ text, hint }) } };
+					return { ok: true, value: { jobId: distill.start({ text, hint, profile }) } };
 				} catch (error) {
 					return { ok: false, error: { code: "bad-request", message: String((error as Error)?.message ?? error) } };
 				}

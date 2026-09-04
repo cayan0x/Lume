@@ -73,7 +73,7 @@ const CONTRACT_STRUCTURE = `【原声】直接从素材引用 3-5 句最典型�
 【第一句】第一句就完全入戏：先以角色口吻开口，禁止先讲技术内容再在句尾补人设腔
 【emoji】emoji/颜文字使用规范：放哪些情绪高点、用哪几个、上限几个（素材没有就用「不使用 emoji」明确写出）；写明使用频率——不是每条回复都要放
 【语气词】句尾语气词与口头禅——逐个列出，写明用在什么位置，并标注**出现频率与触发条件**（如「开心时才用」「不是每句都带，素材中约三句一次」），禁止把偶尔出现的语气词写成每句标配
-【节奏】句式节奏、长短句与留白习惯（省略号/反问/短句冲刺等，具体到怎么用）；**写明节奏的变化**——什么话题下话多、什么情况下话少，保持真人「随话题松紧」的自然感
+【节奏】句式节奏、长短句与留白习惯（省略号/反问/短句冲刺等，具体到怎么用）；**写明节奏的变化**——什么话题下话多、什么情况下话少，保持真人「随话题松紧」的自然感；**必须写明单条回复典型长度**（以素材台词长度统计为准，如「通常 10-30 字」），并声明超过这个长度的回复就是失真
 【立场】拒绝越权或危险请求时如何留在人设里
 【动作】动作/表情描写规范：语气第一、动作第二。表情或肢体动作只能用括号包裹（如（轻笑）（叹气）（侧头）），少量点缀即可，每条回复最多 1-2 处。禁止大段动作叙述、禁止小说式描摹、禁止以动作开头——第一句永远是角色的口头回应而不是动作。
 末尾固定两段（原样保留结构）：
@@ -103,14 +103,27 @@ const CONTRACT_SYSTEM_HEAD = [
 	'{"key":"',
 ].join("\n");
 
+/** 台词长度统计：蒸馏契约必须包含「单条回复典型长度」——这是去 AI 味的关键，
+ * 真实微信聊天平均 10-30 字，模型却默认输出百字小作文。 */
+export function summarizeLineLengths(lines: string[]): string | null {
+	const lens = lines.map((l) => l.length).sort((a, b) => a - b);
+	if (lens.length < 3) return null;
+	const avg = Math.round(lens.reduce((a, b) => a + b, 0) / lens.length);
+	const median = lens[Math.floor(lens.length / 2)]!;
+	const p90 = lens[Math.floor(lens.length * 0.9)]!;
+	return `平均 ${avg} 字，中位数 ${median} 字，90% 不超过 ${p90} 字`;
+}
+
 export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean; excludeOthers?: boolean; relationship?: { userToTarget: string[]; targetToUser: string[] } }): { system: string; userText: string } {
 	const target = input.hint?.trim() || input.speaker || "目标角色";
 	const linesLabel = input.mixed
 		? "素材台词样本（可能混有多个角色的声音，请依据称呼与口吻甄别目标角色的部分）："
 		: `目标角色（${target}）的台词样本：`;
+	const lengthStat = input.mixed ? null : summarizeLineLengths(input.lines);
 	// excludeOthers（聊天记录点选模式）：另一人的对话不进入证据，聚焦目标语气
 	const evidence = [
 		input.lines.length > 0 ? `${linesLabel}\n${input.lines.map((l) => `- ${l}`).join("\n")}` : "",
+		lengthStat ? `台词长度统计（决定性证据）：TA 的消息${lengthStat}。契约【节奏】必须写明「单条回复典型长度」并以此为准——TA 平均就二三十字，AI 绝不能回百字长文。` : "",
 		!input.excludeOthers && input.otherLines.length > 0 ? `其他角色的台词（对照口吻用，不要提炼成目标角色）：\n${input.otherLines.map((l) => `- ${l}`).join("\n")}` : "",
 		input.narrative ? `叙述/设定线索：\n${input.narrative}` : "",
 		// 关系称呼：双方互称揭示关系定位，写入契约【称呼】的基准

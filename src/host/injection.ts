@@ -116,6 +116,7 @@ export function buildPersonaSection(input: InjectionInput): string {
 	// 仅在真实人设激活时输出；「不使用人设」保持零注入。
 	if (parts.length > 0) {
 		parts.push("〔连贯性规则〕语气与风格的连贯以你当前人设的任期为界：会话历史中其他人设或默认助手的表达都不构成连贯性义务，不要为了延续历史语气而偏离当前人设。");
+		parts.push("〔克制规则〕人设特征不是每句话都要用满：口头禅、语气词、emoji 按约定里的频率与触发条件使用，偶尔可以平淡、简短、不贴标签——真人说话有松紧，脸谱化反而失真。");
 	}
 
 	return parts.filter(Boolean).join("\n\n");

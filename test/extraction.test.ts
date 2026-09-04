@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildCorrectionPrompt,
 	buildExtractionPrompt,
 	extractNaming,
 	isCoolingDown,
 	isDuplicateFact,
 	mergeNewFacts,
+	parseCorrectionRule,
 	parseFacts,
 	resolveAuxRoute,
+	shouldCaptureCorpus,
 	shouldConsider,
+	shouldConsiderCorrection,
 } from "../src/host/extraction.js";
 import type { MemoryFact } from "../src/host/identity.js";
 
@@ -79,6 +83,43 @@ describe("门③ 冷却门", () => {
 		expect(isCoolingDown(1000, 2000, 10 * 60 * 1000)).toBe(true);
 		expect(isCoolingDown(undefined, 2000, 10 * 60 * 1000)).toBe(false);
 		expect(isCoolingDown(1000, 1000 + 10 * 60 * 1000 + 1, 10 * 60 * 1000)).toBe(false);
+	});
+});
+
+describe("纠偏捕获与语料摘录门", () => {
+	it("correction gate catches meta-feedback about speaking style", () => {
+		expect(shouldConsiderCorrection("你太夸张了，正常点说话")).toBe(true);
+		expect(shouldConsiderCorrection("这回复有点油腻")).toBe(true);
+		expect(shouldConsiderCorrection("别老是每句都带语气词")).toBe(true);
+		// 普通内容不满不是风格纠偏
+		expect(shouldConsiderCorrection("这个方案我觉得不行")).toBe(false);
+		expect(shouldConsiderCorrection("帮我看看这个报错")).toBe(false);
+	});
+
+	it("approval gate catches 'sounds like you' feedback only", () => {
+		expect(shouldCaptureCorpus("太像了，就是这种感觉")).toBe(true);
+		expect(shouldCaptureCorpus("有内味了")).toBe(true);
+		expect(shouldCaptureCorpus("你怎么做到这么像本人的")).toBe(true);
+		// 顺口的日常认可不算摘录信号
+		expect(shouldCaptureCorpus("说得好")).toBe(false);
+		expect(shouldCaptureCorpus("今天天气不错")).toBe(false);
+	});
+
+	it("correction prompt lists existing rules and demands a single imperative rule", () => {
+		const { system, userText } = buildCorrectionPrompt("你太夸张了", "哈哈是吗", ["少用 emoji"]);
+		expect(system).toContain("一句话祈使句");
+		expect(system).toContain("输出 null");
+		expect(userText).toContain("少用 emoji");
+		expect(userText).toContain("你太夸张了");
+	});
+
+	it("parseCorrectionRule accepts a rule, rejects null and garbage", () => {
+		expect(parseCorrectionRule('"少用叠词"')).toBe("少用叠词");
+		expect(parseCorrectionRule("```json\n\"语气放平\"\n```")).toBe("语气放平");
+		expect(parseCorrectionRule("null")).toBeNull();
+		expect(parseCorrectionRule('["a","b"]')).toBeNull();
+		expect(parseCorrectionRule("")).toBeNull();
+		expect(parseCorrectionRule(JSON.stringify("x".repeat(60)))).toHaveLength(40);
 	});
 });
 

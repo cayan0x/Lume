@@ -31,6 +31,8 @@ export interface InjectionInput {
 	profileName: string | null;
 	memories: MemoryFact[];
 	styleRules: StyleRule[];
+	/** 对话中摘录的「被用户认可」语料对，注入时并入采样池（语气随真实使用收敛）。 */
+	corpusPins?: Array<{ user: string; assistant: string }>;
 	/** 当前轮用户消息（检索查询）；null 时检索退化为前 k 条。 */
 	query: string | null;
 	/** 会话内已完成的轮数（0 起），驱动少样本衰减。 */
@@ -94,9 +96,20 @@ export function buildPersonaSection(input: InjectionInput): string {
 	// 5. 接班播报（仅切换窗口）
 	if (input.boundaryText) parts.push(input.boundaryText);
 
-	// 6. 语料示例：少样本衰减 + 会话级稳定采样
+	// 6. 语料示例：少样本衰减 + 会话级稳定采样。摘录语料（对话中被用户认可的
+	// 真实回复）优先占位——它们比蒸馏语料更贴近当前使用中的语气。
 	const sampleCount = decaySampleCount(config.sampleCount, input.turnIndex, config.sampleMin);
-	const samples = sampleForSession(persona.corpus, sampleCount, input.sessionKey, persona.name);
+	const pins = (input.corpusPins ?? []).map((p) => ({ user: p.user, assistant: p.assistant }));
+	const pinCount = Math.min(pins.length, sampleCount);
+	// 摘录语料直接占前 pinCount 个槽位（最新优先），其余槽位从基础语料确定性采样。
+	const pinSlots = pins.slice(-pinCount).reverse();
+	const baseSlots = sampleForSession(
+		persona.corpus ?? [],
+		Math.max(0, sampleCount - pinSlots.length),
+		input.sessionKey,
+		persona.name,
+	);
+	const samples = [...pinSlots, ...baseSlots];
 	if (samples.length > 0) {
 		const lines = samples
 			.map((entry) => {

@@ -10,6 +10,15 @@ import type { MemoryFact } from "./identity.js";
 export const EXTRACTION_KEYWORD_RE =
 	/你叫|你的名字|叫你|你是|我喜欢|我不喜欢|我讨厌|我是|我在|我叫|记得|上次|以后叫|别忘|最爱|爱好|习惯|讨厌|喜欢/;
 
+/** 纠偏元反馈信号：用户对人设说话方式的负面反馈（"太夸张了""正常点说话"）。 */
+export const CORRECTION_KEYWORD_RE =
+	/太夸张|太假了?|油腻|不像你|正常点|收敛|别这么|语气太|太过了?|过头|肉麻|端着|生硬|浮夸|戏太|啰嗦|少用点|别老是|每次都[这那]/;
+
+/** 认可信号：用户明显认可回复「像本人」——值得摘录进语料。
+ * 「说得好」太泛（可能只是认可内容），不收。 */
+export const APPROVAL_KEYWORD_RE =
+	/太像了|有内味|有那味|就是这个味|好像你|一模一样|对味|像本人|本人无疑|很你|有你的味|怎么做到这么/;
+
 /** 一条 LLM 路由（provider + model）。 */
 export interface LlmRoute {
 	provider: string;
@@ -36,6 +45,16 @@ export const MAX_FACTS_PER_TURN = 3;
 /** 门①：用户消息是否值得考虑提取。 */
 export function shouldConsider(userText: string): boolean {
 	return EXTRACTION_KEYWORD_RE.test(userText);
+}
+
+/** 纠偏门：用户消息是否是对说话方式的元反馈（负面纠偏）。 */
+export function shouldConsiderCorrection(userText: string): boolean {
+	return CORRECTION_KEYWORD_RE.test(userText);
+}
+
+/** 认可门：用户消息是否明确认可了「语气像本人」。 */
+export function shouldCaptureCorpus(userText: string): boolean {
+	return APPROVAL_KEYWORD_RE.test(userText);
 }
 
 /** 门②：候选文本与既有事实是否重复（高相似或被包含）。 */
@@ -108,4 +127,41 @@ export function extractNaming(facts: string[]): string | null {
 		if (m?.[1]) return m[1];
 	}
 	return null;
+}
+
+/**
+ * 纠偏提炼：用户对人设说话方式的负面元反馈 → 一条长期风格约定。
+ * 与记忆提取共用「三道门 + 小模型」模式；输出单条规则，由 addStyleRule 的
+ * Jaccard 相似替换保证纠偏不断收敛而不是堆叠。
+ */
+export function buildCorrectionPrompt(userText: string, assistantText: string, existingRules: string[]): { system: string; userText: string } {
+	const known = existingRules.length > 0 ? `已有风格约定（勿重复）：\n${existingRules.map((r) => `- ${r}`).join("\n")}` : "已有风格约定：无";
+	return {
+		system: [
+			"你是人设风格约定提炼器。用户刚才对你（人设）的说话方式表达了不满或纠正。",
+			"任务：把用户的反馈转写成一条长期风格约定，写入人设的记忆，让以后每次回复都遵守。",
+			"规则：",
+			"- 只针对说话方式（语气、用词、口癖、长度、称呼、emoji 使用），不涉及当前话题内容；",
+			"- 一句话祈使句，≤40 字，如「少用叠词和语气词，语气放平」「不要在每句话都夸人」；",
+			"- 已有约定里语义相同的（换个说法但同一个意思）就输出 null，不重复添加；",
+			"- 用户的反馈只是情绪宣泄、没有可执行的风格指令时输出 null。",
+			"只输出一个 JSON 字符串（如 \"少用叠词\"），或 null。不要输出任何其他内容。",
+		].join("\n"),
+		userText: `${known}\n\n上一轮：\n用户：${userText}\n助手：${assistantText}`,
+	};
+}
+
+/** 解析纠偏输出：合法单条规则返回原文（≤40 字），其余（null/空/非字符串）返回 null。 */
+export function parseCorrectionRule(output: string): string | null {
+	const trimmed = output.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+	if (!trimmed || trimmed === "null") return null;
+	let value: unknown;
+	try {
+		value = JSON.parse(trimmed);
+	} catch {
+		value = trimmed.replace(/^["'「]|["'」]$/g, "");
+	}
+	if (typeof value !== "string") return null;
+	const rule = value.trim().slice(0, 40);
+	return rule ? rule : null;
 }

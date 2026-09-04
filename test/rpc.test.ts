@@ -21,6 +21,7 @@ function makeHarness(options: { withIdentity?: boolean; withDistill?: boolean } 
 		profile: new FakePersonaTable(),
 		memory_facts: new FakePersonaTable(),
 		style_rules: new FakePersonaTable(),
+		corpus_pins: new FakePersonaTable(),
 		custom_personas: new FakePersonaTable(),
 	};
 	const identity = options.withIdentity === false ? null : new IdentityStore(identityTables);

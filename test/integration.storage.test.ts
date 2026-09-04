@@ -110,6 +110,7 @@ it(
 			profile: tables.get("profile"),
 			memory_facts: tables.get("memory_facts"),
 			style_rules: tables.get("style_rules"),
+			corpus_pins: tables.get("corpus_pins"),
 			custom_personas: tables.get("custom_personas"),
 		});
 
@@ -149,6 +150,7 @@ it(
 			profile: first.tables.get("profile"),
 			memory_facts: first.tables.get("memory_facts"),
 			style_rules: first.tables.get("style_rules"),
+			corpus_pins: first.tables.get("corpus_pins"),
 			custom_personas: first.tables.get("custom_personas"),
 		});
 		await identity.setProfileName("loli", "小A");
@@ -174,6 +176,7 @@ it(
 			profile: second.tables.get("profile"),
 			memory_facts: second.tables.get("memory_facts"),
 			style_rules: second.tables.get("style_rules"),
+			corpus_pins: second.tables.get("corpus_pins"),
 			custom_personas: second.tables.get("custom_personas"),
 		});
 		expect(identity2.getProfileName("loli")).toBe("小A");

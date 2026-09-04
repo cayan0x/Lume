@@ -24,7 +24,7 @@ import { createLumeRpcHandler } from "./host/rpc.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
 import { IdentityStore, LUME_IDENTITY_SPEC, zodLike } from "./host/identity.js";
 import { PersonaRegistry } from "./host/registry.js";
-import { buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseFacts, resolveAuxRoute, shouldConsider } from "./host/extraction.js";
+import { buildCorrectionPrompt, buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseCorrectionRule, parseFacts, resolveAuxRoute, shouldCaptureCorpus, shouldConsider, shouldConsiderCorrection } from "./host/extraction.js";
 import { DistillJobRunner } from "./host/distill.js";
 import { jaccard } from "./core/retrieval.js";
 import { detectLeak } from "./core/leak-detector.js";
@@ -153,12 +153,13 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				},
 				"lume: close identity domain",
 			);
-			return new IdentityStore({
-				profile: domain.table("profile"),
-				memory_facts: domain.table("memory_facts"),
-				style_rules: domain.table("style_rules"),
-				custom_personas: domain.table("custom_personas"),
-			});
+				return new IdentityStore({
+					profile: domain.table("profile"),
+					memory_facts: domain.table("memory_facts"),
+					style_rules: domain.table("style_rules"),
+					corpus_pins: domain.table("corpus_pins"),
+					custom_personas: domain.table("custom_personas"),
+				});
 		} catch (error) {
 			ctx.logger?.warn?.("lume: 身份域不可用，档案/记忆/自定义人设功能降级", error);
 			return null;
@@ -329,12 +330,43 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	async function doExtract(sid: string, st: SessionRuntime): Promise<void> {
 		const userText = st.userText;
 		const assistantText = st.assistantText;
+		// 语料摘录候选：上一轮「用户消息 → 人设回复」的真实对话对。用户若在下一轮
+		// 表达认可（「太像了」），摘录的正是这对，而不是认可语本身。
+		const pinCandidate = st.lastExchange;
+		// 用本轮的对话对覆盖，下一轮的认可摘录拿到的就是「被认可的那一轮」。
+		st.lastExchange = userText && assistantText ? { user: userText, assistant: assistantText } : null;
 		st.userText = "";
 		st.assistantText = "";
 		try {
 			if (!extractionEnabled || !identity) return;
 			const personaName = st.lastInjected;
 			if (!personaName || !userText) return;
+
+			// 通道 A：纠偏捕获——用户负面元反馈（太夸张/油腻/正常点…）→ 小模型转成
+			// 一条风格约定写回 style_rules（Jaccard 相似自动替换，不堆叠）。冷却与
+			// 记忆提取共用，避免同一轮双模型调用。
+			if (shouldConsiderCorrection(userText) && !isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) {
+				const route = resolveAuxRoute(extractionRouteOverride, llmRoute);
+				if (route) {
+					const prompt = buildCorrectionPrompt(userText, assistantText, identity.getStyleRules(personaName).map((r) => r.rule));
+					const output = await callLlm(route, prompt.system, prompt.userText, 400);
+					const rule = output === null ? null : parseCorrectionRule(output);
+					if (rule) {
+						st.lastExtractionAt = Date.now();
+						await identity.addStyleRule(personaName, rule, (a, b) => jaccard(a, b) >= 0.6);
+						ctx.logger?.warn?.(`lume: 纠偏捕获 → ${personaName}: ${rule}`);
+					}
+				}
+			}
+
+			// 通道 B：语料摘录——用户认可上一轮回复「像本人」时，把真实对话对
+			// 摘录进 corpus_pins（注入时并入采样池，让语气随真实使用收敛）。
+			if (shouldCaptureCorpus(userText) && pinCandidate && pinCandidate.assistant) {
+				const written = await identity.addCorpusPin(personaName, { user: pinCandidate.user, assistant: pinCandidate.assistant, at: Date.now() }, (a, b) => jaccard(a, b) >= 0.8);
+				if (written) ctx.logger?.warn?.(`lume: 语料摘录 → ${personaName}: ${pinCandidate.assistant.slice(0, 40)}`);
+			}
+
+			// 通道 C：记忆提取（原有路径）
 			if (!shouldConsider(userText)) return;
 			if (isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) return;
 			const existing = identity.getMemory(personaName);
@@ -564,17 +596,18 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			: null;
 		// 播报改由独立的尾部 section 渲染（LUME_BOUNDARY_SECTION），人设段不再内联
 		st.activeBoundary = boundaryText;
-		const text = buildPersonaSection({
-			persona,
-			profileName: personaName ? registry.profileNameOf(personaName) : null,
-			memories: personaName ? identity?.getMemory(personaName) ?? [] : [],
-			styleRules: personaName ? identity?.getStyleRules(personaName) ?? [] : [],
-			query: st.lastQuery,
-			turnIndex: st.turnIndex,
-			sessionKey: sid,
-			boundaryText: null,
-			config: { sampleCount, sampleMin, memoryInject, styleInject, strategy },
-		});
+			const text = buildPersonaSection({
+				persona,
+				profileName: personaName ? registry.profileNameOf(personaName) : null,
+				memories: personaName ? identity?.getMemory(personaName) ?? [] : [],
+				styleRules: personaName ? identity?.getStyleRules(personaName) ?? [] : [],
+				corpusPins: personaName ? identity?.getCorpusPins(personaName) ?? [] : [],
+				query: st.lastQuery,
+				turnIndex: st.turnIndex,
+				sessionKey: sid,
+				boundaryText: null,
+				config: { sampleCount, sampleMin, memoryInject, styleInject, strategy },
+			});
 		st.lastInjected = personaName;
 		if (greeting) st.switchGreetingPending = false;
 		if (st.switchTurn !== null && st.turnIndex - st.switchTurn >= boundaryTurns) st.switchTurn = null; // 窗口关闭

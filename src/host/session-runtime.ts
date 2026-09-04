@@ -27,6 +27,8 @@ export interface SessionRuntime {
 	activeBoundary: string | null;
 	extracting: Promise<void> | null;
 	lastExtractionAt: number | undefined;
+	/** 上一轮「用户消息 → 人设回复」真实对话对；用户认可时摘录为语料。 */
+	lastExchange: { user: string; assistant: string } | null;
 	/** 近期对话缓冲（反思日志用）：每轮 user/assistant 各推一条，上限 12 条。 */
 	recentTurns: string[];
 }
@@ -49,6 +51,7 @@ function defaultRuntime(): SessionRuntime {
 		activeBoundary: null,
 		extracting: null,
 		lastExtractionAt: undefined,
+		lastExchange: null,
 		recentTurns: [],
 	};
 }

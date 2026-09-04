@@ -11,6 +11,7 @@ function makeStore() {
 		profile: new FakePersonaTable(),
 		memory_facts: new FakePersonaTable(),
 		style_rules: new FakePersonaTable(),
+		corpus_pins: new FakePersonaTable(),
 		custom_personas: new FakePersonaTable(),
 	};
 	const store = new IdentityStore(tables);
@@ -115,6 +116,25 @@ describe("IdentityStore custom personas", () => {
 		await expect(
 			store.setCustomPersona("Bad Key!", { displayName: "x", description: "", promptText: "y", createdAt: 1 }),
 		).rejects.toThrow(/invalid persona key/);
+	});
+});
+
+describe("IdentityStore corpus pins", () => {
+	it("appends approved exchanges, skips near-duplicates, caps at 12", async () => {
+		const { store } = makeStore();
+		const wrote = await store.addCorpusPin("loli", { user: "在干嘛", assistant: "想你啦", at: 0 }, (a, b) => a === b);
+		expect(wrote).toBe(true);
+		expect(store.getCorpusPins("loli")).toHaveLength(1);
+		// 完全相同的回复不再摘录
+		expect(await store.addCorpusPin("loli", { user: "在干嘛", assistant: "想你啦", at: 0 }, (a, b) => a === b)).toBe(false);
+		// 灌满后最旧的被挤掉：初始 1 条 + 12 条 = 13 条，挤掉「想你啦」，最旧变成 a0
+		for (let i = 0; i < 12; i++) {
+			await store.addCorpusPin("loli", { user: `u${i}`, assistant: `a${i}`, at: 0 }, () => false);
+		}
+		const pins = store.getCorpusPins("loli");
+		expect(pins).toHaveLength(12);
+		expect(pins[0].assistant).toBe("a0");
+		expect(pins[11].assistant).toBe("a11");
 	});
 });
 

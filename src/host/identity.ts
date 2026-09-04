@@ -40,23 +40,25 @@ export function zodLike(schema: unknown): Parameters<typeof domainTable>[0] {
 export const LUME_IDENTITY_SPEC = defineDomain({
 	name: "lume_persona_identity",
 	version: 1,
-	tables: {
-		profile: domainTable(zodLike(z.object({ name: z.string() }))),
-		memory_facts: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
-		style_rules: domainTable(zodLike(z.array(z.object({ rule: z.string(), at: z.number() })))),
-		custom_personas: domainTable(
-			zodLike(
-				z.object({
-					displayName: z.string(),
-					description: z.string(),
-					promptText: z.string(),
-					createdAt: z.number(),
-					/** 蒸馏产出的示例对话语料；可选字段，旧记录无此键照常通过 open 校验。 */
-					corpus: z.array(z.object({ user: z.string(), assistant: z.string() })),
-				}),
+		tables: {
+			profile: domainTable(zodLike(z.object({ name: z.string() }))),
+			memory_facts: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
+			style_rules: domainTable(zodLike(z.array(z.object({ rule: z.string(), at: z.number() })))),
+			/** 对话中摘录的「被用户认可」语料对（注入时并入采样池）；键 = 人设名。 */
+			corpus_pins: domainTable(zodLike(z.array(z.object({ user: z.string(), assistant: z.string(), at: z.number() })))),
+			custom_personas: domainTable(
+				zodLike(
+					z.object({
+						displayName: z.string(),
+						description: z.string(),
+						promptText: z.string(),
+						createdAt: z.number(),
+						/** 蒸馏产出的示例对话语料；可选字段，旧记录无此键照常通过 open 校验。 */
+						corpus: z.array(z.object({ user: z.string(), assistant: z.string() })),
+					}),
+				),
 			),
-		),
-	},
+		},
 });
 
 export const MEMORY_CAP = 30;
@@ -80,6 +82,13 @@ export interface CustomPersona {
 	createdAt: number;
 	/** 示例对话语料（蒸馏产出）；旧记录可能没有。 */
 	corpus?: PersonaSample[];
+}
+
+/** 摘录语料对（对话中用户认可的真实回复）。 */
+export interface CorpusPin {
+	user: string;
+	assistant: string;
+	at: number;
 }
 
 /** 与 store.ts 的 PersonaTable 同构（未知值类型面）。 */
@@ -126,17 +135,20 @@ export class IdentityStore {
 	readonly #table: IdentityTable;
 	readonly #memoryTable: IdentityTable;
 	readonly #styleTable: IdentityTable;
+	readonly #pinsTable: IdentityTable;
 	readonly #customTable: IdentityTable;
 
 	constructor(tables: {
 		profile: IdentityTable;
 		memory_facts: IdentityTable;
 		style_rules: IdentityTable;
+		corpus_pins: IdentityTable;
 		custom_personas: IdentityTable;
 	}) {
 		this.#table = tables.profile;
 		this.#memoryTable = tables.memory_facts;
 		this.#styleTable = tables.style_rules;
+		this.#pinsTable = tables.corpus_pins;
 		this.#customTable = tables.custom_personas;
 	}
 
@@ -194,6 +206,23 @@ export class IdentityStore {
 		await this.#styleTable.put(persona, rules.slice(-STYLE_CAP));
 	}
 
+	getCorpusPins(persona: string): CorpusPin[] {
+		const value = this.#pinsTable.get(persona);
+		return Array.isArray(value) ? (value as CorpusPin[]).filter((p) => typeof p?.assistant === "string" && typeof p?.user === "string") : [];
+	}
+
+	/** 摘录语料对：与既有内容高度相似（Jaccard）或完全重复的跳过，超限挤掉最旧。 */
+	async addCorpusPin(persona: string, pin: CorpusPin, similar: (a: string, b: string) => boolean): Promise<boolean> {
+		const assistant = pin.assistant.trim();
+		if (!assistant) return false;
+		const pins = this.getCorpusPins(persona);
+		if (pins.some((p) => similar(p.assistant, assistant))) return false;
+		const next = [...pins, { user: pin.user.slice(0, CORPUS_LINE_CAP), assistant: assistant.slice(0, CORPUS_LINE_CAP), at: Date.now() }];
+		while (next.length > CORPUS_CAP) next.shift();
+		await this.#pinsTable.put(persona, next);
+		return true;
+	}
+
 	getCustomPersona(name: string): CustomPersona | null {
 		const value = this.#customTable.get(name) as (CustomPersona & { corpus?: unknown }) | undefined;
 		if (!value || typeof value?.displayName !== "string" || typeof value?.promptText !== "string") return null;
@@ -227,6 +256,7 @@ export class IdentityStore {
 		await this.#customTable.delete(name);
 		await this.#memoryTable.delete(name);
 		await this.#styleTable.delete(name);
+		await this.#pinsTable.delete(name);
 		await this.#table.delete(name);
 	}
 }

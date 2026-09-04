@@ -18,6 +18,7 @@
  */
 import type { Persona } from "../core/manifest.js";
 import type { DistillJobRunner } from "./distill.js";
+import { settleMemoryText, STORY_MEMORY_CAP } from "./distill.js";
 import type { IdentityStore } from "./identity.js";
 import type { PersonaRegistry } from "./registry.js";
 import { normalizeCard, parseCard } from "../core/card.js";
@@ -159,8 +160,12 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 						for (const item of memory) {
 							const text = typeof (item as { text?: unknown })?.text === "string" ? (item as { text: string }).text : "";
 							if (!text.trim()) continue;
-							if (facts.some((f) => f.text.includes(text) || text.includes(f.text))) continue;
-							await identity.addMemory(name, text.trim().slice(0, 40), (candidate, all) => all.some((f) => f.text.includes(candidate) || candidate.includes(f.text)));
+							// 蒸馏层已按句末标点收尾；这里只做长度兜底（故事 80/事件 40 已在宿主层约束），
+							// 禁止 40 字硬切——会把完整句子拦腰截断
+							const settled = settleMemoryText(text, STORY_MEMORY_CAP);
+							if (!settled) continue;
+							if (facts.some((f) => f.text.includes(settled) || settled.includes(f.text))) continue;
+							await identity.addMemory(name, settled, (candidate, all) => all.some((f) => f.text.includes(candidate) || candidate.includes(f.text)));
 						}
 					}
 				} catch (error) {

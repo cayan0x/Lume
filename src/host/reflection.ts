@@ -1,5 +1,5 @@
 /**
- * 反思日志：会话结束时评估对话是否遵守 P0-P3 思考纪律，写入本地存储。
+ * 反思日志：会话结束时评估对话是否遵守 Codex 风格任务执行协议，写入本地存储。
  *
  * 零用户感知 token：会话结束后（session/disposed）在空闲时间跑一次小模型调用，
  * 读完对话片段后给四条规则各打 0-2 分并附一句备注，写到 `lume_reflection` 域。
@@ -19,10 +19,10 @@ export const LUME_REFLECTION_SPEC = defineDomain({
 			zodLike(
 				z.object({
 					at: z.number(),
-					p0: z.number(),
-					p1: z.number(),
-					p2: z.number(),
-					p3: z.number(),
+					context: z.number(),
+					planning: z.number(),
+					verification: z.number(),
+					review: z.number(),
 					note: z.string(),
 				}),
 			),
@@ -32,10 +32,10 @@ export const LUME_REFLECTION_SPEC = defineDomain({
 
 export interface ReflectionEntry {
 	at: number;
-	p0: number;
-	p1: number;
-	p2: number;
-	p3: number;
+	context: number;
+	planning: number;
+	verification: number;
+	review: number;
 	note: string;
 }
 
@@ -53,14 +53,14 @@ export class ReflectionStore {
 
 export const REFLECTION_SYSTEM = [
 	"你是一个冷静的复盘评估器。下面会给你一段与用户对话的片段。",
-	"请评估其中的助手是否遵守了这四条思考纪律，每条打 0/1/2 分（0=明显违反，1=一般，2=良好）：",
+	"请评估其中的助手是否遵守了 Codex 风格任务执行协议，每项打 0/1/2 分（0=明显违反，1=一般，2=良好）：",
 	"",
-	"P0 上下文管理：对话变长时是否主动浓缩、保留关键信息，避免上下文耗尽",
-	"P1 阶段门控：是否先调研再动手，不盲目修改",
-	"P2 振荡预防：是否改完立即验证、不反复打补丁、失败换思路",
-	"P3 反思自检：是否每次操作后自评、定期复盘进度",
+	"上下文管理：是否理解并保留目标、约束、状态、关键决策和已排除假设",
+	"计划与门控：是否拆解任务、先调研再执行，并按风险自适应投入",
+	"验证与失败处理：是否在变更后验证，失败时归因并更换方案",
+	"结果复核：是否对照完成标准、边界条件、兼容性和数据保留进行复核",
 	"",
-	"只输出一个 JSON 对象，形如 {\"p0\":2,\"p1\":2,\"p2\":1,\"p3\":0,\"note\":\"...\"}，note 一句话中文，不要输出其他内容。",
+	"只输出一个 JSON 对象，形如 {\"context\":2,\"planning\":2,\"verification\":1,\"review\":0,\"note\":\"...\"}，note 一句话中文，不要输出其他内容。",
 ].join("\n");
 
 export function buildReflectionPrompt(turns: string[]): { system: string; userText: string } {
@@ -100,13 +100,13 @@ export function parseReflectionScore(output: string): ReflectionEntry | null {
 		parsed = best;
 	}
 	const r = parsed as Record<string, unknown>;
-	const p0 = clampScore(r.p0);
-	const p1 = clampScore(r.p1);
-	const p2 = clampScore(r.p2);
-	const p3 = clampScore(r.p3);
+	const context = clampScore(r.context ?? r.p0);
+	const planning = clampScore(r.planning ?? r.p1);
+	const verification = clampScore(r.verification ?? r.p2);
+	const review = clampScore(r.review ?? r.p3);
 	const note = typeof r.note === "string" ? r.note.trim().slice(0, 200) : "";
-	if (Number.isNaN(p0) || Number.isNaN(p1) || Number.isNaN(p2) || Number.isNaN(p3)) return null;
-	return { at: Date.now(), p0, p1, p2, p3, note };
+	if (Number.isNaN(context) || Number.isNaN(planning) || Number.isNaN(verification) || Number.isNaN(review)) return null;
+	return { at: Date.now(), context, planning, verification, review, note };
 }
 
 function clampScore(value: unknown): number {

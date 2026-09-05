@@ -34,7 +34,7 @@ import { SessionRuntimeStore } from "./host/session-runtime.js";
 import type { SessionRuntime } from "./host/session-runtime.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 
-/** P0-P3 思考逻辑：始终注入，告诉模型「怎么想」。 */
+/** Codex 风格任务执行协议：始终注入，约束任务如何完成。 */
 const THINKING_TEXT = `[任务执行协议]
 
 你应遵循以下公开的工程工作协议。它约束任务如何被完成，不要求输出隐藏的逐步思考过程；对外只给出必要的结论、计划、变更和验证结果。
@@ -68,6 +68,11 @@ const THINKING_TEXT = `[任务执行协议]
 **隐私与事实边界**：示例、历史消息和角色记忆用于相关性与表达参考，不自动等于当前事实。涉及时间、地点、当前行为和现实状态时，只依据当前上下文或可靠工具结果。
 
 每次完成一个阶段后，检查：目标是否仍然一致？变更是否在授权范围内？验证是否覆盖了最可能的失败方式？`;
+
+/** 普通闲聊用短版协议；任务型请求才注入完整版，避免每轮重复支付完整工作协议。 */
+const THINKING_COMPACT_TEXT = `[任务执行协议]
+简单问题直接回答；复杂或高风险任务先理解目标和约束，再调研、计划、执行、验证、复核。修改前读取相关内容，修改后验证；失败先归因，不重复已排除方案。人设只影响表达，不影响事实、代码、工具调用和安全判断。历史示例只参考风格，不自动等于当前事实。`;
+const TASK_SIGNAL_RE = /代码|编程|文件|项目|仓库|脚本|命令|调研|研究|分析|实现|修改|修复|构建|测试|部署|配置|安装|迁移|导入|导出|接口|API|数据库|批量|计划|方案|风险|审查|review|debug|bug|深度|复杂/i;
 
 /** schemastery → domainTable 形参的桥接（与 identity.ts 同款）。 */
 const recordSchema = zodLike;
@@ -121,7 +126,7 @@ export interface LumeConfig {
 	/** 蒸馏专用模型路由：契约合成质量要求高，默认跟随主对话模型。 */
 	distillProvider?: string;
 	distillModel?: string;
-	/** 会话结束反思日志：空闲时间跑一次小模型，给 P0-P3 各打 0-2 分落盘。 */
+	/** 会话结束反思日志：空闲时间评估 Codex 工作协议的四项能力，各打 0-2 分落盘。 */
 	reflectionEnabled?: boolean;
 	switchBoundaryTurns?: number;
 }
@@ -538,7 +543,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						const score = parseReflectionScore(output);
 						if (!score) return;
 						await store.log(sid, score);
-						ctx.logger?.warn?.(`lume: 反思日志 ${sid} p0=${score.p0} p1=${score.p1} p2=${score.p2} p3=${score.p3}「${score.note}」`);
+						ctx.logger?.warn?.(`lume: 反思日志 ${sid} context=${score.context} planning=${score.planning} verification=${score.verification} review=${score.review}「${score.note}」`);
 					})();
 				}
 			}),
@@ -729,7 +734,11 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			ctx.systemPrompt.section({
 				name: LUME_THINKING_SECTION,
 				order: LUME_THINKING_ORDER,
-				text: THINKING_TEXT,
+				text: (context: any) => {
+					const sid = context.agent?.session?.id ?? context.agent?.id;
+					const query = sid ? runtime.get(String(sid)).lastQuery ?? "" : "";
+					return TASK_SIGNAL_RE.test(query) ? THINKING_TEXT : THINKING_COMPACT_TEXT;
+				},
 			}),
 		"lume.thinking-section()",
 	);

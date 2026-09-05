@@ -10,7 +10,7 @@
 人设只影响自然语言表达，不介入思维逻辑，也不影响代码、命令与工具调用的执行结果。
 
 [![CI](https://github.com/cayan0x/Lume/actions/workflows/ci.yml/badge.svg)](https://github.com/cayan0x/Lume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue)](./CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 *人设系统：内置角色卡、蒸馏与管理入口，以及记忆星图*
@@ -186,7 +186,7 @@
 ### 全新安装（未装过的电脑）
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.4.0
+dsh plugin add github:cayan0x/Lume#v0.4.1
 ```
 
 安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,butler,tsundere,none）` 即表示加载成功。构建产物随仓库发布，此路径不需要 npm 与本地构建。
@@ -196,7 +196,7 @@ dsh plugin add github:cayan0x/Lume#v0.4.0
 重新执行一次安装命令即可升到指定版本，随后**完全重启 DSH（含托盘）**：
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.4.0
+dsh plugin add github:cayan0x/Lume#v0.4.1
 ```
 
 人设选择、记忆与风格数据存放在 `storages/` 目录，升级不会丢失。

@@ -201,14 +201,14 @@ it(
 
 		const first = await bootStack(root);
 		const store = new ReflectionStore(first.tables.get("logs"));
-		await store.log("session-r1", { at: 1, p0: 2, p1: 1, p2: 2, p3: 0, note: "基本达标" });
+		await store.log("session-r1", { at: 1, context: 2, planning: 1, verification: 2, review: 0, note: "基本达标" });
 		await first.close();
 
 		// 重开域：带数据重开不应炸（schema 桥接回归）
 		const second = await bootStack(root);
 		const raw = JSON.parse(readFileSync(join(root, "lume_reflection.json"), "utf8"));
 		expect(raw.unit).toMatchObject({ name: "lume_reflection", version: 1 });
-		expect(raw.tables.logs["session-r1"]).toMatchObject({ p0: 2, p3: 0, note: "基本达标" });
+		expect(raw.tables.logs["session-r1"]).toMatchObject({ context: 2, review: 0, note: "基本达标" });
 		await second.close();
 	},
 	20_000,

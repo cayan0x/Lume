@@ -144,6 +144,9 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				const description = (payload as { description?: unknown }).description;
 				const corpus = (payload as { corpus?: unknown }).corpus;
 				const memory = (payload as { memory?: unknown }).memory;
+				const distillVersion = (payload as { distillVersion?: unknown }).distillVersion;
+				const distillSource = (payload as { distillSource?: unknown }).distillSource;
+				const distillHint = (payload as { distillHint?: unknown }).distillHint;
 				const rawCreatedAt = (payload as { createdAt?: unknown }).createdAt;
 				try {
 					await identity.setCustomPersona(name, {
@@ -153,6 +156,9 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 						// 编辑保存时带原 createdAt；新建（蒸馏/对话创建）落当前时间
 						createdAt: typeof rawCreatedAt === "number" ? rawCreatedAt : Date.now(),
 						corpus: Array.isArray(corpus) ? (corpus as { user: string; assistant: string }[]) : undefined,
+						distillVersion: typeof distillVersion === "number" ? distillVersion : undefined,
+						distillSource: typeof distillSource === "string" ? distillSource : undefined,
+						distillHint: typeof distillHint === "string" ? distillHint : undefined,
 					});
 					// 真实记忆点：蒸馏产出的事件条写入身份域（人设即人——她记得你们的事）
 					if (Array.isArray(memory)) {

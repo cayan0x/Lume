@@ -184,6 +184,34 @@ THE
 		}
 	});
 
+	it("keeps multi-message user context for style triggers", () => {
+		const mined = mineDialogue(`
+用户
+2026年05月02日 12:00
+你今天忙不忙
+
+用户
+2026年05月02日 12:01
+有件事想问你
+
+目标
+2026年05月02日 12:02
+你说嘛，我听着呢
+
+用户
+2026年05月02日 12:03
+那我开始说了
+
+目标
+2026年05月02日 12:04
+好，你说
+`, "目标");
+		expect(mined.pairs).toContainEqual({ user: "你今天忙不忙 有件事想问你", assistant: "你说嘛，我听着呢" });
+		expect(mined.contexts?.[0]).toContain("用户：你今天忙不忙");
+		expect(mined.contexts?.[0]).toContain("目标：你说嘛，我听着呢");
+		expect(mined.styleStats).toContain("样本数 2");
+	});
+
 	it("mines the other speaker when hinted", () => {
 		const mined = mineDialogue(CHAT, "THE");
 		expect(mined.speaker).toBe("THE");

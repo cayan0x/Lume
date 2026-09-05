@@ -35,6 +35,10 @@ export interface DialogueMining {
 	 * 仅 kind="chat" 时存在；语料合成会优先复用它们。
 	 */
 	pairs?: Array<{ user: string; assistant: string }>;
+	/** 双边局部窗口：用于学习“在什么情境下这样说”，不写入语料存储。 */
+	contexts?: string[];
+	/** 可复核的确定性风格统计，避免模型只凭整体印象脑补。 */
+	styleStats?: string;
 	/**
 	 * 记忆点候选（真实事件类对话）：生日/纪念/共同经历/对方身份事实/约定。
 	 * 候选只是线索（含原文），由 LLM 提炼成记忆条目写入身份域。
@@ -204,6 +208,8 @@ const OBJ_REPLACEMENT = "\uFFFC";
 export interface ChatMessage {
 	speaker: string;
 	text: string;
+	/** 原始时间戳；用于避免跨长时间间隔拼接成虚假的问答对。 */
+	timestamp?: string;
 }
 
 export interface ChatLog {
@@ -236,6 +242,7 @@ export function parseChatLog(text: string): ChatLog | null {
 			i++;
 			continue;
 		}
+		const timestamp = lines[i + 1]!.trim();
 		const content: string[] = [];
 		let j = i + 2;
 		while (j < lines.length) {
@@ -246,7 +253,7 @@ export function parseChatLog(text: string): ChatLog | null {
 		}
 		const cleaned = cleanChatContent(content);
 		if (cleaned) {
-			messages.push({ speaker, text: cleaned });
+			messages.push({ speaker, text: cleaned, timestamp });
 			counts.set(speaker, (counts.get(speaker) ?? 0) + 1);
 		}
 		i = j;
@@ -277,20 +284,52 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 	const targetLines = chat.messages.filter((m) => m.speaker === speaker).map((m) => m.text);
 	const otherLines = chat.messages.filter((m) => m.speaker !== speaker).map((m) => m.text);
 
-	// 真实对话对：目标的消息若紧跟一条用户消息，即成一组 user→assistant 语料
+	// 真实对话对：允许用户连续发多条时，合并成一个上下文，避免只保留最后一句。
 	const pairs: Array<{ user: string; assistant: string }> = [];
-	let lastUser: string | null = null;
+	let pendingUser: string[] = [];
+	let pendingAt: string | undefined;
+	const toMillis = (stamp: string | undefined): number | null => {
+		if (!stamp) return null;
+		const normalized = stamp.replace(/年|月/g, "-").replace(/日/g, "");
+		const value = Date.parse(normalized.replace(/\s+/g, "T"));
+		return Number.isFinite(value) ? value : null;
+	};
 	for (const m of chat.messages) {
 		if (m.speaker === speaker) {
-			if (lastUser && m.text.length <= 240) {
-				pairs.push({ user: lastUser.slice(0, 240), assistant: m.text });
-				if (pairs.length >= 12) break;
+			const gap = pendingAt && m.timestamp ? (toMillis(m.timestamp)! - toMillis(pendingAt)!) : null;
+			// 超过 6 小时视为新话题，不能把前一天的闲聊拼成当前回复的上下文。
+			if (pendingUser.length > 0 && m.text.length <= 240 && (gap === null || (gap >= 0 && gap <= 6 * 60 * 60 * 1000))) {
+				pairs.push({ user: pendingUser.join(" ").slice(-240), assistant: m.text });
 			}
-			lastUser = null;
+			pendingUser = [];
+			pendingAt = undefined;
 		} else {
-			lastUser = m.text;
+			if (pendingUser.length === 0) pendingAt = m.timestamp;
+			pendingUser.push(m.text);
 		}
 	}
+
+	// 契约不能只看目标单边台词：保留每条目标消息前后的小窗口，学习触发条件、
+	// 关系距离和情绪转折。窗口只进蒸馏 prompt，不会污染最终 few-shot 语料。
+	const targetIndexes = chat.messages.map((m, i) => m.speaker === speaker ? i : -1).filter((i) => i >= 0);
+	const contexts: string[] = [];
+	for (const i of evenSample(targetIndexes, 16)) {
+		const start = Math.max(0, i - 3);
+		const end = Math.min(chat.messages.length, i + 2);
+		const window = chat.messages.slice(start, end).map((m) => `${m.speaker === speaker ? "目标" : "用户"}：${m.text}`).join("\n");
+		contexts.push(window.slice(0, 700));
+	}
+	const targetTexts = targetLines;
+	const lengths = targetTexts.map((s) => s.length);
+	const avg = lengths.length ? Math.round(lengths.reduce((a, b) => a + b, 0) / lengths.length) : 0;
+	const sorted = [...lengths].sort((a, b) => a - b);
+	const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+	const punct = (re: RegExp) => targetTexts.reduce((n, s) => n + (s.match(re)?.length ?? 0), 0);
+	const emojiCount = punct(/[😀-🙏🌀-🫿]/gu);
+	const questionCount = punct(/[？?]/g);
+	const exclaimCount = punct(/[！!]/g);
+	const ellipsisCount = punct(/[…。]{2,}|\.\.\./g);
+	const stats = `样本数 ${targetTexts.length}；平均 ${avg} 字；中位数 ${median} 字；含问号 ${questionCount} 条；含感叹号 ${exclaimCount} 条；含省略号 ${ellipsisCount} 条；emoji 总数 ${emojiCount}。`;
 
 	// 记忆点候选：真实事件类消息（生日/纪念/共同经历/对方的事实/约定）
 	const memoryPoints = chat.messages
@@ -323,7 +362,10 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		narrative: "",
 		kind: "chat",
 		mixed: false,
-		pairs,
+		// 不取最早的 12 组：按时间均匀覆盖全聊天，避免语料被开头某个话题垄断。
+		pairs: evenSample(pairs, 12),
+		contexts,
+		styleStats: stats,
 		memoryPoints,
 		relationship,
 		flow: buildChatFlow(chat.messages, speaker),

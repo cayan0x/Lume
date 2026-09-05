@@ -33,6 +33,8 @@ export const DISPLAY_NAME_CAP = 12;
 export const DESCRIPTION_CAP = 60;
 /** 任务完成后保留时长，供客户端慢慢轮询取走结果。 */
 export const JOB_TTL_MS = 10 * 60 * 1000;
+/** 持久化到角色卡的蒸馏算法版本；升级时用于后台迁移。 */
+export const DISTILL_ALGORITHM_VERSION = 2;
 
 export interface DistilledCard {
 	key: string;
@@ -42,6 +44,10 @@ export interface DistilledCard {
 	corpus: PersonaSample[];
 	/** 从聊天记录中提炼的真实记忆点（生日/共同经历/对方事实…）；写入身份域。 */
 	memory?: Array<{ text: string }>;
+	distillVersion: number;
+	/** 本地升级源；仅存储在身份域，不注入对话。 */
+	distillSource?: string;
+	distillHint?: string;
 }
 
 export interface DistillInput {
@@ -88,7 +94,10 @@ const CONTRACT_SYSTEM_HEAD = [
 	"禁止把聊天话题定性为性格：两个人聊租房/健身/八卦只是这一天的内容，不代表 TA 只有这些话题。契约里不得出现「TA 爱聊什么话题」这类内容性结论。",
 	"禁止把说话特征上升成性格缺陷或抽象结论：他只是说话快、抢话、短句多，就写「习惯长话短说、不爱铺垫」；他怼人但不刻薄，就写「嘴快但接得住，损人不伤情」。严禁用「没有耐心」「暴躁」「敷衍」这类上纲线标签，除非素材里他真的发火或明确表露不耐烦。",
 	"禁止创作性补全：不能虚构素材中不存在的职业、背景、经历、外貌。事实不足的小节写保守描述（「证据不足，保持通用」）。",
-		"推导方法：**模仿优先，概括次之**。先逐句读 TA 的原话，感受语气；每写一条规则，都要能指出是素材哪句话支持的。写不出来的地方宁缺毋滥。",
+	"推导方法：**模仿优先，概括次之**。先逐句读 TA 的原话，感受语气；每写一条规则，都要能指出是素材哪句话支持的。写不出来的地方宁缺毋滥。",
+	"**证据门槛**：每条性格/行为规则都必须同时满足：至少两处原话或一个完整情境窗口支持；说明触发场景；说明使用频率。只有一处证据的特征只能写成‘偶尔可能’，不能写成稳定人格。统计数字只能描述表达习惯，不能直接推导性格。",
+	"**场景优先**：分别观察平淡闲聊、提问求助、被调侃/冲突、亲昵或安慰等场景（素材没有的场景明确写证据不足），不要把单一场景的语气推广到所有回复。",
+	"**保留波动**：契约必须允许真人式的语气波动；不要要求每条回复都使用同一个口头禅、emoji 或情绪。平淡回复可以平淡，但用词和断句仍应接近素材。",
 		"**网名不是身份**：素材中的说话人名字是聊天账号昵称，可能是「AAA煤炭批发蒲先生」这类营销式网名——禁止从昵称推断职业、地域、身份（不能因为昵称带「煤炭」就写 TA 是卖煤的）。职业/背景只能来自对话内容本身。",
 		"**displayName 取简称**：不要照搬原始账号昵称。取一个简短自然的称呼（如「蒲先生」「老蒲」，≤12 字），除非用户明确要求保留原昵称。",
 		"- 泛泛形容词（温柔/可靠/聪明）必须转写成具体行为指令（什么场合说什么称呼、口头禅放句尾哪个位置、emoji 用在哪类情绪点）；",
@@ -114,7 +123,7 @@ export function summarizeLineLengths(lines: string[]): string | null {
 	return `平均 ${avg} 字，中位数 ${median} 字，90% 不超过 ${p90} 字`;
 }
 
-export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean; excludeOthers?: boolean; relationship?: { userToTarget: string[]; targetToUser: string[] } }): { system: string; userText: string } {
+export function buildContractPrompt(input: { speaker: string | null; lines: string[]; otherLines: string[]; narrative: string; hint?: string; mixed: boolean; excludeOthers?: boolean; relationship?: { userToTarget: string[]; targetToUser: string[] }; contexts?: string[]; styleStats?: string }): { system: string; userText: string } {
 	const target = input.hint?.trim() || input.speaker || "目标角色";
 	const linesLabel = input.mixed
 		? "素材台词样本（可能混有多个角色的声音，请依据称呼与口吻甄别目标角色的部分）："
@@ -125,6 +134,8 @@ export function buildContractPrompt(input: { speaker: string | null; lines: stri
 		input.lines.length > 0 ? `${linesLabel}\n${input.lines.map((l) => `- ${l}`).join("\n")}` : "",
 		lengthStat ? `台词长度统计（决定性证据）：TA 的消息${lengthStat}。契约【节奏】必须写明「单条回复典型长度」并以此为准——TA 平均就二三十字，AI 绝不能回百字长文。` : "",
 		!input.excludeOthers && input.otherLines.length > 0 ? `其他角色的台词（对照口吻用，不要提炼成目标角色）：\n${input.otherLines.map((l) => `- ${l}`).join("\n")}` : "",
+		input.contexts && input.contexts.length > 0 ? `双边情境窗口（用于判断触发条件，不要把用户的话误当成目标口吻）：\n${input.contexts.map((c, i) => `窗口 ${i + 1}：\n${c}`).join("\n\n")}` : "",
+		input.styleStats ? `可观测风格统计（只作为证据，不要把统计直接写成性格标签）：\n${input.styleStats}` : "",
 		input.narrative ? `叙述/设定线索：\n${input.narrative}` : "",
 		// 关系称呼：双方互称揭示关系定位，写入契约【称呼】的基准
 		input.relationship && (input.relationship.userToTarget.length > 0 || input.relationship.targetToUser.length > 0)
@@ -306,7 +317,7 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 
 	onProgress?.("contract");
 	// 聊天记录点选模式：证据只含目标角色的台词，另一人的对话剔除
-	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint, excludeOthers: mined.kind === "chat", relationship: mined.relationship });
+	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint, excludeOthers: mined.kind === "chat", relationship: mined.relationship, contexts: mined.contexts, styleStats: mined.styleStats });
 	let contractOut: unknown;
 	try {
 		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS, signal);
@@ -362,7 +373,7 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 		if (merged.length > 0) memory = merged;
 	}
 
-	return { ...contract, corpus, ...(memory && memory.length > 0 ? { memory } : {}) };
+	return { ...contract, corpus, distillVersion: DISTILL_ALGORITHM_VERSION, distillSource: text, ...(input.hint ? { distillHint: input.hint } : {}), ...(memory && memory.length > 0 ? { memory } : {}) };
 }
 
 /**

@@ -23,6 +23,9 @@ interface DistilledCard {
 	promptText: string;
 	corpus: PersonaSample[];
 	memory?: Array<{ text: string }>;
+	distillVersion?: number;
+	distillSource?: string;
+	distillHint?: string;
 }
 
 type Phase = "input" | "running" | "preview" | "saved";
@@ -45,7 +48,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	/** 用户补充的对方信息（性别/年龄段），可选；蒸馏时作为事实锚点传给宿主。 */
 	const [jobId, setJobId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [card, setCard] = useState({ key: "", displayName: "", description: "", promptText: "", corpus: [] as PersonaSample[], memory: undefined as Array<{ text: string }> | undefined });
+	const [card, setCard] = useState<DistilledCard>({ key: "", displayName: "", description: "", promptText: "", corpus: [], memory: undefined });
 	const [savedName, setSavedName] = useState("");
 	const [stage, setStage] = useState<DistillStage | null>(null);
 	const [showComplete, setShowComplete] = useState(false);
@@ -176,7 +179,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const save = async () => {
 		setError(null);
 		try {
-			const res = await callRpc("saveCustomPersona", { name: card.key, displayName: card.displayName, description: card.description, promptText: card.promptText, corpus: card.corpus, ...(card.memory?.length ? { memory: card.memory } : {}) });
+			const res = await callRpc("saveCustomPersona", { name: card.key, displayName: card.displayName, description: card.description, promptText: card.promptText, corpus: card.corpus, distillVersion: card.distillVersion, distillSource: text, distillHint: hint || undefined, ...(card.memory?.length ? { memory: card.memory } : {}) });
 			if (res?.ok) {
 				setSavedName(card.displayName);
 				setPhase("saved");

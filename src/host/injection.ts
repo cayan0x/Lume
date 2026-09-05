@@ -127,7 +127,7 @@ export function buildPersonaSection(input: InjectionInput): string {
 			})
 			.filter(Boolean)
 			.join("\n\n");
-		if (lines) parts.push(`参考对话示例：\n${lines}`);
+		if (lines) parts.push(`参考对话示例：\n（只模仿说话方式，不要把示例中的时间、地点、正在做什么或其他事实当成当前事实）\n${lines}`);
 	}
 
 	// 7. 连贯性原则：连贯以人设任期为界，而非以会话为界——切换人设时，

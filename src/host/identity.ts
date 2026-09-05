@@ -55,6 +55,9 @@ export const LUME_IDENTITY_SPEC = defineDomain({
 						createdAt: z.number(),
 						/** 蒸馏产出的示例对话语料；可选字段，旧记录无此键照常通过 open 校验。 */
 						corpus: z.array(z.object({ user: z.string(), assistant: z.string() })),
+						distillVersion: z.number(),
+						distillSource: z.string(),
+						distillHint: z.string(),
 					}),
 				),
 			),
@@ -82,6 +85,9 @@ export interface CustomPersona {
 	createdAt: number;
 	/** 示例对话语料（蒸馏产出）；旧记录可能没有。 */
 	corpus?: PersonaSample[];
+	distillVersion?: number;
+	distillSource?: string;
+	distillHint?: string;
 }
 
 /** 摘录语料对（对话中用户认可的真实回复）。 */
@@ -247,6 +253,9 @@ export class IdentityStore {
 			promptText: persona.promptText,
 			createdAt: persona.createdAt,
 			corpus: sanitizeCorpus(persona.corpus),
+			distillVersion: persona.distillVersion,
+			distillSource: persona.distillSource,
+			distillHint: persona.distillHint,
 		});
 	}
 

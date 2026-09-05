@@ -146,6 +146,21 @@ describe("prompt 组装", () => {
 		expect(without.userText).toContain("目标台词");
 	});
 
+	it("contract prompt includes two-sided context when available", () => {
+		const { userText } = buildContractPrompt({
+			speaker: "目标", lines: ["你说嘛"], otherLines: [], narrative: "", mixed: false,
+			excludeOthers: true, contexts: ["用户：有件事想问你\n目标：你说嘛"],
+		});
+		expect(userText).toContain("双边情境窗口");
+		expect(userText).toContain("用户：有件事想问你");
+	});
+
+	it("contract prompt carries observable style statistics", () => {
+		const { userText } = buildContractPrompt({ speaker: "目标", lines: ["x"], otherLines: [], narrative: "", mixed: false, styleStats: "样本数 20；平均 8 字" });
+		expect(userText).toContain("可观测风格统计");
+		expect(userText).toContain("平均 8 字");
+	});
+
 	it("memory prompt is prefill-shaped, carries the display name and labels both sides", () => {
 		const { system, userText } = buildMemoryPrompt(
 			[

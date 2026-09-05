@@ -278,6 +278,7 @@ describe("createLumeRpcHandler", () => {
 			profile: new FakePersonaTable(),
 			memory_facts: new FakePersonaTable(),
 			style_rules: new FakePersonaTable(),
+			corpus_pins: new FakePersonaTable(),
 			custom_personas: new FakePersonaTable(),
 		});
 		const handle = createLumeRpcHandler({

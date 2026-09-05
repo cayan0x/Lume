@@ -31,6 +31,9 @@ export interface SessionRuntime {
 	lastExchange: { user: string; assistant: string } | null;
 	/** 近期对话缓冲（反思日志用）：每轮 user/assistant 各推一条，上限 12 条。 */
 	recentTurns: string[];
+	protocolCorrection: string | null;
+	lastFailureQuery: string | null;
+	failureStreak: number;
 }
 
 /** 运行时状态上限：与 PersonaStore 的 maxSessions 对齐，超限淘汰最旧。 */
@@ -53,6 +56,9 @@ function defaultRuntime(): SessionRuntime {
 		lastExtractionAt: undefined,
 		lastExchange: null,
 		recentTurns: [],
+		protocolCorrection: null,
+		lastFailureQuery: null,
+		failureStreak: 0,
 	};
 }
 

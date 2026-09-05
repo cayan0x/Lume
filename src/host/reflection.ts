@@ -17,14 +17,11 @@ export const LUME_REFLECTION_SPEC = defineDomain({
 	tables: {
 		logs: domainTable(
 			zodLike(
-				z.object({
-					at: z.number(),
-					context: z.number(),
-					planning: z.number(),
-					verification: z.number(),
-					review: z.number(),
-					note: z.string(),
-				}),
+				z.union([
+					z.object({ at: z.number(), context: z.number(), planning: z.number(), verification: z.number(), review: z.number(), note: z.string() }),
+					// v0.4.0 之前的存量日志；仅用于打开域并在启动时迁移。
+					z.object({ at: z.number(), p0: z.number(), p1: z.number(), p2: z.number(), p3: z.number(), note: z.string() }),
+				]),
 			),
 		),
 	},
@@ -41,6 +38,10 @@ export interface ReflectionEntry {
 
 export class ReflectionStore {
 	readonly #table: IdentityTable;
+	/** getFeedback 的短窗缓存：system prompt 每轮多次构建，避免每次全表扫描。 */
+	#feedbackCache: { at: number; value: string | null } | null = null;
+	/** 缓存有效期（毫秒）：跨一轮多步构建，又不让新日志长时间不可见。 */
+	static readonly FEEDBACK_CACHE_MS = 60_000;
 
 	constructor(table: IdentityTable) {
 		this.#table = table;
@@ -48,6 +49,53 @@ export class ReflectionStore {
 
 	async log(sessionId: string, entry: ReflectionEntry): Promise<void> {
 		await this.#table.put(sessionId, entry);
+		this.#feedbackCache = null; // 新日志可能改变反馈结论，缓存失效
+	}
+
+	/** 把旧版 p0~p3 日志迁移为公开的 Codex 协议字段；幂等且只处理旧记录。 */
+	async migrateLegacy(): Promise<number> {
+		let migrated = 0;
+		for (const key of this.#table.keys()) {
+			const raw = this.#table.get(key) as Record<string, unknown> | undefined;
+			if (!raw || typeof raw.context === "number" || typeof raw.p0 !== "number") continue;
+			await this.#table.put(key, {
+				at: typeof raw.at === "number" ? raw.at : Date.now(),
+				context: raw.p0,
+				planning: raw.p1,
+				verification: raw.p2,
+				review: raw.p3,
+				note: typeof raw.note === "string" ? raw.note : "",
+			});
+			migrated++;
+		}
+		if (migrated > 0) this.#feedbackCache = null;
+		return migrated;
+	}
+
+	/** 最近日志持续低分时返回一条短反馈；连续回升后自动淡出。结果带短窗缓存。 */
+	getFeedback(): string | null {
+		const now = Date.now();
+		if (this.#feedbackCache && now - this.#feedbackCache.at < ReflectionStore.FEEDBACK_CACHE_MS) {
+			return this.#feedbackCache.value;
+		}
+		const value = this.#computeFeedback();
+		this.#feedbackCache = { at: now, value };
+		return value;
+	}
+
+	#computeFeedback(): string | null {
+		const entries = [...this.#table.keys()].map((key) => this.#table.get(key) as ReflectionEntry).filter((e) => typeof e?.context === "number").sort((a, b) => b.at - a.at).slice(0, 5);
+		if (entries.length < 3) return null;
+		const avg = (key: keyof Pick<ReflectionEntry, "context" | "planning" | "verification" | "review">) => entries.reduce((n, e) => n + e[key], 0) / entries.length;
+		const weakest = (["context", "planning", "verification", "review"] as const).slice().sort((a, b) => avg(a) - avg(b))[0]!;
+		if (avg(weakest) > 1.15) return null;
+		const text: Record<typeof weakest, string> = {
+			context: "请先确认目标、约束和当前状态，避免遗漏已知信息。",
+			planning: "请按任务复杂度先做必要调研和计划，不要过早执行。",
+			verification: "本轮修改或执行后请立即做最小验证，不要只看命令是否结束。",
+			review: "完成前请对照需求、边界条件和数据保留做一次结果复核。",
+		};
+		return text[weakest];
 	}
 }
 

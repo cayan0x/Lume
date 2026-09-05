@@ -73,6 +73,10 @@ const THINKING_TEXT = `[任务执行协议]
 const THINKING_COMPACT_TEXT = `[任务执行协议]
 简单问题直接回答；复杂或高风险任务先理解目标和约束，再调研、计划、执行、验证、复核。修改前读取相关内容，修改后验证；失败先归因，不重复已排除方案。人设只影响表达，不影响事实、代码、工具调用和安全判断。历史示例只参考风格，不自动等于当前事实。`;
 const TASK_SIGNAL_RE = /代码|编程|文件|项目|仓库|脚本|命令|调研|研究|分析|实现|修改|修复|构建|测试|部署|配置|安装|迁移|导入|导出|接口|API|数据库|批量|计划|方案|风险|审查|review|debug|bug|深度|复杂/i;
+const REASONING_MODEL_RE = /deepseek-v[345]|reason|o[134]|gpt-5/i;
+/** 推理型模型的任务协议：省掉它天生具备的计划/分解条款，保留行为约束与事实边界。 */
+const THINKING_REASONING_TEXT = `[任务执行协议]
+已确认当前模型具备推理能力。仍须保护用户改动，修改后立即验证；失败先归因并更换方案，不重复已排除假设；完成前复核需求、边界和数据保留。示例、历史消息和角色记忆只作表达与相关性参考，不自动等于当前事实。人设只影响表达，不影响代码、工具调用和安全判断。`;
 
 /** schemastery → domainTable 形参的桥接（与 identity.ts 同款）。 */
 const recordSchema = zodLike;
@@ -205,7 +209,10 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 		try {
 			const domain = await ctx.storageDomain.open(LUME_REFLECTION_SPEC);
 			ctx.effect(() => async () => { await domain.close(); }, "lume: close reflection domain");
-			return new ReflectionStore(domain.table("logs"));
+			const store = new ReflectionStore(domain.table("logs"));
+			const migrated = await store.migrateLegacy();
+			if (migrated > 0) ctx.logger?.warn?.(`lume: 已迁移 ${migrated} 条旧版反思日志`);
+			return store;
 		} catch (error) {
 			ctx.logger?.warn?.("lume: 反思域不可用，反思日志降级", error);
 			return null;
@@ -499,6 +506,13 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					}
 					case "turn/end": {
 						st.turnIndex++;
+						// 低成本会话内纠偏：只处理明确的错误/失败信号，且要求连续轮次用户请求相同。
+						const failed = /失败|报错|错误|exception|traceback|cannot|unable|permission denied|timed out|找不到|不存在/i.test(st.assistantText);
+						const queryKey = st.userText.trim().replace(/\s+/g, " ").slice(0, 240);
+						if (failed && queryKey && queryKey === st.lastFailureQuery) st.failureStreak++;
+						else if (failed && queryKey) { st.lastFailureQuery = queryKey; st.failureStreak = 1; }
+						else if (!failed) { st.failureStreak = 0; st.lastFailureQuery = null; st.protocolCorrection = null; }
+						if (st.failureStreak >= 2) st.protocolCorrection = "检测到相同请求连续失败：先定位根因并记录已排除假设，再选择不同方案；不要重复同一调用。";
 						// 风格泄漏检测挂在 turn/end（该事件已被窗口机制验证可靠；assistant/message
 						// 的投递在实测中不可靠）。切换完成后逐轮检查回复是否残留旧人设签名词，
 						// 窗口已关仍检出 → 重开窗口 + 升级播报；一轮干净回复自动解除升级。
@@ -736,8 +750,22 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 				order: LUME_THINKING_ORDER,
 				text: (context: any) => {
 					const sid = context.agent?.session?.id ?? context.agent?.id;
-					const query = sid ? runtime.get(String(sid)).lastQuery ?? "" : "";
-					return TASK_SIGNAL_RE.test(query) ? THINKING_TEXT : THINKING_COMPACT_TEXT;
+					const st = sid ? runtime.get(String(sid)) : null;
+					const query = st?.lastQuery ?? "";
+					const task = TASK_SIGNAL_RE.test(query);
+					// 已知推理型模型具备计划能力，任务轮只保留变更、验证、归因和复核约束；
+					// 路由未知时使用完整版，避免误判造成能力退化。
+					const reasoning = typeof llmRoute?.model === "string" && REASONING_MODEL_RE.test(llmRoute.model);
+					const base = !task
+						? THINKING_COMPACT_TEXT
+						: reasoning
+							? THINKING_REASONING_TEXT
+							: THINKING_TEXT;
+					// 纠偏与反思提醒属于任务协议，跟人设无关——挂在 thinking 段
+					// 才能在「不使用人设」的纯任务会话里也生效。
+					const correction = st?.protocolCorrection;
+					const reflectionHint = reflectionStore?.getFeedback() ?? null;
+					return [base, correction, reflectionHint].filter(Boolean).join("\n\n");
 				},
 			}),
 		"lume.thinking-section()",

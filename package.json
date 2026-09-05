@@ -1,6 +1,6 @@
 {
   "name": "@lume/dsh-plugin",
-  "description": "微光 (Lume) — DSH Desktop 增强插件：思维逻辑引擎 + 人设系统",
+  "description": "微光 (Lume) — DSH Desktop 增强插件：Codex 风格自适应任务执行协议 + 人设系统（聊天记录蒸馏具名角色、长期记忆、风格纠偏自动捕获）",
   "version": "0.4.1",
   "type": "module",
   "main": "lib/index.js",

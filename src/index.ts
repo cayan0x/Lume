@@ -1,5 +1,5 @@
 /**
- * @lume/dsh-plugin 宿主入口（Cordis 函数插件）—— v0.3.0「人设即人」。
+ * lume-dsh-plugin 宿主入口（Cordis 函数插件）—— v0.3.0「人设即人」。
  *
  * 注入服务：
  * - systemPrompt  思考逻辑 + 人设五段式注入

@@ -1,5 +1,5 @@
 {
-  "name": "@lume/dsh-plugin",
+  "name": "lume-dsh-plugin",
   "description": "微光 (Lume) — DSH Desktop 增强插件：Codex 风格自适应任务执行协议 + 人设系统（聊天记录蒸馏具名角色、长期记忆、风格纠偏自动捕获）",
   "version": "0.4.1",
   "type": "module",
@@ -90,8 +90,7 @@
     "vitest": "^3.2.7"
   },
   "files": [
-    "lib/index.js",
-    "lib/client.js",
+    "lib",
     "cordis.patch.yml",
     "assets/personalities.json",
     "assets/personalities/*.txt",

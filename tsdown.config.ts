@@ -3,7 +3,7 @@ import { defineConfig } from "tsdown";
 // 客户端半边打包：产出 __ModuleLoader__ 工厂 bundle（契约见 dsh-client-modules）。
 // id 必须等于 package.json name；react 系与 primitives 走外部 require（种子词/模块图解析）。
 // clean 关闭：`npm run build` 先跑 tsc 产出宿主半边到同一 lib/，不能被清掉。
-const PKG_ID = "@lume/dsh-plugin";
+const PKG_ID = "lume-dsh-plugin";
 
 export default defineConfig({
 	entry: { client: "src/client/index.tsx" },

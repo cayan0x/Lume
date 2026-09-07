@@ -1,5 +1,5 @@
 /**
- * @lume/dsh-plugin 客户端半边：输入栏左侧人设选择。
+ * lume-dsh-plugin 客户端半边：输入栏左侧人设选择。
  *
  * 下拉用官方原语 @deepseek-ai/dsh-client-ui-primitives 的 Menu：
  * - side="top"：输入栏位于视口底端时菜单向上弹出（B 项修复的核心）

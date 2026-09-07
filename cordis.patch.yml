@@ -1,5 +1,5 @@
-# @lume/dsh-plugin roster patch — merged by `dsh plugin add` (dsh.bundle.patch).
+# lume-dsh-plugin roster patch — merged by `dsh plugin add` (dsh.bundle.patch).
 # Mounts the host half; the client bundle self-registers via window.__ModuleLoader__.load().
 - insert:
     - id: lume
-      name: '@lume/dsh-plugin'
+      name: 'lume-dsh-plugin'

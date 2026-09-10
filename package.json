@@ -1,7 +1,7 @@
 {
   "name": "lume-dsh-plugin",
   "description": "微光 (Lume) — DSH Desktop 增强插件：Codex 风格自适应任务执行协议 + 人设系统（聊天记录蒸馏具名角色、长期记忆、风格纠偏自动捕获）",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -51,17 +51,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-locale": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-invariants": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-storage-domain": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/dsh-compaction": "*",
+    "@deepseek-ai/dsh-compaction-basic": "*",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "scripts": {
@@ -95,5 +90,31 @@
     "assets/personalities.json",
     "assets/personalities/*.txt",
     "assets/personalities/*.jsonl"
-  ]
+  ],
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-storage-domain": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-compaction": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-compaction-basic": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
 }

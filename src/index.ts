@@ -32,56 +32,11 @@ import { messageText } from "./core/text.js";
 import { composeBoundary } from "./host/boundary.js";
 import { SessionRuntimeStore } from "./host/session-runtime.js";
 import type { SessionRuntime } from "./host/session-runtime.js";
+import { registerLumeCompaction } from "./host/compaction.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 import { buildAlignmentCorrection, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolEvidenceDirective, classifyInteraction, taskPhaseForMode } from "./host/protocol.js";
+import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectThinkingProtocol } from "./host/thinking.js";
 
-/** Codex 风格任务执行协议：始终注入，约束任务如何完成。 */
-const THINKING_TEXT = `[任务执行协议]
-
-你应遵循以下公开的工程工作协议。它约束任务如何被完成，不要求输出隐藏的逐步思考过程；对外只给出必要的结论、计划、变更和验证结果。
-
-**身份分工**：人设只影响自然语言表达；本协议负责正确完成任务。代码、数学、工具调用、结构化输出和安全判断保持准确、朴素，不因人设而戏剧化。
-
-**P0 上下文管理**：先确认用户真正要达成的结果、约束、涉及的文件/系统和完成标准。上下文变长时压缩为：目标、已完成事项、关键决策、当前状态、错误、已排除假设、下一步。不要反复提出已经解决或排除的问题。
-
-**P1 阶段门控**：复杂任务按“理解 → 只读调研 → 简短计划 → 执行 → 验证 → 汇报”推进。调研和计划阶段不修改外部状态；未确认目标文件、接口和影响范围前，不直接动手。
-
-**P1 任务分解**：把大任务拆成可验证的小步骤，优先处理阻塞项和高风险项。每一步都说明完成条件；能并行的只读检查并行进行，存在依赖的步骤按顺序执行。
-
-**P1 自适应投入**：不要把“快速”当成固定目标。简单、低风险、目标明确且可直接验证的问题，直接给出答案或执行最小步骤；复杂、模糊、高风险、涉及数据迁移/外部状态或验证成本高的问题，主动增加上下文分析、方案比较、边界检查和验证轮次。只有在信息足够且风险可控时才快速收敛。
-
-**P0 意图对齐**：先辨认这一轮是问答、查找、讨论、诊断还是执行。问答先回答；查找先核对事实；讨论先比较取舍；诊断先解释证据和根因，不越权修复；执行才修改状态。用户要结论时不要只汇报动作，用户要探讨时不要擅自锁定方案。
-
-**P1 信息路由**：优先定位最可能影响结果的入口、数据流和约束，不平均浏览无关内容；无依赖的只读检查可以并行，依赖前置结果的操作必须等待确认。
-
-**P2 变更纪律**：修改前完整读取相关文件，理解现有实现和用户已有改动；一次性完成同一文件的相关修改。保持改动最小、可回滚、与现有接口兼容，不重写无关代码，不覆盖用户数据。
-
-**P2 验证闭环**：每次修改后立即运行与风险匹配的测试、类型检查、构建或最小复现。不要只看“命令成功”，还要确认输出确实满足目标。发现失败先归因：输入、逻辑、接口、环境或权限；修复后重新验证。
-
-**P2 达成标准**：完成动作不等于达成目标。交付前必须回答：用户要的结果是否已经出现？用户能否实际使用？是否引入了需要用户清理的中间文件、配置、会话或其他副作用？
-
-**P2 振荡预防**：同一假设连续失败后停止重复尝试，记录失败原因并换方案。已排除的假设不再重提；不使用破坏性命令绕过问题；不把测试删掉或放宽断言来制造假成功。
-
-**P3 结果复核**：完成前逐项对照用户要求、边界条件、错误路径、兼容性和数据保留。区分“已实现”“已验证”“推测有效”和“仍然缺失”，不把部分完成说成全部完成。
-
-**工具与安全**：工具调用前判断是否只读、是否会写入或删除、目标是否精确、是否涉及隐私或外部通信。优先使用专用工具和最小权限；破坏性操作、敏感数据传输和不可逆变更必须先获得明确授权。
-
-**代码任务**：先定位入口、数据流和测试，再修改；优先复用现有抽象；为新行为补回归测试；同时考虑旧数据迁移、失败回退和用户已有状态。最终汇报修改文件、验证结果、已知限制和用户需要采取的动作。
-
-**对话任务**：先直接回答当前问题，再补充必要依据；简单问题保持简洁，复杂问题给出足够的推理依据、假设和验证边界。不编造已经执行的操作、工具结果、文件内容或当前状态。需要用户决定时只提出真正阻塞的问题。
-
-**隐私与事实边界**：示例、历史消息和角色记忆用于相关性与表达参考，不自动等于当前事实。涉及时间、地点、当前行为和现实状态时，只依据当前上下文或可靠工具结果。
-
-每次完成一个阶段后，检查：目标是否仍然一致？变更是否在授权范围内？验证是否覆盖了最可能的失败方式？`;
-
-/** 普通闲聊用短版协议；任务型请求才注入完整版，避免每轮重复支付完整工作协议。 */
-const THINKING_COMPACT_TEXT = `[任务执行协议]
-先区分问答、查找、讨论、诊断、执行：问答先答，查找先核对，讨论先比较，诊断先归因，执行才改动。复杂或高风险任务先理解目标和约束，再调研、计划、执行、验证、复核。修改前读取相关内容，修改后确认实际生效并检查副作用；失败先归因，不重复已排除方案。人设只影响表达，不影响事实、代码、工具调用和安全判断。历史示例只参考风格，不自动等于当前事实。`;
-const TASK_SIGNAL_RE = /代码|编程|文件|项目|仓库|脚本|命令|调研|研究|分析|实现|修改|修复|构建|测试|部署|配置|安装|迁移|导入|导出|接口|API|数据库|批量|计划|方案|风险|审查|review|debug|bug|深度|复杂/i;
-const REASONING_MODEL_RE = /deepseek-v[345]|reason|o[134]|gpt-5/i;
-/** 推理型模型的任务协议：省掉它天生具备的计划/分解条款，保留行为约束与事实边界。 */
-const THINKING_REASONING_TEXT = `[任务执行协议]
-已确认当前模型具备推理能力。仍须保护用户改动，修改后立即验证；失败先归因并更换方案，不重复已排除假设；完成前复核需求、边界和数据保留。示例、历史消息和角色记忆只作表达与相关性参考，不自动等于当前事实。人设只影响表达，不影响代码、工具调用和安全判断。`;
 
 /** schemastery → domainTable 形参的桥接（与 identity.ts 同款）。 */
 const recordSchema = zodLike;
@@ -137,6 +92,12 @@ export interface LumeConfig {
 	distillModel?: string;
 	/** 会话结束反思日志：空闲时间评估 Codex 工作协议的四项能力，各打 0-2 分落盘。 */
 	reflectionEnabled?: boolean;
+	/**
+	 * 接管会话压缩（实验特性，默认关闭）：用 Lume 的结构化检查点摘要替换宿主的
+	 * coding 模板。需要同时在 profile 的 cordis.patch.yml 里禁用 compaction-basic
+	 * 行，否则 ctx.compaction 已被占用、接管失败。关闭时完全不注册、不产生日志。
+	 */
+	compactionTakeover?: boolean;
 	switchBoundaryTurns?: number;
 }
 
@@ -155,6 +116,7 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const extractionRouteOverride = { provider: config.extractionProvider, model: config.extractionModel };
 	const distillRouteOverride = { provider: config.distillProvider, model: config.distillModel };
 	const reflectionEnabled = config.reflectionEnabled ?? true;
+	const compactionTakeover = config.compactionTakeover ?? false;
 	const boundaryTurns = config.switchBoundaryTurns ?? SWITCH_BOUNDARY_TURNS;
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
@@ -796,15 +758,12 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					const sid = context.agent?.session?.id ?? context.agent?.id;
 					const st = sid ? runtime.get(String(sid)) : null;
 					const query = st?.lastQuery ?? "";
-					const task = TASK_SIGNAL_RE.test(query);
 					// 已知推理型模型具备计划能力，任务轮只保留变更、验证、归因和复核约束；
 					// 路由未知时使用完整版，避免误判造成能力退化。
-					const reasoning = typeof llmRoute?.model === "string" && REASONING_MODEL_RE.test(llmRoute.model);
-					const base = !task
-						? THINKING_COMPACT_TEXT
-						: reasoning
-							? THINKING_REASONING_TEXT
-							: THINKING_TEXT;
+					const base = selectThinkingProtocol({
+						isTask: TASK_SIGNAL_RE.test(query),
+						isReasoningModel: typeof llmRoute?.model === "string" && REASONING_MODEL_RE.test(llmRoute.model),
+					});
 					// 纠偏与反思提醒属于任务协议，跟人设无关——挂在 thinking 段
 					// 才能在「不使用人设」的纯任务会话里也生效。
 					const correction = st?.protocolCorrection;
@@ -821,4 +780,14 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 			}),
 		"lume.thinking-section()",
 	);
+
+	// ── 会话压缩接管（实验特性，默认关闭）──
+	// 开启后：宿主提供 ctx.compaction 时用 Lume 的结构化检查点摘要替换 coding 模板；
+	// 需配合 profile 的 cordis.patch.yml 禁用 compaction-basic（同名服务不可重复注册）。
+	// 默认关闭时完全不注册，避免在未配置的机器上产生无意义的失败日志。
+	if (compactionTakeover) {
+		// resolveRoute：agent 上取不到路由时用 Lume 自己缓存的主对话路由兜底，
+		// 避免摘要静默回退到宿主的 coding 模板。
+		void registerLumeCompaction(ctx, ctx.logger, { resolveRoute: () => llmRoute });
+	}
 }

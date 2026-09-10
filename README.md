@@ -201,6 +201,7 @@
 | `extractionProvider` / `extractionModel` | 回落主对话 | 提取专用模型档（可仅配置其一） |
 | `distillProvider` / `distillModel` | 回落主对话 | 蒸馏专用模型档（可仅配置其一） |
 | `reflectionEnabled` | `true` | 会话结束时运行 Codex 工作协议反思评估，写入 `lume_reflection` 域 |
+| `compactionTakeover` | `false` | 接管会话压缩（实验）：需同时在 profile 的 `cordis.patch.yml` 里禁用 `compaction-basic`，否则同名服务已被占用、接管不会生效 |
 
 ## 存储
 

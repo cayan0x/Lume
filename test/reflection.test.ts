@@ -29,6 +29,11 @@ describe("REFLECTION_SYSTEM", () => {
 	it("scores each protocol area on a 0-2 scale", () => {
 		expect(REFLECTION_SYSTEM).toContain("0=明显违反，1=一般，2=良好");
 	});
+
+	it("验证维度包含证据时效（历史错误不得当成本次原因）", () => {
+		expect(REFLECTION_SYSTEM).toContain("核对时间戳与因果归属");
+		expect(REFLECTION_SYSTEM).toContain("把历史错误当成本次问题的原因");
+	});
 });
 
 describe("getFeedback cache", () => {

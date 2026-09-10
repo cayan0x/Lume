@@ -47,6 +47,13 @@ export interface SessionRuntime {
 	toolSuccesses: number;
 	toolFailures: number;
 	toolUnknown: number;
+	/**
+	 * 最近一次上下文压缩：发生时的轮次与被摘要替换的历史规模。
+	 * 压缩由宿主的 preset 在隔离域里执行（Lume 无法接管该服务），摘要在替换
+	 * 较早对话时必然丢细节；Lume 能做的是在压缩后提醒模型「不要假设摘要包含
+	 * 全部信息」，对依赖旧细节的任务先确认再继续。
+	 */
+	compaction: { turnIndex: number; shadowedItems: number; tokens: number } | null;
 }
 
 /** 运行时状态上限：与 PersonaStore 的 maxSessions 对齐，超限淘汰最旧。 */
@@ -81,6 +88,7 @@ function defaultRuntime(): SessionRuntime {
 		toolSuccesses: 0,
 		toolFailures: 0,
 		toolUnknown: 0,
+		compaction: null,
 	};
 }
 

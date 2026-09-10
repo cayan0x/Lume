@@ -32,9 +32,10 @@ import { messageText } from "./core/text.js";
 import { composeBoundary } from "./host/boundary.js";
 import { SessionRuntimeStore } from "./host/session-runtime.js";
 import type { SessionRuntime } from "./host/session-runtime.js";
-import { registerLumeCompaction } from "./host/compaction.js";
+import { isCompactionCheckpoint } from "./host/compaction.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
-import { buildAlignmentCorrection, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolEvidenceDirective, classifyInteraction, taskPhaseForMode } from "./host/protocol.js";
+import { appendLumeLog } from "./host/diag.js";
+import { buildAlignmentCorrection, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolEvidenceDirective, classifyInteraction, taskPhaseForMode } from "./host/protocol.js";
 import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectThinkingProtocol } from "./host/thinking.js";
 
 
@@ -92,12 +93,6 @@ export interface LumeConfig {
 	distillModel?: string;
 	/** 会话结束反思日志：空闲时间评估 Codex 工作协议的四项能力，各打 0-2 分落盘。 */
 	reflectionEnabled?: boolean;
-	/**
-	 * 接管会话压缩（实验特性，默认关闭）：用 Lume 的结构化检查点摘要替换宿主的
-	 * coding 模板。需要同时在 profile 的 cordis.patch.yml 里禁用 compaction-basic
-	 * 行，否则 ctx.compaction 已被占用、接管失败。关闭时完全不注册、不产生日志。
-	 */
-	compactionTakeover?: boolean;
 	switchBoundaryTurns?: number;
 }
 
@@ -116,7 +111,6 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 	const extractionRouteOverride = { provider: config.extractionProvider, model: config.extractionModel };
 	const distillRouteOverride = { provider: config.distillProvider, model: config.distillModel };
 	const reflectionEnabled = config.reflectionEnabled ?? true;
-	const compactionTakeover = config.compactionTakeover ?? false;
 	const boundaryTurns = config.switchBoundaryTurns ?? SWITCH_BOUNDARY_TURNS;
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
@@ -453,6 +447,17 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						break;
 					}
 					case "user/message": {
+						// 压缩检查点：宿主把被压缩的历史替换成一条摘要消息，必须与真实
+						// 用户消息区分——否则摘要会被当成「用户当前说的话」，污染协议
+						// 路由所依赖的 lastQuery 与对话缓冲。这是兜底识别：同一轮里
+						// compaction/summary 通常先到且带规模，不要把那条覆盖成无规模的。
+						if (isCompactionCheckpoint(event.data)) {
+							if (!st.compaction || st.compaction.turnIndex !== st.turnIndex) {
+								st.compaction = { turnIndex: st.turnIndex, shadowedItems: 0, tokens: 0 };
+							}
+							appendLumeLog(`[${sid}] 检测到上下文压缩检查点（第 ${st.turnIndex} 轮）`);
+							break;
+						}
 						const text = messageText(event.data);
 						if (text) {
 							const normalized = text.trim().replace(/\s+/g, " ").slice(0, 240);
@@ -503,6 +508,16 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						if (st.interactionMode === "execute") st.taskPhase = unknownResult || explicitError ? "diagnose" : "verify";
 						break;
 					}
+					case "compaction/summary": {
+						// 压缩由宿主 preset 在隔离域执行（Lume 无法接管该服务），但事件在
+						// 会话总线上可见。记录规模，供下一轮注入「摘要不是完整历史」的重锚。
+						const data = event.data as { shadowedSeqs?: unknown[]; shadowedTokenCount?: unknown } | undefined;
+						const shadowedItems = Array.isArray(data?.shadowedSeqs) ? data.shadowedSeqs.length : 0;
+						const tokens = typeof data?.shadowedTokenCount === "number" ? data.shadowedTokenCount : 0;
+						st.compaction = { turnIndex: st.turnIndex, shadowedItems, tokens };
+						appendLumeLog(`[${sid}] 压缩完成：替换 ${shadowedItems} 项历史（~${tokens} tokens），下一轮注入状态重锚`);
+						break;
+					}
 					case "turn/end": {
 						st.turnIndex++;
 						// 低成本会话内纠偏：只处理明确的错误/失败信号，且要求连续轮次用户请求相同。
@@ -537,6 +552,11 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 						break;
 					}
 					default:
+						// 诊断：压缩事件是否经由 session/event 总线投递（宿主按 session
+						// 所属上下文收集监听者，隔离域里发出的日志事件可能不经过这里）。
+						if (typeof event.type === "string" && /compact/i.test(event.type)) {
+							appendLumeLog(`[${sid}] 收到未处理的压缩事件类型 ${event.type}`);
+						}
 						break;
 				}
 			}),
@@ -775,19 +795,13 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					const postTurnReview = st?.postTurnReview;
 					const phase = buildTaskPhaseDirective(st?.taskPhase ?? "answer");
 					const toolEvidence = st ? buildToolEvidenceDirective({ calls: st.toolCalls, successes: st.toolSuccesses, failures: st.toolFailures, unknown: st.toolUnknown }) : null;
-					return [base, route, phase, longSession, anchor, alignment, postTurnReview, toolEvidence, correction, reflectionHint].filter(Boolean).join("\n\n");
+					// 压缩重锚：宿主的 preset 隔离域负责压缩，Lume 只能观察事件；
+					// 在压缩后一轮提醒「摘要不是完整历史」。
+					const compactionNotice = st?.compaction ? buildCompactionNotice(st.compaction, st.turnIndex) : null;
+					return [base, route, phase, longSession, anchor, alignment, postTurnReview, toolEvidence, compactionNotice, correction, reflectionHint].filter(Boolean).join("\n\n");
 				},
 			}),
 		"lume.thinking-section()",
 	);
 
-	// ── 会话压缩接管（实验特性，默认关闭）──
-	// 开启后：宿主提供 ctx.compaction 时用 Lume 的结构化检查点摘要替换 coding 模板；
-	// 需配合 profile 的 cordis.patch.yml 禁用 compaction-basic（同名服务不可重复注册）。
-	// 默认关闭时完全不注册，避免在未配置的机器上产生无意义的失败日志。
-	if (compactionTakeover) {
-		// resolveRoute：agent 上取不到路由时用 Lume 自己缓存的主对话路由兜底，
-		// 避免摘要静默回退到宿主的 coding 模板。
-		void registerLumeCompaction(ctx, ctx.logger, { resolveRoute: () => llmRoute });
-	}
 }

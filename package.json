@@ -1,7 +1,7 @@
 {
   "name": "lume-dsh-plugin",
   "description": "微光 (Lume) — DSH Desktop 增强插件：Codex 风格自适应任务执行协议 + 人设系统（聊天记录蒸馏具名角色、长期记忆、风格纠偏自动捕获）",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -55,8 +55,6 @@
     "@deepseek-ai/dsh-llm": "*",
     "@deepseek-ai/dsh-storage-domain": "*",
     "@deepseek-ai/dsh-tools": "*",
-    "@deepseek-ai/dsh-compaction": "*",
-    "@deepseek-ai/dsh-compaction-basic": "*",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "scripts": {
@@ -105,12 +103,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-tools": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-compaction": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-compaction-basic": {
       "optional": true
     },
     "@deepseek-ai/schemastery": {

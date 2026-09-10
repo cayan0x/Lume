@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAlignmentCorrection, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolEvidenceDirective, classifyInteraction, taskPhaseForMode } from "../src/host/protocol.js";
+import { buildAlignmentCorrection, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolEvidenceDirective, classifyInteraction, taskPhaseForMode } from "../src/host/protocol.js";
 
 describe("interaction protocol", () => {
 	it("routes questions, research, discussion and diagnosis without executing", () => {
@@ -39,5 +39,29 @@ describe("interaction protocol", () => {
 		expect(buildTaskPhaseDirective("verify")).toContain("没有证据就标记为未验证");
 		expect(buildToolEvidenceDirective({ calls: 2, successes: 1, failures: 0, unknown: 1 })).toContain("结果未知");
 		expect(buildToolEvidenceDirective({ calls: 1, successes: 1, failures: 0, unknown: 0 })).toContain("工具成功只证明动作执行成功");
+	});
+});
+
+describe("buildCompactionNotice", () => {
+	it("压缩后当轮与下一轮注入，更早的轮次不再注入", () => {
+		const info = { turnIndex: 5, shadowedItems: 9, tokens: 1223 };
+		expect(buildCompactionNotice(info, 5)).toContain("上下文压缩提示");
+		expect(buildCompactionNotice(info, 6)).toContain("上下文压缩提示");
+		expect(buildCompactionNotice(info, 7)).toBeNull();
+		expect(buildCompactionNotice(info, 12)).toBeNull();
+	});
+
+	it("提示包含规模与「不要假设摘要完整」的约束", () => {
+		const text = buildCompactionNotice({ turnIndex: 3, shadowedItems: 9, tokens: 1223 }, 3)!;
+		expect(text).toContain("9 项历史");
+		expect(text).toContain("1223 tokens");
+		expect(text).toContain("摘要只保留要点");
+		expect(text).toContain("不要假设摘要包含全部信息");
+	});
+
+	it("规模信息缺失时仍给出可用的提醒", () => {
+		const text = buildCompactionNotice({ turnIndex: 1, shadowedItems: 0, tokens: 0 }, 1)!;
+		expect(text).toContain("较早的历史已被摘要替换");
+		expect(text).not.toContain("0 项历史");
 	});
 });

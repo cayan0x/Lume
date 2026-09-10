@@ -89,3 +89,19 @@ export function buildAlignmentCorrection(kind: "user-correction" | "repeated-req
 		? "〔即时对齐纠偏〕用户正在纠正上一轮理解。先用一句话复述你现在理解的目标和边界，若仍有歧义只问一个关键问题；不要沿用上一轮假设，也不要直接继续执行。"
 		: "〔即时对齐纠偏〕用户重复提出相近请求，说明上一轮可能没有解决真正目标。先检查上一轮回答是否答非所问或没有产生结果，再给出针对当前目标的回应；不要原样重复上一轮。";
 }
+
+/**
+ * 压缩后的状态重锚：宿主的 preset 在自己的隔离域里执行压缩，Lume 无法接管该
+ * 服务，但能观察到压缩事件。压缩把较早对话替换成一条摘要——摘要必然丢细节，
+ * 而模型很容易把摘要当成完整历史。这里提醒它在依赖旧细节时先确认。
+ *
+ * 只在压缩后一轮内注入：更久之后摘要已成为正常上下文的一部分。
+ */
+export function buildCompactionNotice(info: { turnIndex: number; shadowedItems: number; tokens: number }, currentTurn: number): string | null {
+	if (currentTurn - info.turnIndex > 1) return null;
+	const scale =
+		info.shadowedItems > 0
+			? `约 ${info.shadowedItems} 项历史${info.tokens > 0 ? `（~${info.tokens} tokens）` : ""}已被摘要替换`
+			: "较早的历史已被摘要替换";
+	return `〔上下文压缩提示〕上一轮发生的上下文压缩已生效：${scale}。摘要只保留要点，早期对话的具体细节（文件路径、数字、原始报错、当时确认过的结论）可能已经不在上下文里。如果当前任务或用户的话依赖这些细节中的任何一项，先回看或直接问，不要假设摘要包含全部信息，也不要凭印象补全。`;
+}

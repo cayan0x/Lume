@@ -57,6 +57,16 @@ describe("IdentityStore memory", () => {
 		const { store } = makeStore();
 		await expect(store.addMemory("loli", "  ", () => false)).resolves.toBe(false);
 	});
+
+	it("marks relative-time memories as temporary and keeps legacy facts readable", async () => {
+		const { store } = makeStore();
+		await store.addMemory("loli", "用户今晚要早点睡", () => false);
+		const fact = store.getMemory("loli").find((item) => item.text.includes("今晚"));
+		expect(fact).toMatchObject({ scope: "temporary", confidence: 1 });
+		expect(fact?.expiresAt).toBeGreaterThan(Date.now());
+		await store.replaceMemory("loli", [{ text: "用户喜欢深夜写代码", at: 1 }]);
+		expect(store.getMemory("loli")).toEqual([{ text: "用户喜欢深夜写代码", at: 1 }]);
+	});
 });
 
 describe("IdentityStore style rules", () => {

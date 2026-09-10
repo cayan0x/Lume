@@ -34,6 +34,19 @@ export interface SessionRuntime {
 	protocolCorrection: string | null;
 	lastFailureQuery: string | null;
 	failureStreak: number;
+	/** 当前用户请求的行为类型；每轮重算，避免把上一轮的执行意图带入下一轮。 */
+	interactionMode: "question" | "research" | "discussion" | "diagnosis" | "execute";
+	/** 当前轮用户明确纠正或重复提问时的临时对齐提醒。 */
+	alignmentCorrection: string | null;
+	/** 最近用户请求的归一化文本，仅用于检测上下文失配，不持久化。 */
+	recentUserQueries: string[];
+	/** 上一轮执行任务的交付声明缺少可见验证时，留给后续任务的低成本提醒。 */
+	postTurnReview: string | null;
+	taskPhase: "answer" | "research" | "discuss" | "diagnose" | "execute" | "verify" | "deliver";
+	toolCalls: number;
+	toolSuccesses: number;
+	toolFailures: number;
+	toolUnknown: number;
 }
 
 /** 运行时状态上限：与 PersonaStore 的 maxSessions 对齐，超限淘汰最旧。 */
@@ -59,6 +72,15 @@ function defaultRuntime(): SessionRuntime {
 		protocolCorrection: null,
 		lastFailureQuery: null,
 		failureStreak: 0,
+		interactionMode: "question",
+		alignmentCorrection: null,
+		recentUserQueries: [],
+		postTurnReview: null,
+		taskPhase: "answer",
+		toolCalls: 0,
+		toolSuccesses: 0,
+		toolFailures: 0,
+		toolUnknown: 0,
 	};
 }
 

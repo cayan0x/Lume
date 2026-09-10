@@ -42,7 +42,10 @@ export const LUME_IDENTITY_SPEC = defineDomain({
 	version: 1,
 		tables: {
 			profile: domainTable(zodLike(z.object({ name: z.string() }))),
-			memory_facts: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
+		memory_facts: domainTable(zodLike(z.array(z.union([
+			z.object({ text: z.string(), at: z.number() }),
+			z.object({ text: z.string(), at: z.number(), scope: z.string(), confidence: z.number(), expiresAt: z.number() }),
+		])))),
 			style_rules: domainTable(zodLike(z.array(z.object({ rule: z.string(), at: z.number() })))),
 			/** 对话中摘录的「被用户认可」语料对（注入时并入采样池）；键 = 人设名。 */
 			corpus_pins: domainTable(zodLike(z.array(z.object({ user: z.string(), assistant: z.string(), at: z.number() })))),
@@ -73,6 +76,9 @@ export const BUILTIN_PERSONA_NAMES = new Set(["loli", "senpai", "butler", "tsund
 export interface MemoryFact {
 	text: string;
 	at: number;
+	scope?: "stable" | "temporary";
+	confidence?: number;
+	expiresAt?: number;
 }
 export interface StyleRule {
 	rule: string;
@@ -130,7 +136,22 @@ export function sanitizeCorpus(value: unknown): PersonaSample[] {
 }
 
 function isFactList(value: unknown): value is MemoryFact[] {
-	return Array.isArray(value) && value.every((v) => typeof (v as MemoryFact)?.text === "string");
+	return Array.isArray(value) && value.every((v) => typeof (v as MemoryFact)?.text === "string" && typeof (v as MemoryFact)?.at === "number");
+}
+
+const TEMPORARY_MEMORY_RE = /今天|今晚|明天|昨天|现在|正在|刚刚|最近|这周|本周|目前|暂时|下班|吃饭|吃过|在吃/;
+export const TEMPORARY_MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function normalizeMemoryFact(fact: MemoryFact): MemoryFact | null {
+	if (!fact.text.trim() || !Number.isFinite(fact.at)) return null;
+	if (fact.expiresAt !== undefined && fact.expiresAt <= Date.now()) return null;
+	return {
+		text: fact.text,
+		at: fact.at,
+		...(fact.scope ? { scope: fact.scope } : {}),
+		...(typeof fact.confidence === "number" ? { confidence: Math.max(0, Math.min(1, fact.confidence)) } : {}),
+		...(typeof fact.expiresAt === "number" ? { expiresAt: fact.expiresAt } : {}),
+	};
 }
 function isRuleList(value: unknown): value is StyleRule[] {
 	return Array.isArray(value) && value.every((v) => typeof (v as StyleRule)?.rule === "string");
@@ -172,7 +193,8 @@ export class IdentityStore {
 
 	getMemory(persona: string): MemoryFact[] {
 		const value = this.#memoryTable.get(persona);
-		return isFactList(value) ? value : [];
+		if (!isFactList(value)) return [];
+		return value.map(normalizeMemoryFact).filter((fact): fact is MemoryFact => fact !== null);
 	}
 
 	/** 追加记忆，超限挤掉最旧；与已有事实近似重复的忽略。返回是否写入。 */
@@ -181,7 +203,15 @@ export class IdentityStore {
 		if (!trimmed) return false;
 		const facts = this.getMemory(persona);
 		if (isDuplicate(trimmed, facts)) return false;
-		const next = [...facts, { text: trimmed, at: Date.now() }];
+		const at = Date.now();
+		const temporary = TEMPORARY_MEMORY_RE.test(trimmed);
+		const next = [...facts, {
+			text: trimmed,
+			at,
+			scope: temporary ? "temporary" as const : "stable" as const,
+			confidence: 1,
+			...(temporary ? { expiresAt: at + TEMPORARY_MEMORY_TTL_MS } : {}),
+		}];
 		while (next.length > MEMORY_CAP) next.shift();
 		await this.#memoryTable.put(persona, next);
 		return true;

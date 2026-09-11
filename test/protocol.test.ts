@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAlignmentCorrection, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolEvidenceDirective, classifyInteraction, taskPhaseForMode } from "../src/host/protocol.js";
+import { advancePhase, buildAlignmentCorrection, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolFailureNotice, classifyInteraction, isUserAuthored, taskPhaseForMode } from "../src/host/protocol.js";
 
 describe("interaction protocol", () => {
 	it("routes questions, research, discussion and diagnosis without executing", () => {
@@ -37,8 +37,34 @@ describe("interaction protocol", () => {
 	it("models task phases and tool evidence", () => {
 		expect(taskPhaseForMode("execute")).toBe("execute");
 		expect(buildTaskPhaseDirective("verify")).toContain("没有证据就标记为未验证");
-		expect(buildToolEvidenceDirective({ calls: 2, successes: 1, failures: 0, unknown: 1 })).toContain("结果未知");
-		expect(buildToolEvidenceDirective({ calls: 1, successes: 1, failures: 0, unknown: 0 })).toContain("工具成功只证明动作执行成功");
+		expect(buildToolFailureNotice({ failures: 0, unknown: 1 })).toContain("失败或结果未知");
+		expect(buildToolFailureNotice({ failures: 1, unknown: 0 })).toContain("不能当成完成");
+		// 全成功时不再注入：这条旧版带每步递增的计数，会改写系统提示词、作废前缀缓存
+		expect(buildToolFailureNotice({ failures: 0, unknown: 0 })).toBeNull();
+	});
+
+	it("不再把「做一件事…」这类讨论误判成执行", () => {
+		expect(classifyInteraction("做一件事，你总能选择最麻烦的方式，是什么驱动你去这么做的，为啥不选择最优解")).toBe("diagnosis");
+		expect(classifyInteraction("你add一下")).toBe("execute");
+		expect(classifyInteraction("你add一下")).not.toBe("question");
+	});
+
+	it("区分真实用户消息与宿主注入消息", () => {
+		expect(isUserAuthored({ role: "user", source: { kind: "user" } })).toBe(true);
+		expect(isUserAuthored({ role: "user", source: { kind: "plugin", plugin: "@deepseek-ai/dsh-system-prompt" } })).toBe(false);
+		expect(isUserAuthored({ role: "user", source: { kind: "skill-catalog" } })).toBe(false);
+		expect(isUserAuthored({ role: "user", source: { kind: "agent-instructions" } })).toBe(false);
+		expect(isUserAuthored({ role: "assistant", source: { kind: "user" } })).toBe(false);
+		// 不上报来源的宿主版本：放行，避免把意图彻底丢掉
+		expect(isUserAuthored({ role: "user" })).toBe(true);
+	});
+
+	it("阶段只前进，不回退到初始的回答态", () => {
+		expect(advancePhase("answer", "execute")).toBe("execute");
+		expect(advancePhase("execute", "answer")).toBe("execute");
+		expect(advancePhase("deliver", "answer")).toBe("deliver");
+		// 失败后回到归因是合法回退，不属于重置
+		expect(advancePhase("verify", "diagnose")).toBe("diagnose");
 	});
 });
 

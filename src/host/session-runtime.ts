@@ -36,6 +36,23 @@ export interface SessionRuntime {
 	failureStreak: number;
 	/** 当前用户请求的行为类型；每轮重算，避免把上一轮的执行意图带入下一轮。 */
 	interactionMode: "question" | "research" | "discussion" | "diagnosis" | "execute";
+	/**
+	 * 本轮冻结的意图：只在「真实用户消息」上确定一次，轮内不再重算。
+	 *
+	 * 宿主的 user/message 通道混着运行时快照、工作区指令、技能目录等注入消息，
+	 * 以及投递时序导致的「首次组装早于事件到达」。若每步都从最新文本重算，模式会
+	 * 在轮内漂移（实测同一轮从「执行」变成「问答」），系统提示词随之每步改写。
+	 * messageId 用于与权威会话历史对账：不一致即重新冻结。
+	 */
+	intent: { turnIndex: number; messageId: string; text: string } | null;
+	/**
+	 * 人设段的一轮一算缓存。
+	 *
+	 * 记忆/风格/示例按当前查询做 top-k 检索，查询每步变化就会换人，注入段随之
+	 * 抖动。key 覆盖 persona、查询、记忆/风格/语料指纹与注入配置；命中即复用，
+	 * 人设切换、边界窗口、记忆写入等显式失效条件由调用侧负责。
+	 */
+	personaCache: { turnIndex: number; key: string; text: string } | null;
 	/** 当前轮用户明确纠正或重复提问时的临时对齐提醒。 */
 	alignmentCorrection: string | null;
 	/** 最近用户请求的归一化文本，仅用于检测上下文失配，不持久化。 */
@@ -80,6 +97,8 @@ function defaultRuntime(): SessionRuntime {
 		lastFailureQuery: null,
 		failureStreak: 0,
 		interactionMode: "question",
+		intent: null,
+		personaCache: null,
 		alignmentCorrection: null,
 		recentUserQueries: [],
 		postTurnReview: null,

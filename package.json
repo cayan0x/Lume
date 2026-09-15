@@ -1,7 +1,7 @@
 {
   "name": "lume-dsh-plugin",
-  "description": "微光 (Lume) — DSH Desktop 增强插件：Codex 风格自适应任务执行协议 + 人设系统（聊天记录蒸馏具名角色、长期记忆、风格纠偏自动捕获）",
-  "version": "0.6.0",
+  "description": "微光 (Lume) — DSH Desktop 增强插件：给会话装上工程纪律与真实关系。纪律层约束「如何正确完成任务」——意图路由、阶段门控、真实工具证据、交付前复核、文档能力感知；人设层塑造「以何种风格表达」——从聊天记录、小说、剧本、设定文档蒸馏具名角色，长期记忆与风格随对话演进。约束按需注入，闲聊不额外付 token。",
+  "version": "0.6.1",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -44,7 +44,12 @@
     "persona",
     "personality",
     "identity",
-    "memory"
+    "memory",
+    "protocol",
+    "task-execution",
+    "distillation",
+    "人设",
+    "记忆"
   ],
   "engines": {
     "node": ">=20"

@@ -36,6 +36,7 @@ import { isCompactionCheckpoint } from "./host/compaction.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 import { appendLumeLog } from "./host/diag.js";
 import { advancePhase, buildAlignmentCorrection, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolFailureNotice, classifyInteraction, isUserAuthored, taskPhaseForMode } from "./host/protocol.js";
+import { buildDocumentDirective, probeDocumentCapabilities } from "./host/documents.js";
 import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectThinkingProtocol } from "./host/thinking.js";
 
 
@@ -95,7 +96,7 @@ export interface LumeConfig {
 	/** 蒸馏专用模型路由：契约合成质量要求高，默认跟随主对话模型。 */
 	distillProvider?: string;
 	distillModel?: string;
-	/** 会话结束反思日志：空闲时间评估 Codex 工作协议的四项能力，各打 0-2 分落盘。 */
+	/** 会话结束反思日志：空闲时间评估任务执行协议的四项能力，各打 0-2 分落盘。 */
 	reflectionEnabled?: boolean;
 	switchBoundaryTurns?: number;
 }
@@ -875,12 +876,17 @@ export function apply(ctx: any, config: LumeConfig = {}): void {
 					const alignment = st?.alignmentCorrection;
 					const postTurnReview = st?.postTurnReview;
 					const phase = buildTaskPhaseDirective(st?.taskPhase ?? "answer");
+					// 文档能力感知：DSH 本身不带 Office/PDF 读写能力，第三方文档工具插件
+					// 装与不装由用户决定。按探测结果分叉——有工具就约束走工具与回读验证，
+					// 没工具就约束「如实说明边界、不要硬解二进制」。只在文档任务轮注入，
+					// 且判据取自冻结的意图文本，因此轮内稳定，不会在轮中作废前缀缓存。
+					const document = buildDocumentDirective({ query, capabilities: probeDocumentCapabilities(ctx.tools, context.agent) });
 					// 工具失败提示已移到 runtime-context 通道（见 lume.tool-notice-context）：
 					// 它一出现就固定不变，但会变的内容不该待在 system 串里——那会作废前缀缓存。
 					// 压缩重锚：宿主的 preset 隔离域负责压缩，Lume 只能观察事件；
 					// 在压缩后一轮提醒「摘要不是完整历史」。
 					const compactionNotice = st?.compaction ? buildCompactionNotice(st.compaction, st.turnIndex) : null;
-					return [base, route, phase, longSession, anchor, alignment, postTurnReview, compactionNotice, correction, reflectionHint].filter(Boolean).join("\n\n");
+					return [base, route, phase, document, longSession, anchor, alignment, postTurnReview, compactionNotice, correction, reflectionHint].filter(Boolean).join("\n\n");
 				},
 				}),
 		"lume.thinking-section()",

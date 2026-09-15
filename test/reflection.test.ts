@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildReflectionPrompt, parseReflectionScore, REFLECTION_SYSTEM, ReflectionStore } from "../src/host/reflection.js";
 
 describe("buildReflectionPrompt", () => {
-	it("carries the Codex protocol rubric and the dialogue turns", () => {
+	it("carries the protocol rubric and the dialogue turns", () => {
 		const { system, userText } = buildReflectionPrompt(["用户: 你好", "助手: 收到"]);
 		expect(system).toContain("上下文管理");
 		expect(system).toContain("结果复核");

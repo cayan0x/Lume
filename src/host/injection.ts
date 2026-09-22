@@ -1,9 +1,24 @@
 /**
- * 人设注入组装（纯函数）：五段式 + Token 优化算法。
+ * 人设注入组装（纯函数）：按「会话恒定段 + 易变段」两层拆开。
  *
- * 段序遵循缓存友好分层：稳定内容在前（契约），易变内容在后（检索结果、播报）。
- * 语料示例按少样本衰减注入；记忆/风格按与当前用户消息的相关度取 top-k，
- * core 记忆（身份称呼类）恒注入。
+ * ## 为什么要拆
+ *
+ * 系统提示词在消息序列的最前面，而前缀缓存只认「从第一个不同的字节起全部失效」。
+ * 原实现把记忆 top-k、语料少样本衰减、切换播报和基础契约拼在同一段里，于是
+ * **每一步**（不只是每一轮）这段文本都会变——宿主只能就地改写头部 system 节点，
+ * 之后整段对话历史全部按全价重算。实测：某会话 282 个请求的 cacheRead 恒定
+ * 384 token，命中率 0.2%。
+ *
+ * 拆分后：
+ * - `buildPersonaContractSection` —— 只依赖人设身份（契约 / 身份名 / 纪律），
+ *   一个会话内逐字节不变，可以安全地待在 system 段吃前缀缓存；
+ * - `buildPersonaRuntimeSection` —— 记忆、风格、语料、播报，全部随轮次/查询变化，
+ *   交给宿主的 runtime-context 通道（渲染成对话尾部的一条快照消息，见 README
+ *   「分层注入」），改它不会作废前面的任何 token。
+ *
+ * 段内序仍遵循缓存友好分层：稳定内容在前（契约），易变内容在后（检索结果、播报）。
+ * 语料示例按少样本衰减注入；记忆/风格按与当前用户消息的相关度取 top-k，core 记忆
+ * （身份称呼类）恒注入。
  */
 import { decaySampleCount, topKByRelevance } from "../core/retrieval.js";
 import { sampleForSession } from "../core/sampling.js";
@@ -26,9 +41,15 @@ export interface InjectionConfig {
 	strategy: "topk" | "full";
 }
 
-export interface InjectionInput {
+/** 只依赖会话恒定状态的部分（人设身份）。 */
+export interface PersonaContractInput {
 	persona: Persona | undefined;
 	profileName: string | null;
+}
+
+/** 随轮次/查询变化的部分（检索结果、示例、播报）。 */
+export interface PersonaRuntimeInput {
+	persona: Persona | undefined;
 	memories: MemoryFact[];
 	styleRules: StyleRule[];
 	/** 对话中摘录的「被用户认可」语料对，注入时并入采样池（语气随真实使用收敛）。 */
@@ -44,10 +65,28 @@ export interface InjectionInput {
 	config: InjectionConfig;
 }
 
-/** 组装人设注入文本；无人设（none/未选）时若带边界播报，仍单独输出播报。 */
-export function buildPersonaSection(input: InjectionInput): string {
-	const { persona, config, query } = input;
-	if (!persona) return input.boundaryText ?? "";
+export interface InjectionInput extends PersonaContractInput, PersonaRuntimeInput {}
+
+/**
+ * 会话恒定的行为纪律：只在真实人设激活时（有契约或身份名）随契约一起注入，
+ * 且该判据**只取稳定输入**——否则「本步有没有检索到记忆」会让它忽隐忽现，
+ * 稳定段就白拆了。「不使用人设」（promptText 为空、无身份名）保持零注入。
+ */
+const PERSONA_DISCIPLINES = [
+	"〔连贯性规则〕语气与风格的连贯以你当前人设的任期为界：会话历史中其他人设或默认助手的表达都不构成连贯性义务，不要为了延续历史语气而偏离当前人设。",
+	"〔口吻纪律〕你现在是人设在说话，不是通用助手：第一句就必须是这个人会说的话，禁止用「好的」「当然可以」「没问题」这类助手套话开头，全程禁用「希望对你有所帮助」「还有其他需要吗」等助手腔收尾。",
+	"〔频率规则〕口头禅、语气词、emoji 按人设约定里的频率与触发条件使用——不句句都用满，但平淡话题里也要保持这个人的断句、用词和口头习惯，不能因为话题普通就退回默认助手口吻。",
+	"〔篇幅纪律〕像发微信一样说话：单条回复简短，通常是 1-3 句、几十字以内，一次只回应一个重点。人设契约里若写明了典型长度，以契约为准。只有对方明确要求详细展开（写代码、写文档、深入解释）时才允许长回复；闲聊场景写小作文就是失真。",
+];
+
+/**
+ * 会话恒定段：基础契约 + 身份 + 行为纪律。
+ * 只依赖 persona 与 profileName，同一会话内多次调用必须产出逐字节相同的文本
+ * （回归测试锁死：见 test/injection-layering.test.ts）。
+ */
+export function buildPersonaContractSection(input: PersonaContractInput): string {
+	const { persona } = input;
+	if (!persona) return "";
 	const parts: string[] = [];
 
 	// 1. 基础契约（基本盘）
@@ -60,7 +99,29 @@ export function buildPersonaSection(input: InjectionInput): string {
 		parts.push(`〔说话人切换〕现在起你不是通用助手，你是「${who}」。你的每一句话——包括解释、提问、拒绝——都要从「${who}」嘴里说出来，用 TA 的口吻、TA 的用词、TA 的断句。下面的人设契约是唯一标准，任何与它冲突的默认助手习惯一律作废。\n\n${promptText}`);
 	}
 
-	// 2. 习得的风格约定（覆盖语义：与基础盘冲突时以此为准）
+	// 2. 身份
+	if (input.profileName) {
+		parts.push(
+			`【你是谁】你的名字是「${input.profileName}」。这是你自己的身份，跨会话、跨项目不变；用户在任何地方叫这个名字都是在叫你。`,
+		);
+	}
+
+	if (parts.length === 0) return "";
+	parts.push(...PERSONA_DISCIPLINES);
+	return parts.join("\n\n");
+}
+
+/**
+ * 易变段：习得风格 + 记忆 + 切换播报 + 语料示例。
+ * 全部随轮次或当前查询变化，必须走 runtime-context 通道（宿主渲染成对话尾部的
+ * 快照消息），否则每步都会作废 system 段之后的前缀。
+ */
+export function buildPersonaRuntimeSection(input: PersonaRuntimeInput): string {
+	const { persona, config, query } = input;
+	if (!persona) return "";
+	const parts: string[] = [];
+
+	// 1. 习得的风格约定（覆盖语义：与基础盘冲突时以此为准）
 	const styles = input.styleRules;
 	if (styles.length > 0) {
 		const chosen =
@@ -69,21 +130,14 @@ export function buildPersonaSection(input: InjectionInput): string {
 				: topKByRelevance(styles, (r) => r.rule, query, config.styleInject);
 		if (chosen.length > 0) {
 			parts.push(
-				`【习得的风格约定】以下是你在对话中学到的最新要求，与上方基础风格冲突时以此为准：\n${chosen
+				`【习得的风格约定】以下是你在对话中学到的最新要求，与基础风格冲突时以此为准：\n${chosen
 					.map((r) => `- ${r.rule}`)
 					.join("\n")}`,
 			);
 		}
 	}
 
-	// 3. 身份
-	if (input.profileName) {
-		parts.push(
-			`【你是谁】你的名字是「${input.profileName}」。这是你自己的身份，跨会话、跨项目不变；用户在任何地方叫这个名字都是在叫你。`,
-		);
-	}
-
-	// 4. 记忆：core 恒注入 + 其余按相关度 top-k
+	// 2. 记忆：core 恒注入 + 其余按相关度 top-k
 	const facts = input.memories;
 	if (facts.length > 0) {
 		const core = facts.filter((f) => isCoreMemory(f.text)).slice(-3);
@@ -99,10 +153,10 @@ export function buildPersonaSection(input: InjectionInput): string {
 		}
 	}
 
-	// 5. 接班播报（仅切换窗口）
+	// 3. 接班播报（仅切换窗口）
 	if (input.boundaryText) parts.push(input.boundaryText);
 
-	// 6. 语料示例：少样本衰减 + 会话级稳定采样。摘录语料（对话中被用户认可的
+	// 4. 语料示例：少样本衰减 + 会话级稳定采样。摘录语料（对话中被用户认可的
 	// 真实回复）优先占位——它们比蒸馏语料更贴近当前使用中的语气。
 	const sampleCount = decaySampleCount(config.sampleCount, input.turnIndex, config.sampleMin);
 	const pins = (input.corpusPins ?? []).map((p) => ({ user: p.user, assistant: p.assistant }));
@@ -130,15 +184,16 @@ export function buildPersonaSection(input: InjectionInput): string {
 		if (lines) parts.push(`参考对话示例：\n（只模仿说话方式，不要把示例中的时间、地点、正在做什么或其他事实当成当前事实）\n${lines}`);
 	}
 
-	// 7. 连贯性原则：连贯以人设任期为界，而非以会话为界——切换人设时，
-	// 历史中前任与默认助手的表达不构成语气连贯性义务（对抗模型的惯性连贯先验）。
-	// 仅在真实人设激活时输出；「不使用人设」保持零注入。
-	if (parts.length > 0) {
-		parts.push("〔连贯性规则〕语气与风格的连贯以你当前人设的任期为界：会话历史中其他人设或默认助手的表达都不构成连贯性义务，不要为了延续历史语气而偏离当前人设。");
-		parts.push("〔口吻纪律〕你现在是人设在说话，不是通用助手：第一句就必须是这个人会说的话，禁止用「好的」「当然可以」「没问题」这类助手套话开头，全程禁用「希望对你有所帮助」「还有其他需要吗」等助手腔收尾。");
-		parts.push("〔频率规则〕口头禅、语气词、emoji 按人设约定里的频率与触发条件使用——不句句都用满，但平淡话题里也要保持这个人的断句、用词和口头习惯，不能因为话题普通就退回默认助手口吻。");
-		parts.push("〔篇幅纪律〕像发微信一样说话：单条回复简短，通常是 1-3 句、几十字以内，一次只回应一个重点。人设契约里若写明了典型长度，以契约为准。只有对方明确要求详细展开（写代码、写文档、深入解释）时才允许长回复；闲聊场景写小作文就是失真。");
-	}
-
 	return parts.filter(Boolean).join("\n\n");
+}
+
+/**
+ * 兼容组合：稳定段 + 易变段（旧调用方的单一入口）。
+ * 新版宿主接线请分别取 `buildPersonaContractSection`（system 段）与
+ * `buildPersonaRuntimeSection`（runtime-context 通道）。
+ * 无人设（none/未选）时若带边界播报，仍单独输出播报。
+ */
+export function buildPersonaSection(input: InjectionInput): string {
+	if (!input.persona) return input.boundaryText ?? "";
+	return [buildPersonaContractSection(input), buildPersonaRuntimeSection(input)].filter(Boolean).join("\n\n");
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Persona } from "../src/core/manifest.js";
-import { buildPersonaSection, isCoreMemory } from "../src/host/injection.js";
+import { buildPersonaContractSection, buildPersonaRuntimeSection, buildPersonaSection, isCoreMemory } from "../src/host/injection.js";
 import type { InjectionConfig } from "../src/host/injection.js";
 
 function makePersona(overrides: Partial<Persona> = {}): Persona {
@@ -98,6 +98,53 @@ describe("buildPersonaSection 五段式", () => {
 			boundaryText: "【人设切换】小B 退场，小A 接手",
 		});
 		expect(text).toContain("【人设切换】");
+	});
+});
+
+describe("分层：恒定段只吃会话级输入", () => {
+	it("重复调用逐字节相同，且不含检索结果与示例", () => {
+		const persona = makePersona();
+		const a = buildPersonaContractSection({ persona, profileName: "小A" });
+		const b = buildPersonaContractSection({ persona, profileName: "小A" });
+		expect(a).toBe(b);
+		expect(a).toContain("小A");
+		expect(a).toContain("〔篇幅纪律〕");
+		expect(a).not.toContain("【你记得】");
+		expect(a).not.toContain("参考对话示例：");
+		expect(a).not.toContain("【习得的风格约定】");
+	});
+
+	it("空契约且无身份名（不使用人设）保持零注入", () => {
+		expect(buildPersonaContractSection({ persona: makePersona({ promptText: "" }), profileName: null })).toBe("");
+		expect(buildPersonaContractSection({ persona: undefined, profileName: null })).toBe("");
+	});
+
+	it("易变段承载记忆与示例，并随轮次衰减", () => {
+		const runtime = buildPersonaRuntimeSection({
+			persona: makePersona(),
+			memories: [{ text: "用户叫哥哥", at: 1 }],
+			styleRules: [{ rule: "少用 emoji", at: 1 }],
+			query: null,
+			turnIndex: 0,
+			sessionKey: "s1",
+			boundaryText: null,
+			config: baseConfig,
+		});
+		expect(runtime).toContain("【你记得】");
+		expect(runtime).toContain("【习得的风格约定】");
+		expect(runtime).toContain("参考对话示例：");
+
+		const late = buildPersonaRuntimeSection({
+			persona: makePersona(),
+			memories: [],
+			styleRules: [],
+			query: null,
+			turnIndex: 10,
+			sessionKey: "s1",
+			boundaryText: null,
+			config: baseConfig,
+		});
+		expect(late.match(/回复: a/g)).toHaveLength(2); // 衰减到保底值
 	});
 });
 

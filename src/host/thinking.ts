@@ -69,8 +69,28 @@ export const THINKING_REASONING_TEXT = `[任务执行协议]
 /**
  * 按「是否任务型 × 是否推理模型」选择协议变体。
  * 路由未知（模型名缺失）时回退完整版，避免误判造成能力退化。
+ *
+ * @deprecated 协议正文现在挂在系统提示词的**恒定段**上，按 query 逐轮切换会让整段
+ * 前缀缓存每轮作废（实测某会话 cacheRead 恒定 384 token、命中率 0.2%）。生产接线
+ * 请用 {@link selectStableThinkingProtocol}；本函数保留为措辞回归的测试锚，「闲聊
+ * 不背任务条款」改由尾部动态层的 buildCasualDirective 按轮表达。
  */
 export function selectThinkingProtocol(input: { isTask: boolean; isReasoningModel: boolean }): string {
 	if (!input.isTask) return THINKING_COMPACT_TEXT;
+	return input.isReasoningModel ? THINKING_REASONING_TEXT : THINKING_TEXT;
+}
+
+/**
+ * 会话级冻结的协议变体：**只看模型能力，不看本轮 query**。
+ *
+ * 协议是行为约束的核心资产，但它必须在一个会话内逐字节不变，才能吃住前缀缓存
+ * （系统提示词排在消息最前面，它一变，后面整段历史全价重算）。按 query 在完整版 /
+ * 短版之间切换会让系统提示词每轮改写，代价远超省下的那几百 token——短版省下的
+ * token 只在**未缓存**时才值钱，而它恰恰把整段前缀推成未缓存。
+ *
+ * 推理型模型用精简版（它天生会计划，重复条款只稀释注意力）；否则用完整版。
+ * 「闲聊轮不背任务条款」由尾部动态层的 buildCasualDirective 负责。
+ */
+export function selectStableThinkingProtocol(input: { isReasoningModel: boolean }): string {
 	return input.isReasoningModel ? THINKING_REASONING_TEXT : THINKING_TEXT;
 }

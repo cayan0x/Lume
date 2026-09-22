@@ -28,7 +28,7 @@
 人设只影响自然语言表达，不介入任务执行，也不影响代码、命令与工具调用的结果。
 
 [![CI](https://github.com/cayan0x/Lume/actions/workflows/ci.yml/badge.svg)](https://github.com/cayan0x/Lume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.6.1-blue)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.2-blue)](./CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 
 *人设系统：内置角色卡、蒸馏与管理入口，以及记忆星图*
@@ -103,6 +103,7 @@ DSH 本身不带 Office / PDF 读写能力：附件只接受图片，工具名�
 - [x] 上下文压缩感知：识别宿主压缩检查点，压缩后重锚状态并提醒“摘要不是完整历史”
 - [x] 文档能力感知：探测文档工具并按需注入——有工具要求先读后写与回读验证，没工具要求如实说明边界、不硬解二进制
 - [x] 系统提示词轮内稳定：意图冻结（只认真实用户消息）+ 会变的内容走 runtime-context 通道，一轮只产生一份系统提示词
+- [x] 注入分层：system 段在会话内逐字节恒定（协议/契约/身份/纪律），记忆、语料、播报与任务指令全部走对话尾部快照——每一步都吃住前缀缓存
 - [x] 角色卡算法自动升级且保留记忆、风格和认可语料
 
 ### 为什么不接管宿主的历史压缩
@@ -205,30 +206,46 @@ Lume 因此选择「观察 + 重锚」：压缩发生时记录规模，在随后
 - **导入校验** —— 解析时校验格式、版本、键名合法性，内置人设名受保护，不可覆盖
 - **跨设备迁移** —— 一张卡片即可还原人设的完整身份（记忆、风格、档案名），无需额外配置
 
-## Token 预算与优化算法
+## 分层注入与 Token 预算
 
-| 注入段 | 无优化 | 优化后 | 使用的算法 |
+注入分两层。这不是洁癖，是**前缀缓存的前提**：
+
+| 层 | 通道 | 内容 | 变化频率 |
 |---|---|---|---|
-| 任务执行协议 | ~500 | 闲聊约 100；任务约 500 | 普通闲聊短版注入；代码/复杂任务自动切换完整版 |
-| 人设契约 | ~350 | ~250 | 契约精简 |
-| 语料示例 | 6 条 ~600 | 稳态 2 条 ~200 | 少样本衰减 `max(2, 6−轮数)` |
-| 工具定义 ×3 | ~600 | ~450 | description 精简 |
-| 记忆 | 15 条 ~350 | core + top5 ~120 | 相关性检索（本地分词 + mini-IDF，零成本） |
-| 风格层 | 10 条 ~250 | top5 ~120 | 同上 |
-| 身份 | ~80 | ~80 | 恒注入 |
-| 文档能力指引 | 常驻 ~120 | 文档任务轮 ~120，其余 0 | 工具能力探测 + 按轮触发 |
+| **恒定段** | system prompt（`lume:thinking` order 1 / `lume:persona` order 10000） | 任务协议正文、人设契约、身份、行为纪律 | 会话内**逐字节不变**（只有人设切换时 +1 份） |
+| **易变段** | runtime-context（`lume:runtime` / `lume:persona-runtime` / `lume:boundary`，渲染成对话尾部的一条快照消息） | 路由、任务阶段、长会话护栏、目标锚点、即时对齐、交付复核、压缩重锚、文档能力指引、记忆 top-k、风格约定、语料示例、切换播报 | 每步可变，但只花自己那几百 token |
 
-- **成熟态稳态约 1,570 tok/请求，较无优化降低 39%**；缓存友好分层（静态内容前置于易变内容）叠加前缀缓存后，有效成本可再降约一个数量级
-- 相比 v0.2.0（约 1,400 tok），v0.3.0 全部新功能的稳态净增仅约 **170 tok/请求**
+为什么必须这样分：**system 串排在消息序列最前面**，而前缀缓存只认「从第一个不同的字节起，之后全部失效」。system 段只要每步改写一次，它后面的工具定义、结构化输出和**整段对话历史**就全部按全价重算。旧实现正是如此——`taskPhase` 随 `tool/call`·`tool/result` 在**轮内推进**、长会话护栏还内嵌轮次号，于是每一步都改写系统提示词。实测（`deepseek-v4-flash`，2026-09-11 某会话 282 个请求）：`cacheReadTokens` 恒定 **384**、命中率中位数 **0.2%**，未命中输入从 1.3 万涨到 55.9 万；请求间隔中位数仅 22 秒，所以这不是缓存过期。分层后恒定段一次构建全程命中，易变段落在尾部、改它不作废前缀。
+
+| 注入段 | 层 | 无优化 | 优化后 | 使用的算法 |
+|---|---|---|---|---|
+| 任务执行协议 | 恒定 | ~500 | 会话内恒定（吃缓存）；闲聊轮尾部另加约 40 | 协议按模型能力冻结；「闲聊不背任务条款」由尾部一行声明 |
+| 人设契约 | 恒定 | ~350 | ~250 | 契约精简 |
+| 身份 | 恒定 | ~80 | ~80 | 恒注入 |
+| 工具定义 ×3 | 恒定 | ~600 | ~450 | description 精简 |
+| 语料示例 | 易变 | 6 条 ~600 | 稳态 2 条 ~200 | 少样本衰减 `max(2, 6−轮数)` |
+| 记忆 | 易变 | 15 条 ~350 | core + top5 ~120 | 相关性检索（本地分词 + mini-IDF，零成本） |
+| 风格层 | 易变 | 10 条 ~250 | top5 ~120 | 同上 |
+| 任务指令（路由/阶段/护栏/锚点） | 易变 | ~600 | 按需 | 6 轮前不注入护栏与锚点，闲聊不注入任务条款 |
+| 文档能力指引 | 易变 | 常驻 ~120 | 文档任务轮 ~120，其余 0 | 工具能力探测 + 按轮触发 |
+
+- 恒定段（协议 + 契约 + 身份）约 **900 tok**，在一个会话里建一次、之后每步都是缓存命中
+- 易变段稳态约 **700~1,200 tok/步**，全部落在对话尾部：改它只花自己那点 token，不动前面的任何前缀
+- 静态内容前置于易变内容，叠加 DeepSeek 前缀缓存后，有效成本可再降约一个数量级
+
+**怎么确认分层还成立**：`$DSH_HOME/lume-compaction.log` 里每个会话应只有 1-2 行「系统段指纹」（首次 + 人设切换）。若长会话里反复出现新指纹，说明又有内容混进了 system 段——`test/injection-layering.test.ts` 就是在锁这条不变量。
+
+**旧宿主降级**：宿主不支持 `systemPrompt.context`（0.1.5 之前的版本）时，易变段并回 system 段——丢前缀缓存但不丢记忆与播报注入，启动日志会写一条 warn。配置 `layeredInjection: false` 可手动退回旧行为做对照。
 
 ## 配置项
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `sampleCount` / `sampleMin` | 6 / 2 | 语料少样本基数与保底值（随轮数衰减） |
-| `memoryInject` / `styleInject` | 8 / 5 | 记忆与风格注入条数（top-k） |
+| `memoryInject` / `styleInject` | 12 / 5 | 记忆与风格注入条数（top-k） |
 | `injectionStrategy` | `"topk"` | `"topk"` 相关性检索 / `"full"` 全量注入 |
-| `personaOrder` | 2 | 人设段在 system prompt 中的排序 |
+| `personaOrder` | 10000 | 人设契约段（恒定段）在 system prompt 中的排序：贴着对话历史的注意力最强位 |
+| `layeredInjection` | `true` | 分层注入：system 段只留会话恒定文本，易变内容走 runtime-context（对话尾部快照）。置 `false` 退回旧行为做对照；宿主不支持该通道时自动降级 |
 | `switchBoundaryTurns` | 2 | 切换播报边界窗口（按用户轮计） |
 | `extractionEnabled` | `true` | 被动提取开关 |
 | `extractionCooldownMs` | 600000 | 被动提取冷却（毫秒） |
@@ -261,7 +278,7 @@ dsh plugin add lume-dsh-plugin
 若网络无法访问 npm，也可直接从仓库安装：
 
 ```bash
-dsh plugin add github:cayan0x/Lume#v0.6.1
+dsh plugin add github:cayan0x/Lume#v0.6.2
 ```
 
 安装后需**完全重启 DSH（包含托盘进程）**方可加载；启动日志中出现 `lume: 已加载（builtins=loli,senpai,butler,tsundere,none）` 即表示加载成功。构建产物随仓库发布，两种路径都不需要本地构建。
@@ -273,7 +290,7 @@ dsh plugin add github:cayan0x/Lume#v0.6.1
 ```bash
 dsh plugin add lume-dsh-plugin   # npm（推荐）
 # 或
-dsh plugin add github:cayan0x/Lume#v0.6.1   # GitHub（备选）
+dsh plugin add github:cayan0x/Lume#v0.6.2   # GitHub（备选）
 ```
 
 人设选择、记忆与风格数据存放在 `storages/` 目录，升级不会丢失。
@@ -283,7 +300,7 @@ dsh plugin add github:cayan0x/Lume#v0.6.1   # GitHub（备选）
 ### 指定其他版本
 
 ```bash
-dsh plugin add lume-dsh-plugin@0.6.1          # npm 指定版本
+dsh plugin add lume-dsh-plugin@0.6.2          # npm 指定版本
 dsh plugin add lume-dsh-plugin@latest         # npm 最新
 dsh plugin add github:cayan0x/Lume            # GitHub 最新 main
 dsh plugin add github:cayan0x/Lume#v0.6.0     # GitHub 任意历史标签

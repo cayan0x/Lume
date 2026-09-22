@@ -1,90 +1,16 @@
 /**
  * 人设切换边界 + 接班播报的 apply 层行为测试。
- * mock ctx.on 捕获会话事件处理器，测试可驱动 turn/end 模拟真实轮次推进。
+ * 用 test/apply-harness.ts 装载真实插件，测试可驱动 turn/end 模拟真实轮次推进。
+ *
+ * 注：播报现在渲染在 runtime-context 通道（对话尾部快照）而不是 system 段——
+ * 它每轮都在变，留在 system 段会作废整段前缀缓存。语义不变，位置变了。
  */
 import { describe, expect, it } from "vitest";
-import { apply } from "../src/index.js";
-import { FakePersonaTable } from "./fake-table.js";
-
-function makeCtx() {
-	const tables = new Map<string, FakePersonaTable>();
-	const tableFor = (name: string): FakePersonaTable => {
-		let t = tables.get(name);
-		if (!t) {
-			t = new FakePersonaTable();
-			tables.set(name, t);
-		}
-		return t;
-	};
-	const sections: Record<string, { name: string; order: number; text: (ctx: unknown) => string }> = {};
-	const eventHandlers = new Map<string, (session: any, event: any) => void>();
-	let rpc: ((endpoint: string, payload: unknown) => Promise<{ ok: boolean }>) | null = null;
-	const ctx = {
-		storageDomain: {
-			open: async () => ({
-				table: (name: string) => tableFor(name),
-				close: async () => {},
-			}),
-		},
-		effect: (fn: () => unknown) => {
-			fn();
-		},
-		connection: {
-			rpc: {
-				handle: (_channel: string, handler: typeof rpc) => {
-					rpc = handler;
-					return () => {};
-				},
-			},
-		},
-		systemPrompt: {
-			section: (s: { name: string; order: number; text: (ctx: unknown) => string }) => {
-				sections[s.name] = s;
-			},
-		},
-		on: (type: string, handler: (session: any, event: any) => void) => {
-			eventHandlers.set(type, handler);
-			return () => {};
-		},
-		tools: {
-			register: () => () => {},
-		},
-		get: () => undefined,
-		logger: { warn: () => {} },
-	};
-	const fireTurnEnd = (sid: string) => {
-		eventHandlers.get("session/event")?.({ id: sid }, { type: "turn/end" });
-	};
-	return {
-		ctx,
-		sections,
-		fireTurnEnd,
-		fire: (sid: string, type: string, data: unknown) => {
-			eventHandlers.get("session/event")?.({ id: sid }, { type, data });
-		},
-		rpc: () => rpc as unknown as (endpoint: string, payload: unknown) => Promise<{ ok: boolean }>,
-		personaText: (sid: string) => {
-			// 模型实际看到的人设注入 = 人设段 + 尾部边界播报段（两段拼接）
-			const persona = sections["lume:persona"]?.text({ agent: { session: { id: sid } } }) ?? "";
-			const boundary = sections["lume:boundary"]?.text({ agent: { session: { id: sid } } }) ?? "";
-			return [persona, boundary].filter(Boolean).join("\n");
-		},
-		boundaryText: (sid: string) => sections["lume:boundary"]?.text({ agent: { session: { id: sid } } }) ?? "",
-	};
-}
-
-async function boot() {
-	const harness = makeCtx();
-	apply(harness.ctx as never);
-	await new Promise((resolve) => setTimeout(resolve, 0)); // storeReady → currentStore
-	expect(harness.sections["lume:persona"]).toBeTruthy();
-	expect(harness.sections["lume:boundary"]).toBeTruthy();
-	return harness;
-}
+import { assistantMessage, bootLume } from "./apply-harness.js";
 
 describe("persona switch boundary（按用户轮计数）", () => {
 	it("没有先例时不算切换：首次注入不带边界提示", async () => {
-		const h = await boot();
+		const h = await bootLume();
 		await h.rpc()("select", { sessionId: "s-first", personaName: "senpai" });
 		const text = h.personaText("s-first");
 		expect(text).not.toContain("【人设切换】");
@@ -92,7 +18,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 	});
 
 	it("切换后同一轮内多次构建不烧窗口，播报跨完整的两个用户轮", async () => {
-		const h = await boot();
+		const h = await bootLume();
 		const sid = "s-switch";
 		expect(h.personaText(sid)).toBe(""); // 默认 none → 空注入
 		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
@@ -119,7 +45,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 	});
 
 	it("接班播报带前后任名字、接手分隔行与连贯性原则", async () => {
-		const h = await boot();
+		const h = await bootLume();
 		const sid = "s-handoff";
 		await h.rpc()("select", { sessionId: sid, personaName: "senpai" });
 		h.personaText(sid);
@@ -135,7 +61,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 	});
 
 	it("切到「不使用人设」同样有边界窗口，且可重复触发", async () => {
-		const h = await boot();
+		const h = await bootLume();
 		const sid = "s-to-none";
 		await h.rpc()("select", { sessionId: sid, personaName: "senpai" });
 		h.personaText(sid);
@@ -153,7 +79,7 @@ describe("persona switch boundary（按用户轮计数）", () => {
 	});
 
 	it("窗口关闭后回复泄漏旧人设签名词 → 重开窗口并注入升级纠偏", async () => {
-		const h = await boot();
+		const h = await bootLume();
 		const sid = "s-leak";
 		// 噜噜 → 晚晴：切换建立 prevSignatures（噜噜的签名词）
 		await h.rpc()("select", { sessionId: sid, personaName: "loli" });
@@ -163,20 +89,20 @@ describe("persona switch boundary（按用户轮计数）", () => {
 		expect(h.personaText(sid)).toContain("【人设切换】");
 		h.fireTurnEnd(sid);
 		h.fireTurnEnd(sid);
-		h.personaText(sid); // 重建：窗口关闭 → 边界段清空
+		h.personaText(sid); // 重建：窗口关闭 → 播报段清空
 		// 窗口已关
 		expect(h.boundaryText(sid)).toBe("");
 
 		// 助手回复仍带噜噜的签名词（哥哥 + 人家）→ turn/end 检出泄漏 → 重开窗口
-		h.fire(sid, "assistant/message", { message: { content: [{ type: "text", text: "哥哥说得对，人家这就改。" }] } });
+		h.fire(sid, "assistant/message", assistantMessage("哥哥说得对，人家这就改。"));
 		h.fireTurnEnd(sid);
-		h.personaText(sid); // 重建：状态机把重开的窗口渲染进边界段
+		h.personaText(sid); // 重建：状态机把重开的窗口渲染进播报段
 		const boundary = h.boundaryText(sid);
 		expect(boundary).toContain("【人设切换】");
 		expect(boundary).toContain("特别纠偏");
 
 		// 一轮干净回复后解除升级
-		h.fire(sid, "assistant/message", { message: { content: [{ type: "text", text: "Understood. I will proceed with the task." }] } });
+		h.fire(sid, "assistant/message", assistantMessage("Understood. I will proceed with the task."));
 		h.fireTurnEnd(sid);
 		h.personaText(sid);
 		expect(h.boundaryText(sid)).not.toContain("特别纠偏");

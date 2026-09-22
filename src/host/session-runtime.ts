@@ -23,8 +23,6 @@ export interface SessionRuntime {
 	prevSignatures: string[];
 	/** 泄漏复发时的升级纠偏标记；出现一轮无泄漏回复即解除。 */
 	leakEscalated: boolean;
-	/** 本轮构建应注入的切换播报（渲染在独立尾部 section，见 LUME_BOUNDARY_SECTION）。 */
-	activeBoundary: string | null;
 	extracting: Promise<void> | null;
 	lastExtractionAt: number | undefined;
 	/** 上一轮「用户消息 → 人设回复」真实对话对；用户认可时摘录为语料。 */
@@ -46,13 +44,13 @@ export interface SessionRuntime {
 	 */
 	intent: { turnIndex: number; messageId: string; text: string } | null;
 	/**
-	 * 人设段的一轮一算缓存。
+	 * 上一次写入诊断日志的**稳定段**（system 段）指纹。
 	 *
-	 * 记忆/风格/示例按当前查询做 top-k 检索，查询每步变化就会换人，注入段随之
-	 * 抖动。key 覆盖 persona、查询、记忆/风格/语料指纹与注入配置；命中即复用，
-	 * 人设切换、边界窗口、记忆写入等显式失效条件由调用侧负责。
+	 * 纯为现场可观测：稳定段在一个会话内应当逐字节恒定，指纹每变一次写一行诊断，
+	 * 所以健康会话只会留下 1-2 行（人设切换时 +1）。若长会话里这行反复出现，
+	 * 说明又有东西混进了 system 段。
 	 */
-	personaCache: { turnIndex: number; key: string; text: string } | null;
+	stableDigest: string | null;
 	/** 当前轮用户明确纠正或重复提问时的临时对齐提醒。 */
 	alignmentCorrection: string | null;
 	/** 最近用户请求的归一化文本，仅用于检测上下文失配，不持久化。 */
@@ -88,7 +86,6 @@ function defaultRuntime(): SessionRuntime {
 		switchGreetingPending: false,
 		prevSignatures: [],
 		leakEscalated: false,
-		activeBoundary: null,
 		extracting: null,
 		lastExtractionAt: undefined,
 		lastExchange: null,
@@ -98,7 +95,7 @@ function defaultRuntime(): SessionRuntime {
 		failureStreak: 0,
 		interactionMode: "question",
 		intent: null,
-		personaCache: null,
+		stableDigest: null,
 		alignmentCorrection: null,
 		recentUserQueries: [],
 		postTurnReview: null,

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.1 (2026-09-22)
+
+本版是**兼容性修复**：0.6.2 与 0.7.0 在 **DSH Desktop 0.9.1（宿主包 0.1.5-rc.2）** 上会导致 **DSH 无法启动**，且插件无法更新。两个独立成因都已修掉。
+
+- **fix** RPC 通道注册位置（启动崩溃的根因）：新宿主的 `connection.rpc.handle` 内部会以**调用方**的 ctx 执行 `owner.webServer.register(route)`（见 `@deepseek-ai/dsh-client-connection` 的 `owner.effect(() => owner.webServer.register(route))`）。旧写法直接 `ctx.connection.rpc.handle(...)`，于是 cordis 抛 `cannot get property "webServer" without inject` → apply 抛错 → **整个插件树加载失败 → `DSH entry failed`，用户连界面都进不去**（实测日志：`plugin recovery detection: lume-dsh-plugin`，随后进 safe mode）。改为宿主自带 `dsh-ppt` / `dsh-api-gateway` 的同款写法：`ctx.inject(["webServer"], (webCtx) => webCtx.connection.rpc.handle(...))`。没有 web 载体的宿主（headless）只失去 RPC 通道，其余功能照常，也不会被顶层 inject 卡住。
+- **fix** `apply()` 外层加兜底 try/catch：插件内部任何异常都降级为「部分功能不可用 + `logger.error`」，**不再可能阻断宿主启动**。插件的第一职责是不拖垮宿主；此前一次宿主 API 变更就能让整个 DSH 起不来，代价太大。
+- **fix** 移除 `peerDependencies` 里的 `@deepseek-ai/dsh-client-ui-primitives`：它是**应用自带**的前端包（客户端 bundle 在运行时经宿主模块图解析），但新版桌面安装器做**严格 peer 闭包校验**，会连带检查该包自己的 peer（`@deepseek-ai/dsh-client-runtime`）→ 报 `lume-dsh-plugin failed peer validation: @deepseek-ai/dsh-client-runtime does not resolve from the installation closure` → **更新被拒绝/回滚**（desktop 把它写进 `.generations-deferred.json` 并冻结 profile migration）。它仍在 `devDependencies`（tsc 类型与 tsdown external 需要），只是不再作为 peer 声明。
+- **test** 新增 `test/host-compat.test.ts`：① 用「会抛错 `webServer` 错误的假宿主」直接复现事故并断言被兜底吞掉且记录；② 断言没有 `webServer` 的宿主仍能完整装载（只是没有 RPC）；③ apply 层夹具升级为模拟 cordis `ctx.inject(deps, cb)` 语义。
+
+> 影响面：0.6.2 与 0.7.0 同一行代码都中招（0.7.0 装上了但因为 profile migration 被 peer 校验冻结，从未真正跑起来）。卡在「重启 DSH 失败 / 无法更新」时升级到 0.7.1 即可。
+
 ## v0.7.0 (2026-09-22)
 
 本版主题：**从「纪律」到「方法」——任务载具与行为触发器**。0.6.x 解决的是「缓存与位置」，本版解决的是「思考方式」。

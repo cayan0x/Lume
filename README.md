@@ -305,6 +305,12 @@ Lume 因此选择「观察 + 重锚」：压缩发生时记录规模，在随后
 - v0.1.0 旧版 `persona-state.json` 会在首次启动时自动导入并改名为 `.migrated`
 - 全部数据保存在本地，不上传任何远端
 
+## 宿主兼容性
+
+- **RPC 通道必须注册在注入了 `webServer` 的作用域里**：宿主的 `connection.rpc.handle` 内部会以**调用方**的 ctx 执行 `webServer.register(route)`，所以正确写法只有 `ctx.inject(["webServer"], (webCtx) => webCtx.connection.rpc.handle(...))`（宿主自带的 `dsh-ppt`、`dsh-api-gateway` 同款）。0.7.1 起已修正；**0.6.2 / 0.7.0 在 DSH Desktop 0.9.1 上会导致 DSH 无法启动**（`cannot get property "webServer" without inject` → 插件树加载失败 → 进 safe mode），请升级。没有 web 载体的宿主只失去 RPC 通道，其余功能照常。
+- **插件不会拖垮宿主**：`apply()` 外层有兜底 try/catch，插件内部的任何异常都降级为「部分功能不可用 + `logger.error`」，不再阻断 DSH 启动。
+- **peer 声明只留宿主运行时保证提供的包**：`@deepseek-ai/dsh-client-ui-primitives` 这类前端包由宿主模块图在运行时提供，**不声明为 peer**——新版桌面安装器做严格 peer 闭包校验，声明它会连带检查它自己的 peer（`dsh-client-runtime`），导致安装/更新被拒绝（desktop 会写进 `.generations-deferred.json` 并冻结整个 profile 迁移）。它仍在 `devDependencies`（tsc 类型与 tsdown external 需要）。
+
 ## 安装与更新
 
 前置条件：已安装 DSH Desktop。

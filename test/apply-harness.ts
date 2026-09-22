@@ -5,6 +5,9 @@
  * 为什么需要它：注入分层与载具注入是本项目最容易回归的地方——一个「哪个字段进了哪一层」
  * 的错误不会让任何纯函数测试失败，却会让系统提示词每步改写、前缀缓存全废。这类不变量
  * 只能在真实接线（section / context 注册点）上验证。
+ *
+ * 另外它模拟 cordis 的 `ctx.inject(deps, cb)` 语义：依赖齐全才执行回调。这让我们能测
+ * 「宿主没有 webServer 时只失去 RPC 通道」这条降级路径（0.7.1 的兼容性修复）。
  */
 import { apply } from "../src/index.js";
 import { FakePersonaTable } from "./fake-table.js";
@@ -21,13 +24,17 @@ export interface LumeHarness {
 	sections: Record<string, HarnessSection>;
 	/** runtime-context 段（对话尾部快照）注册表。 */
 	contexts: Record<string, HarnessSection>;
-	rpc: () => (endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown }>;
+	rpc: () => (endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown; error?: unknown }>;
+	/** RPC 通道是否已注册（宿主没有 webServer 时为 false）。 */
+	hasRpc: () => boolean;
 	/** 已注册的模型工具名（含载具工具）。 */
 	toolNames: () => string[];
 	/** 直接调用一个已注册的模型工具（模拟模型发起调用）。 */
 	callTool: (name: string, args: Record<string, unknown>, sid: string, cwd?: string) => Promise<unknown>;
 	fire: (sid: string, type: string, data?: unknown) => void;
 	fireTurnEnd: (sid: string) => void;
+	/** 捕获到的 logger.error（兜底路径是否被触发）。 */
+	loggerErrors: string[];
 	/** 模型看到的 system 提示词（人设段 / 协议段）。 */
 	systemText: (sid: string, part: "persona" | "thinking") => string;
 	/** 模型看到的易变段（任务指令 / 人设数据 / 切换播报）。 */
@@ -43,10 +50,14 @@ export interface LumeHarness {
 export interface HarnessOptions {
 	/** false = 模拟不支持 runtime-context 的旧宿主（`systemPrompt.context` 缺失）。 */
 	runtimeContext?: boolean;
+	/** false = 模拟没有 web 载体的宿主（`webServer` 服务永不出现）。 */
+	webServer?: boolean;
 }
 
 export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 	const runtimeContext = options.runtimeContext ?? true;
+	const webServerAvailable = options.webServer ?? true;
+	const loggerErrors: string[] = [];
 	const tables = new Map<string, FakePersonaTable>();
 	const tableFor = (name: string): FakePersonaTable => {
 		let t = tables.get(name);
@@ -71,6 +82,12 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 		},
 		effect: (fn: () => unknown) => {
 			fn();
+		},
+		/** cordis 语义：依赖齐全才执行回调；不齐全就静默等待（这里等价于永不执行）。 */
+		inject: (deps: string[], cb: (scope: any) => void) => {
+			const available = (name: string) => (name === "webServer" ? webServerAvailable : true);
+			if (deps.every(available)) cb(ctx);
+			return () => {};
 		},
 		connection: {
 			rpc: {
@@ -103,7 +120,12 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 			},
 		},
 		get: () => undefined,
-		logger: { warn: () => {} },
+		logger: {
+			warn: () => {},
+			error: (...args: unknown[]) => {
+				loggerErrors.push(args.map((arg) => (arg instanceof Error ? arg.message : String(arg))).join(" "));
+			},
+		},
 	};
 
 	const callSection = (table: Record<string, HarnessSection>, name: string, sid: string): string =>
@@ -114,6 +136,8 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 		sections,
 		contexts,
 		rpc: () => rpc as NonNullable<typeof rpc>,
+		hasRpc: () => rpc !== null,
+		loggerErrors,
 		toolNames: () => [...registeredTools.keys()],
 		callTool: async (name, args, sid, cwd = "D:\\Projects\\demo") => {
 			const tool = registeredTools.get(name);

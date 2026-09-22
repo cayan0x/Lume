@@ -14,7 +14,9 @@
 
 截图不走 PR：在本仓库 `package.json` 旁放 `screenshots.json`（1-8 张图），推上去后下一次构建自动生效；不声明时市场会从 README 里自动抽取。
 
-> **现成的 PR 素材在 [`docs/hub-pr/`](./hub-pr/)**：`cayan0x__Lume.yml` 是提交到索引仓库的**文件原文**（已按规则校验：结构、引号闭合、含 `: ` 的英文描述已加引号），`PR-BODY.md` 是 PR 正文，`submit.mjs` 是登录 `gh` 后一条命令完成 fork → 提交 → 开 PR 的脚本。
+> **现成的 PR 素材在 [`docs/hub-pr/`](./hub-pr/)**：`cayan0x__Lume.yml` 是提交到索引仓库的**文件原文**（已按规则校验：结构、引号闭合、含 `: ` 的英文描述已加引号），`PR-BODY.md` 是 PR 正文，`submit.mjs` 是登录 `gh` 后一条命令完成 fork → 提交 → 开 PR 的脚本，`submit-api.mjs` 是**无需 gh、直接用本机 git 凭据**走 REST API 完成同样流程的脚本（两者都只写我们那一个文件）。
+>
+> **状态**：2026-09-22 已提交 **PR [#5676](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5676)**（改动 = `data/plugins/cayan0x__Lume.yml` 一个文件，+2/-2，仅替换 zh/en 描述）。等索引仓库维护者合并；合并后网站与两份 README 自动重生成。**列表改简介不需要发新版本的插件**（版本号/下载量由 registry 自动采集）。
 >
 > 投稿前置条件逐条核对：`package.json` 声明 `dsh.bundle.patch` ✓、官方包都在 `peerDependencies` 且 `dependencies: {}` ✓、仓库带 `dsh-plugin` topic ✓、创建于 2026-08-29（>1 天）✓、已发布 npm（`lume-dsh-plugin@0.7.2`）✓。
 >

@@ -18,6 +18,8 @@ export const LUME_REFLECTION_SPEC = defineDomain({
 		logs: domainTable(
 			zodLike(
 				z.union([
+					z.object({ at: z.number(), context: z.number(), planning: z.number(), verification: z.number(), review: z.number(), diagnosis: z.number(), note: z.string() }),
+					// v0.7.0 之前的四维日志
 					z.object({ at: z.number(), context: z.number(), planning: z.number(), verification: z.number(), review: z.number(), note: z.string() }),
 					// v0.4.0 之前的存量日志；仅用于打开域并在启动时迁移。
 					z.object({ at: z.number(), p0: z.number(), p1: z.number(), p2: z.number(), p3: z.number(), note: z.string() }),
@@ -33,6 +35,8 @@ export interface ReflectionEntry {
 	planning: number;
 	verification: number;
 	review: number;
+	/** 诊断深度与假设管理（0-2；-1 或缺失 = 该条未评此维，统计时跳过）。 */
+	diagnosis?: number;
 	note: string;
 }
 
@@ -64,6 +68,8 @@ export class ReflectionStore {
 				planning: raw.p1,
 				verification: raw.p2,
 				review: raw.p3,
+				// 旧日志没有第五维：记 -1，统计时跳过（不当作 0 分）。
+				diagnosis: -1,
 				note: typeof raw.note === "string" ? raw.note : "",
 			});
 			migrated++;
@@ -86,16 +92,28 @@ export class ReflectionStore {
 	#computeFeedback(): string | null {
 		const entries = [...this.#table.keys()].map((key) => this.#table.get(key) as ReflectionEntry).filter((e) => typeof e?.context === "number").sort((a, b) => b.at - a.at).slice(0, 5);
 		if (entries.length < 3) return null;
-		const avg = (key: keyof Pick<ReflectionEntry, "context" | "planning" | "verification" | "review">) => entries.reduce((n, e) => n + e[key], 0) / entries.length;
-		const weakest = (["context", "planning", "verification", "review"] as const).slice().sort((a, b) => avg(a) - avg(b))[0]!;
-		if (avg(weakest) > 1.15) return null;
-		const text: Record<typeof weakest, string> = {
+		const dims = ["context", "planning", "verification", "review", "diagnosis"] as const;
+		// 逐维在「评过这一维」的条目上取平均：老日志没有 diagnosis（-1），不参与该维统计，
+		// 否则会被当成 0 分，把一个从未评过的维度误报成最弱项。
+		const avg = (key: (typeof dims)[number]): number | null => {
+			const scored = entries.filter((e) => typeof e[key] === "number" && e[key] >= 0);
+			if (scored.length === 0) return null;
+			return scored.reduce((n, e) => n + (e[key] ?? 0), 0) / scored.length;
+		};
+		const ranked = dims
+			.map((key) => ({ key, value: avg(key) }))
+			.filter((item): item is { key: (typeof dims)[number]; value: number } => item.value !== null)
+			.sort((a, b) => a.value - b.value);
+		const weakest = ranked[0];
+		if (!weakest || weakest.value > 1.15) return null;
+		const text: Record<(typeof dims)[number], string> = {
 			context: "请先确认目标、约束和当前状态，避免遗漏已知信息。",
 			planning: "请按任务复杂度先做必要调研和计划，不要过早执行。",
 			verification: "本轮修改或执行后请立即做最小验证，不要只看命令是否结束。",
 			review: "完成前请对照需求、边界条件和数据保留做一次结果复核。",
+			diagnosis: "排查时先立假设再动手：写下每条假设的证据与状态，把已排除的标出来，不要重复验证同一个假设。",
 		};
-		return text[weakest];
+		return text[weakest.key];
 	}
 }
 
@@ -107,8 +125,9 @@ export const REFLECTION_SYSTEM = [
 	"计划与门控：是否拆解任务、先调研再执行，并按风险自适应投入",
 	"验证与失败处理：是否在变更后验证，失败时归因并更换方案；引用日志/历史/旧报错作为证据时是否核对时间戳与因果归属，有没有把历史错误当成本次问题的原因",
 	"结果复核：是否对照完成标准、边界条件、兼容性和数据保留进行复核",
+	"诊断深度与假设管理：是否在排查时建立并维护假设（证据、状态、已排除项），是否避免重复验证同一个假设、避免撒网式浏览代替链路定位",
 	"",
-	"只输出一个 JSON 对象，形如 {\"context\":2,\"planning\":2,\"verification\":1,\"review\":0,\"note\":\"...\"}，note 一句话中文，不要输出其他内容。",
+	'只输出一个 JSON 对象，形如 {"context":2,"planning":2,"verification":1,"review":0,"diagnosis":1,"note":"..."}，note 一句话中文，不要输出其他内容。',
 ].join("\n");
 
 export function buildReflectionPrompt(turns: string[]): { system: string; userText: string } {
@@ -152,9 +171,12 @@ export function parseReflectionScore(output: string): ReflectionEntry | null {
 	const planning = clampScore(r.planning ?? r.p1);
 	const verification = clampScore(r.verification ?? r.p2);
 	const review = clampScore(r.review ?? r.p3);
+	// 第五维「诊断深度与假设管理」：模型没给这一维时记 -1（统计时跳过该维，不当作 0 分）。
+	const rawDiagnosis = clampScore(r.diagnosis ?? r.p4);
+	const diagnosis = Number.isNaN(rawDiagnosis) ? -1 : rawDiagnosis;
 	const note = typeof r.note === "string" ? r.note.trim().slice(0, 200) : "";
 	if (Number.isNaN(context) || Number.isNaN(planning) || Number.isNaN(verification) || Number.isNaN(review)) return null;
-	return { at: Date.now(), context, planning, verification, review, note };
+	return { at: Date.now(), context, planning, verification, review, diagnosis, note };
 }
 
 function clampScore(value: unknown): number {

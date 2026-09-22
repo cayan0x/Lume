@@ -1,10 +1,10 @@
 /**
- * apply() 层测试夹具：用假 ctx 装载真实插件，捕获它注册的 section / context /
+ * apply() 层测试夹具：用假 ctx 装载真实插件，捕获它注册的 section / context / 工具 /
  * 会话事件处理器 / RPC 通道，让测试可以驱动真实的轮次与事件时序。
  *
- * 为什么需要它：注入分层是本项目最容易回归的地方——一个「哪个字段进了哪一层」
- * 的错误不会让任何纯函数测试失败，却会让系统提示词每步改写、前缀缓存全废。
- * 这类不变量只能在真实接线（section / context 注册点）上验证。
+ * 为什么需要它：注入分层与载具注入是本项目最容易回归的地方——一个「哪个字段进了哪一层」
+ * 的错误不会让任何纯函数测试失败，却会让系统提示词每步改写、前缀缓存全废。这类不变量
+ * 只能在真实接线（section / context 注册点）上验证。
  */
 import { apply } from "../src/index.js";
 import { FakePersonaTable } from "./fake-table.js";
@@ -22,6 +22,10 @@ export interface LumeHarness {
 	/** runtime-context 段（对话尾部快照）注册表。 */
 	contexts: Record<string, HarnessSection>;
 	rpc: () => (endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown }>;
+	/** 已注册的模型工具名（含载具工具）。 */
+	toolNames: () => string[];
+	/** 直接调用一个已注册的模型工具（模拟模型发起调用）。 */
+	callTool: (name: string, args: Record<string, unknown>, sid: string, cwd?: string) => Promise<unknown>;
 	fire: (sid: string, type: string, data?: unknown) => void;
 	fireTurnEnd: (sid: string) => void;
 	/** 模型看到的 system 提示词（人设段 / 协议段）。 */
@@ -55,6 +59,7 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 	const sections: Record<string, HarnessSection> = {};
 	const contexts: Record<string, HarnessSection> = {};
 	const eventHandlers = new Map<string, (session: any, event: any) => void>();
+	const registeredTools = new Map<string, { name?: string; execute?: (args: unknown, exec: unknown) => Promise<unknown> }>();
 	let rpc: ((endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown }>) | null = null;
 
 	const ctx: Record<string, unknown> = {
@@ -92,25 +97,34 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 			return () => {};
 		},
 		tools: {
-			register: () => () => {},
+			register: (definition: { name?: string; execute?: (args: unknown, exec: unknown) => Promise<unknown> }) => {
+				if (definition?.name) registeredTools.set(String(definition.name), definition);
+				return () => {};
+			},
 		},
 		get: () => undefined,
 		logger: { warn: () => {} },
 	};
 
 	const callSection = (table: Record<string, HarnessSection>, name: string, sid: string): string =>
-		table[name]?.text({ agent: { session: { id: sid } } }) ?? "";
+		table[name]?.text({ agent: { session: { id: sid, cwd: "D:\\Projects\\demo" } } }) ?? "";
 
 	return {
 		ctx,
 		sections,
 		contexts,
 		rpc: () => rpc as NonNullable<typeof rpc>,
+		toolNames: () => [...registeredTools.keys()],
+		callTool: async (name, args, sid, cwd = "D:\\Projects\\demo") => {
+			const tool = registeredTools.get(name);
+			if (!tool?.execute) throw new Error(`tool not registered: ${name}`);
+			return tool.execute(args, { agent: { session: { id: sid, cwd } } });
+		},
 		fire: (sid, type, data) => {
-			eventHandlers.get("session/event")?.({ id: sid }, { type, data });
+			eventHandlers.get("session/event")?.({ id: sid, cwd: "D:\\Projects\\demo" }, { type, data });
 		},
 		fireTurnEnd: (sid) => {
-			eventHandlers.get("session/event")?.({ id: sid }, { type: "turn/end" });
+			eventHandlers.get("session/event")?.({ id: sid, cwd: "D:\\Projects\\demo" }, { type: "turn/end" });
 		},
 		systemText: (sid, part) => callSection(sections, part === "persona" ? "lume:persona" : "lume:thinking", sid),
 		runtimeText: (sid, part) => {
@@ -155,4 +169,9 @@ export function userMessage(text: string): { role: string; source: { kind: strin
 /** 助手回复事件。 */
 export function assistantMessage(text: string): { message: { content: Array<{ type: string; text: string }> } } {
 	return { message: { content: [{ type: "text", text }] } };
+}
+
+/** 工具结果事件。 */
+export function toolResult(text: string, error = false): { error?: boolean; message: { content: Array<{ type: string; text: string }> } } {
+	return { ...(error ? { error: true } : {}), message: { content: [{ type: "text", text }] } };
 }

@@ -6,6 +6,10 @@
  * - SessionRuntimeStore：带 LRU 上限的 Map，防止 session/disposed 事件丢失时
  *   运行时状态无限增长（v0.3.0 只有 Map + disposed 清理，无兜底）。
  */
+import type { ToolKind } from "../core/signals.js";
+import { newTriggerCounters } from "./triggers.js";
+import type { TriggerCounters, TriggerId } from "./triggers.js";
+
 export interface SessionRuntime {
 	userText: string;
 	assistantText: string;
@@ -51,6 +55,24 @@ export interface SessionRuntime {
 	 * 说明又有东西混进了 system 段。
 	 */
 	stableDigest: string | null;
+	/** 本会话所属项目键（由工作目录派生）：跨会话的项目知识按它归属。 */
+	projectKey: string | null;
+	/** 最近一次工具调用的行为类别（成败要到结果阶段才判定，需要它配对）。 */
+	toolKind: ToolKind;
+	/** 行为触发器计数器：撒网式探查 / 连写不验 / 死路重撞。 */
+	triggerCounters: TriggerCounters;
+	/** 本步要注入的触发器提醒（轮结束时清空）。 */
+	triggerNudge: string | null;
+	/** 每类触发器上次触发的轮次（轮级冷却，防止提示变噪音）。 */
+	triggerFiredAt: Partial<Record<TriggerId, number>>;
+	/** 轮边界触发器（契约对账 / 项目知识采集）的提醒。 */
+	turnNudge: string | null;
+	/** 上次契约对账的轮次。 */
+	lastDriftTurn: number | null;
+	/** 是否已提醒过项目知识采集（每个会话一次）。 */
+	knowledgePrompted: boolean;
+	/** 本轮是否更新过假设台账（更新过就不再提醒维护假设）。 */
+	hypothesesTouched: boolean;
 	/** 当前轮用户明确纠正或重复提问时的临时对齐提醒。 */
 	alignmentCorrection: string | null;
 	/** 最近用户请求的归一化文本，仅用于检测上下文失配，不持久化。 */
@@ -96,6 +118,15 @@ function defaultRuntime(): SessionRuntime {
 		interactionMode: "question",
 		intent: null,
 		stableDigest: null,
+		projectKey: null,
+		toolKind: "other",
+		triggerCounters: newTriggerCounters(),
+		triggerNudge: null,
+		triggerFiredAt: {},
+		turnNudge: null,
+		lastDriftTurn: null,
+		knowledgePrompted: false,
+		hypothesesTouched: false,
 		alignmentCorrection: null,
 		recentUserQueries: [],
 		postTurnReview: null,

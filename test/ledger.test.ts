@@ -34,7 +34,9 @@ describe("projectKeyOf", () => {
 
 	it("不同目录不同键；空目录退化到 unknown", () => {
 		expect(projectKeyOf("D:\\a")).not.toBe(projectKeyOf("D:\\b"));
-		expect(projectKeyOf("")).toBe(projectKeyOf(""));
+		expect(projectKeyOf("")).toBeNull();
+		expect(projectKeyOf(undefined)).toBeNull();
+		expect(projectKeyOf("   ")).toBeNull();
 	});
 });
 
@@ -155,5 +157,26 @@ describe("假设与项目知识", () => {
 		expect(normalizeChange({ target: "A" }, 0)).toBeNull();
 		expect(normalizeHypothesis({}, 0)).toBeNull();
 		expect(normalizeProjectFact({ kind: "build" }, 0)).toBeNull();
+	});
+});
+
+describe("renderContract 的数量行（P1：让「未估/未回填」可见）", () => {
+	it("数量未估时也显示，并标注未估", () => {
+		const contract = normalizeContract({ goal: "把 dev 合入 main" }, 0, 1);
+		const text = renderContract(contract);
+		expect(text).toContain("未估");
+	});
+
+	it("估了没回填时标注未回填", () => {
+		const contract = normalizeContract({ goal: "改 11 处", expectCount: 11 }, 0, 1);
+		expect(renderContract(contract)).toContain("未回填");
+	});
+
+	it("估了也回填了就显示两个数字", () => {
+		const contract = normalizeContract({ goal: "改 11 处", expectCount: 11, actualCount: 13 }, 0, 1);
+		const text = renderContract(contract);
+		expect(text).toContain("11");
+		expect(text).toContain("13");
+		expect(text).not.toContain("未回填");
 	});
 });

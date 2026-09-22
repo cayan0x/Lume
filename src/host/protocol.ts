@@ -18,6 +18,16 @@ const MODE_RULES: Record<InteractionMode, string> = {
 // 显式请求标记后必须紧跟一个动作动词，且限制在同一小句内（旧版用 `.*` 贪婪跨越
 // 整句，导致「是什么驱动你去这么做的」也被判成执行）。句首祈使不再放行「做」：
 // 「做一件事…」这类名词化表述是讨论而非执行。
+/**
+ * 执行动词的补充表（0.7.4）。
+ *
+ * 现场实测：`EXECUTE_RE` 不含「重构 / 梳理 / 删掉 / 合并 / 迁移」等常见动词，于是
+ * 「帮我重构订单退费链路」被判成**问答**——方法层（影响面清单）与阶段门控都不生效，
+ * 而那次会话确实改了 11 个文件。这里只补「对产物动手」的动作，**不含诊断类动词**
+ * （分析/诊断/排查属于 diagnosis，混进来会把讨论与排查误判成执行）。
+ */
+const EXECUTE_EXTRA_RE = /重构|重写|梳理|清理|删掉|删除|去掉|移除|合并|合入|迁移|替换|收口|落地|接入|适配|升级|降级|补上|补齐|加上|改成|改为|换成|拆开|拆出/;
+
 const EXECUTE_RE = new RegExp(
 	[
 		"(?:请|帮我|帮忙|直接|把|给我|替我|麻烦|需要你)\\s*[^，。！？；\\n]{0,24}?(?:做|改|修|写|加|删|建|跑|执行|完成|实现|优化|更新|部署|安装|迁移|提交|发布|检查|核对|补|替换|重命名|合并|回滚|加上)",
@@ -36,7 +46,7 @@ const RESEARCH_RE = /查一下|查找|搜索|检索|资料|文档|来源|证据|
 export function classifyInteraction(text: string | null | undefined): InteractionMode {
 	const query = String(text ?? "").trim();
 	if (!query) return "question";
-	if (EXECUTE_RE.test(query)) return "execute";
+	if ((EXECUTE_RE.test(query) || EXECUTE_EXTRA_RE.test(query))) return "execute";
 	if (DIAGNOSIS_RE.test(query)) return "diagnosis";
 	if (DISCUSSION_RE.test(query)) return "discussion";
 	if (RESEARCH_RE.test(query)) return "research";

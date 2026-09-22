@@ -28,6 +28,12 @@ export interface LumeHarness {
 	rpc: () => (endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown; error?: unknown }>;
 	/** RPC 通道是否已建立（connection 频道 或 自注册的 webServer 路由）。 */
 	hasRpc: () => boolean;
+	/** 直接读某个存储表（断言自动台账 / 项目键用）。 */
+	table: (name: string) => FakePersonaTable;
+	/** 取已注册工具的完整定义（断言 schema 用，例如 expectCount 是否必填）。 */
+	toolDefinition: (name: string) => Record<string, any> | undefined;
+	/** 触发任意已注册的 ctx.on 事件（不只是 session/event）。 */
+	emit: (type: string, session: Record<string, unknown>, event?: unknown) => void;
 	/** 通过回退路径注册到 webServer 的路由（用于断言回退是否生效）。 */
 	registeredRoutes: () => Array<{ kind?: string; path?: string; handler?: unknown }>;
 	/** 已注册的模型工具名（含载具工具）。 */
@@ -182,6 +188,11 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 		contexts,
 		rpc: () => rpc as NonNullable<typeof rpc>,
 		hasRpc: () => rpc !== null || registeredRoutes.length > 0,
+		table: (name) => tableFor(name),
+		toolDefinition: (name) => registeredTools.get(name) as Record<string, any> | undefined,
+		emit: (type, session, event) => {
+			eventHandlers.get(type)?.(session, event);
+		},
 		registeredRoutes: () => registeredRoutes,
 		loggerErrors,
 		loggerWarnings,

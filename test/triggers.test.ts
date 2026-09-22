@@ -63,7 +63,7 @@ describe("readResultSignals", () => {
 	});
 });
 
-const CTX: ToolTriggerContext = { turnIndex: 0, isTask: true, diagnosing: false, hasContract: false, hasHypotheses: false, hypothesesTouched: false };
+const CTX: ToolTriggerContext = { turnIndex: 0, isTask: true, diagnosing: false, hasContract: false, unverifiedChanges: 0, hypothesesTouched: false };
 
 function feed(kind: Parameters<typeof applyToolSignal>[1], times: number, counters: TriggerCounters = newTriggerCounters(), signals = OK): TriggerCounters {
 	for (let i = 0; i < times; i++) {
@@ -125,9 +125,31 @@ describe("evaluateToolTrigger", () => {
 
 	it("诊断模式下验证失败且假设未更新 → 提醒维护假设", () => {
 		const counters = feed("verify", 1, newTriggerCounters(), { failure: true, unknown: false, env: false });
-		const fire = evaluateToolTrigger(counters, { ...CTX, diagnosing: true, hasHypotheses: true });
+		const fire = evaluateToolTrigger(counters, { ...CTX, diagnosing: true });
 		expect(fire?.id).toBe("hypothesis-stale");
-		expect(evaluateToolTrigger(counters, { ...CTX, diagnosing: true, hasHypotheses: true, hypothesesTouched: true })).toBeNull();
+		expect(evaluateToolTrigger(counters, { ...CTX, diagnosing: true, hypothesesTouched: true })).toBeNull();
+	});
+
+	it("台账里有未验证项（跨轮累计）→ 也能触发增量验证", () => {
+		const counters = newTriggerCounters();
+		applyToolSignal(counters, "mutate", null);
+		applyToolSignal(counters, "inspect", null);
+		applyToolSignal(counters, "mutate", null);
+		const fire = evaluateToolTrigger(counters, { ...CTX, unverifiedChanges: DEFAULT_TRIGGER_THRESHOLDS.changeStreak });
+		expect(fire?.id).toBe("verify-as-you-go");
+		expect(fire?.text).toContain("lume_change");
+	});
+
+	it("诊断模式下即使还没写过假设，失败也会提醒（否则这个载具永远不会被启用）", () => {
+		const counters = feed("verify", 1, newTriggerCounters(), { failure: true, unknown: false, env: false });
+		const fire = evaluateToolTrigger(counters, { ...CTX, diagnosing: true });
+		expect(fire?.id).toBe("hypothesis-stale");
+		expect(fire?.text).toContain("lume_hypothesis");
+	});
+
+	it("验证降级阶梯文案点名 lume_project_note（把环境死路记成项目知识）", () => {
+		const counters = feed("verify", 3, newTriggerCounters(), { failure: true, unknown: false, env: true });
+		expect(evaluateToolTrigger(counters, CTX)?.text).toContain("lume_project_note");
 	});
 
 	it("闲聊轮不触发收敛提醒", () => {

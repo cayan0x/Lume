@@ -479,7 +479,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				existing.map((f) => f.text),
 			);
 			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute), prompt.system, prompt.userText, 800);
-			if (output === null) return;
+			if (output === null) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）模型无输出`); return; }
 			st.lastExtractionAt = Date.now();
 			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
 			for (const fact of fresh) {
@@ -604,6 +604,18 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						// 行为类别在调用阶段记账（连击），成败到结果阶段才结算。
 						st.toolKind = classifyTool((event.data as { name?: unknown } | undefined)?.name);
 						applyToolSignal(st.triggerCounters, st.toolKind, null);
+						// 自动改动台账：mutate 类工具一被调用就先记一条——实测模型几乎不会主动调 lume_change
+						// （4 个会话里 0 次），而 edit/write 每次会话几十次。载具必须由插件自己落账，
+						// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
+						if (projectMemoryOn && st.toolKind === "mutate") {
+							const target = targetPathFromToolEvent(event.data);
+							if (target) {
+								const toolName = String((event.data as { name?: unknown } | undefined)?.name ?? "tool");
+								void projectReady.then((store) =>
+									store?.upsertChange(sid, { target, change: `（自动）由 ${toolName} 修改`, why: "", verify: "", status: "done", at: Date.now() }),
+								);
+							}
+						}
 						break;
 					}
 					case "tool/result": {
@@ -627,7 +639,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 									isTask: isTaskQuery(st),
 									diagnosing: st.interactionMode === "diagnosis",
 									hasContract: contractOf(sid) !== null,
-									hasHypotheses: hypothesesOf(sid).length > 0,
+									unverifiedChanges: changesOf(sid).filter((item) => item.status !== "verified" && item.status !== "skipped").length,
 									hypothesesTouched: st.hypothesesTouched,
 								},
 								triggerThresholds,
@@ -639,7 +651,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 								// 环境性死路自动落成项目知识：下次会话不必重踩。
 								if (fire.id === "dead-path" && signals.env && project) {
 									const key = projectKeyFor(sid, session);
-									void project.addFact(key, normalizeProjectFact({ kind: "deadend", text: `本环境验证受阻（${st.triggerCounters.verifyFailStreak} 次连续失败，环境/依赖类）：换降级阶梯，不要重复同一命令` }, Date.now())!, (candidate, existing) => existing.some((fact) => fact.text === candidate));
+									if (key) void project.addFact(key, normalizeProjectFact({ kind: "deadend", text: `本环境验证受阻（${st.triggerCounters.verifyFailStreak} 次连续失败，环境/依赖类）：换降级阶梯，不要重复同一命令` }, Date.now())!, (candidate, existing) => existing.some((fact) => fact.text === candidate));
 								}
 							}
 						}
@@ -748,17 +760,20 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				void projectReady.then((store) => store?.clearSession(sid));
 				// 反思日志：会话结束后空闲时间跑一次小模型，零用户感知 token。
 				// 历史不够长（< 4 条消息）或路由不可用时静默跳过。
-				if (reflectionEnabled && turns.length >= 4) {
+				if (reflectionEnabled && turns.length < 4) ctx.logger?.warn?.(`lume: 反思跳过（${sid}）历史不足：${turns.length} < 4 条消息`);
+					if (reflectionEnabled && turns.length >= 4) {
 					void (async () => {
 						const store = await reflectionReady;
+						if (!store) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）reflection 域不可用`); return; }
 						if (!store) return;
 						const route = resolveAuxRoute({}, llmRoute);
+						if (!route) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）无可用小模型路由`); return; }
 						if (!route) return;
 						const prompt = buildReflectionPrompt(turns);
 						const output = await callLlm(route, prompt.system, prompt.userText, 800);
 						if (output === null) return;
 						const score = parseReflectionScore(output);
-						if (!score) return;
+						if (!score) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）评分解析失败`); return; }
 						await store.log(sid, score);
 						ctx.logger?.warn?.(`lume: 反思日志 ${sid} context=${score.context} planning=${score.planning} verification=${score.verification} review=${score.review} diagnosis=${score.diagnosis}「${score.note}」`);
 					})();
@@ -769,17 +784,28 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 	// ── 载具与项目知识的读取入口（事件处理器 / 工具 / 注入三处共用）──
 	/** 项目键：优先取会话工作目录（跨会话共享同一仓库的知识）。 */
-	function projectKeyFor(sid: string, source: any): string {
+	function projectKeyFor(sid: string, source: any): string | null {
 		const st = runtime.get(sid);
 		if (st.projectKey) return st.projectKey;
 		// 三种调用来源：提示词 context（{agent:{session}}）、工具 exec（{agent:{session}}）、
 		// 会话事件（session 本身）。统一取到 session 再读 cwd。
 		const session = source?.agent?.session ?? source?.session ?? source;
-		const cwd = session?.cwd ?? "";
+		const cwd = String(session?.cwd || st.cwd || "");
 		const key = projectKeyOf(cwd);
 		// 只有拿到真实工作目录才缓存：否则一次无 cwd 的调用会把 "unknown" 固化下来。
-		if (cwd) st.projectKey = key;
-		return key;
+		if (cwd && key) st.projectKey = key;
+		return st.projectKey ?? key;
+	}
+
+	/** 从工具入参里取目标路径（自动改动台账用）：兼容常见字段名，取不到返回 null——宁可少记，不要记错。 */
+	function targetPathFromToolEvent(data: any): string | null {
+		const args = data?.args ?? data?.input ?? data?.parameters ?? data?.arguments;
+		if (!args || typeof args !== "object") return null;
+		for (const key of ["path", "file_path", "filePath", "file", "filename", "target", "notebook_path"]) {
+			const value = (args as Record<string, unknown>)[key];
+			if (typeof value === "string" && value.trim()) return value.trim().slice(0, 120);
+		}
+		return null;
 	}
 
 	function isTaskQuery(st: SessionRuntime): boolean {
@@ -799,7 +825,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	}
 
 	function factsOf(sid: string, context: any) {
-		return project ? project.getFacts(projectKeyFor(sid, context)) : [];
+		const projectKey = projectKeyFor(sid, context);
+		return project && projectKey ? project.getFacts(projectKey) : [];
 	}
 
 	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
@@ -826,7 +853,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 */
 	function carrierBlocks(sid: string, context: any, st: SessionRuntime, query: string, mode: SessionRuntime["interactionMode"]) {
 		if (!projectMemoryOn) return [];
-		const isTask = TASK_SIGNAL_RE.test(query);
+		const isTask = mode !== "question" || TASK_SIGNAL_RE.test(query);
 		const contract = contractOf(sid);
 		const changes = changesOf(sid);
 		const docDirective = buildDocumentDirective({ query, capabilities: probeDocumentCapabilities(ctx.get("tools"), context?.agent) });
@@ -941,7 +968,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				parameters: {
 					goal: { type: "string", description: "目标：一句话、可观察的结果" },
 					scope: { type: "string", description: "范围：路径/模块/章节，分号或换行分隔" },
-					expectCount: { type: "number", description: "预计数量（探索前先估）" },
+					expectCount: { type: "number", required: true, description: "预计数量（探索前先估）" },
 					actualCount: { type: "number", description: "实际数量（探索后回填）" },
 					criteria: { type: "string", description: "完成判据：可执行、可核对，分号或换行分隔" },
 					nonGoals: { type: "string", description: "非目标：明确不动的东西，分号分隔" },
@@ -1058,7 +1085,13 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 					if (!sid) throw new Error("lume_project_note requires an active session");
 					const fact = normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now());
 					if (!fact) throw new Error("lume_project_note requires text");
-					await project.addFact(projectKeyFor(sid, { agent: exec?.agent }), fact, (candidate, existing) => existing.some((entry) => jaccard(entry.text, candidate) >= 0.7));
+					const projectKey = projectKeyFor(sid, { agent: exec?.agent });
+						if (!projectKey) {
+							// 拿不到工作目录：不写跨会话表——写一次就会把不同项目的知识串进同一个键（现场事故：facts 的键曾是 "unknown"）
+							ctx.logger?.warn?.(`lume: [${sid}] 项目知识未落盘（无法确定工作目录）`);
+							return { ok: true };
+						}
+						await project.addFact(projectKey, fact, (candidate, existing) => existing.some((entry) => jaccard(entry.text, candidate) >= 0.7));
 					return { ok: true };
 				},
 			}),
@@ -1078,6 +1111,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 */
 	function resolveIntent(context: any, st: SessionRuntime): { text: string; mode: SessionRuntime["interactionMode"] } {
 		const session = context?.agent?.session;
+		if (typeof session?.cwd === "string" && session.cwd) st.cwd = session.cwd;
 		const messages = typeof session?.deriveMessages === "function" ? session.deriveMessages() : [];
 		let text: string | null = null;
 		let messageId = "";
@@ -1141,6 +1175,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		// 交付复核、压缩重锚、文档能力指引、失败纠偏、反思提醒——全部每步可变。
 		// 载具与方法块（契约/台账/假设/项目知识/影响面/文档方法/触发器提醒）排在最后：
 		// 它们是「此刻最该看的」，紧贴尾部注意力最强位；超预算时先丢可丢块（composeBlocks）。
+				// 记录工作目录：工具 exec / 会话事件里可能拿不到 cwd，项目键靠这里缓存兜住（实测项目知识曾落到 unknown）
+		if (typeof context?.agent?.session?.cwd === "string" && context.agent.session.cwd) st.cwd = context.agent.session.cwd;
 		const thinkingRuntime = composeBlocks([
 			{ text: buildInteractionDirective(mode) },
 			{ text: buildTaskPhaseDirective(st.taskPhase) },

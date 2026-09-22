@@ -60,6 +60,7 @@ export const THINKING_COMPACT_TEXT = `[任务执行协议]
 export const TASK_SIGNAL_RE = /代码|编程|文件|项目|仓库|脚本|命令|调研|研究|分析|实现|修改|修复|构建|测试|部署|配置|安装|迁移|导入|导出|接口|API|数据库|批量|计划|方案|风险|审查|review|debug|bug|深度|复杂/i;
 
 /** 推理型模型判据：命中即用精简协议（它天生会计划，重复条款只稀释注意力）。 */
+
 export const REASONING_MODEL_RE = /deepseek-v[345]|reason|o[134]|gpt-5/i;
 
 /** 推理型模型的任务协议：省掉它天生具备的计划/分解条款，保留行为约束与事实边界。 */

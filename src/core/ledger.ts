@@ -103,10 +103,17 @@ function asCount(value: unknown): number | null {
 	return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
 }
 
-/** 项目键：跨会话共享的项目知识按工作目录归属（同一仓库的多个会话共用一份）。 */
-export function projectKeyOf(cwd: unknown): string {
+/**
+ * 项目键：跨会话共享的项目知识按工作目录归属（同一仓库的多个会话共用一份）。
+ *
+ * 拿不到工作目录时返回 **null**，不返回 "unknown"——实测踩过：写入口（工具 exec / 会话事件）
+ * 里的 session 视图不一定带 cwd，回落成 "unknown" 会把**所有项目**的知识塞进同一个桶，
+ * 跨会话隔离直接失效（现场取证：facts 表的键就是 "unknown"）。调用方拿到 null 必须
+ * 「不写跨会话表」，宁可不记也不要串味。
+ */
+export function projectKeyOf(cwd: unknown): string | null {
 	const normalized = clip(cwd, 240).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
-	if (!normalized) return "unknown";
+	if (!normalized) return null;
 	return fnv1a32(normalized).toString(16).padStart(8, "0");
 }
 
@@ -197,8 +204,8 @@ export function renderContract(contract: TaskContract | null, delivery = false):
 	lines.push(delivery ? "〔契约对账〕交付前逐项对账（以下是开工时写下的原始判据，不是你现在的记忆版本）：" : `〔任务契约｜第 ${contract.turn} 轮写入〕`);
 	lines.push(`目标：${contract.goal}`);
 	if (contract.scope.length > 0) lines.push(`范围：${contract.scope.join("；")}`);
-	if (contract.expectCount !== null || contract.actualCount !== null) {
-		const expect = contract.expectCount === null ? "?" : contract.expectCount;
+	if (true) {
+		const expect = contract.expectCount === null ? "未估" : contract.expectCount;
 		const actual = contract.actualCount === null ? "未回填" : contract.actualCount;
 		lines.push(`数量：预计 ${expect} → 实际 ${actual}`);
 	}

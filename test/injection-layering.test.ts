@@ -190,7 +190,7 @@ describe("任务载具：内容位置与分层不变量", () => {
 		const sid = "s-method";
 		h.fire(sid, "user/message", userMessage("帮我重构 src/host 的接口"));
 		expect(h.runtimeText(sid, "thinking")).toContain("〔先量化后动手〕");
-		await h.callTool("lume_contract", { goal: "重构接口", criteria: "测试全绿" }, sid);
+		await h.callTool("lume_contract", { expectCount: 0, goal: "重构接口", criteria: "测试全绿" }, sid);
 		const tail = h.runtimeText(sid, "thinking");
 		expect(tail).toContain("〔任务契约");
 		expect(tail).not.toContain("〔先量化后动手〕");

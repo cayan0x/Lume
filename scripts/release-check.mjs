@@ -61,6 +61,45 @@ const HOST_INVARIANTS = [
 	},
 ];
 
+/** 分文件断言：每条检查都在指定产物的文本上跑（本版新增行为，防止退化）。 */
+const FILE_INVARIANTS = [
+	{
+		file: "lib/core/ledger.js",
+		id: "project-key-null",
+		what: "projectKeyOf 拿不到 cwd 时返回 null（不再回落 unknown，避免跨项目串味）",
+		incident: "2026-09-22 现场：facts 表的键是 unknown，所有项目的知识混在一个桶里",
+		check: (text) => text.includes("export function projectKeyOf") && !text.includes('return "unknown"'),
+	},
+	{
+		file: "lib/index.js",
+		id: "auto-change-ledger",
+		what: "mutate 类工具调用会自动写入改动台账（不依赖模型自觉）",
+		incident: "0.7.0 实测：lume_change 零调用、ledger 表 0 行——载具写了却永远空着",
+		check: (text) => text.includes("upsertChange(sid, { target") && text.includes("自动）由"),
+	},
+	{
+		file: "lib/index.js",
+		id: "contract-count-required",
+		what: "lume_contract 的 expectCount 在 schema 里必填（否则模型只填目标就交差）",
+		incident: "0.7.0 实测：3 份真实契约的 expectCount/actualCount 全是 -1（未估未回填）",
+		check: (text) => text.includes('expectCount: { type: "number", required: true'),
+	},
+	{
+		file: "lib/host/protocol.js",
+		id: "execute-extra-re",
+		what: "执行动词补充表存在（重构/梳理/删掉/合并…不再被判成问答）",
+		incident: "现场实测：「帮我重构订单退费链路」被判成问答 → 方法层与阶段门控都不生效",
+		check: (text) => text.includes("EXECUTE_EXTRA_RE"),
+	},
+	{
+		file: "lib/host/triggers.js",
+		id: "triggers-name-tools",
+		what: "触发器文案点名工具（增量验证→lume_change；验证降级→lume_project_note）",
+		incident: "现场实测：方法块/提醒不点名工具时，模型不会调用（lume_change 零调用）",
+		check: (text) => text.includes("lume_change") && text.includes("lume_project_note"),
+	},
+];
+
 const BUNDLE_INVARIANTS = [
 	{
 		id: "client-bundle-contract",
@@ -128,7 +167,7 @@ async function collectTarget(publishedVersion) {
 		const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
 		const files = new Map();
 		files.set("package/package.json", Buffer.from(JSON.stringify(pkg)));
-		for (const relative of ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js"]) {
+		for (const relative of ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js"]) {
 			const full = path.join(ROOT, relative);
 			files.set(`package/${relative}`, existsSync(full) ? readFileSync(full) : Buffer.from(""));
 		}
@@ -175,6 +214,11 @@ async function main() {
 	// rpc-bridge 的检查并入宿主产物检查
 	for (const item of [{ id: "error-details", what: "错误信封补 details（客户端要求是对象，缺失会抛 invalid server-response failure）", incident: "0.7.3 前所有 RPC 错误路径都会让客户端调用炸掉", check: (t) => t.includes("details") }]) {
 		const ok = Boolean(item.check(bridgeJs));
+		rows.push({ id: item.id, ok, what: item.what, incident: item.incident });
+		if (!ok) failures.push(item);
+	}
+	for (const item of FILE_INVARIANTS) {
+		const ok = Boolean(item.check(text(target.files, item.file)));
 		rows.push({ id: item.id, ok, what: item.what, incident: item.incident });
 		if (!ok) failures.push(item);
 	}

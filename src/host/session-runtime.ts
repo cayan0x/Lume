@@ -56,6 +56,8 @@ export interface SessionRuntime {
 	 */
 	stableDigest: string | null;
 	/** 本会话所属项目键（由工作目录派生）：跨会话的项目知识按它归属。 */
+	/** 会话工作目录（prompt context 里必定有，工具/事件里可能没有）：项目键的第二来源。 */
+	cwd: string | null;
 	projectKey: string | null;
 	/** 最近一次工具调用的行为类别（成败要到结果阶段才判定，需要它配对）。 */
 	toolKind: ToolKind;
@@ -118,6 +120,7 @@ function defaultRuntime(): SessionRuntime {
 		interactionMode: "question",
 		intent: null,
 		stableDigest: null,
+		cwd: null,
 		projectKey: null,
 		toolKind: "other",
 		triggerCounters: newTriggerCounters(),

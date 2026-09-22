@@ -307,7 +307,7 @@ Lume 因此选择「观察 + 重锚」：压缩发生时记录规模，在随后
 
 ## 宿主兼容性
 
-- **RPC 通道必须注册在注入了 `webServer` 的作用域里**：宿主的 `connection.rpc.handle` 内部会以**调用方**的 ctx 执行 `webServer.register(route)`，所以正确写法只有 `ctx.inject(["webServer"], (webCtx) => webCtx.connection.rpc.handle(...))`（宿主自带的 `dsh-ppt`、`dsh-api-gateway` 同款）。0.7.1 起已修正；**0.6.2 / 0.7.0 在 DSH Desktop 0.9.1 上会导致 DSH 无法启动**（`cannot get property "webServer" without inject` → 插件树加载失败 → 进 safe mode），请升级。没有 web 载体的宿主只失去 RPC 通道，其余功能照常。
+- **RPC 通道必须注册在注入了 `webServer` 的作用域里，且不能包 `effect`**：宿主的 `connection.rpc.handle` 内部以**调用方 ctx** 执行 `webServer.register(route)`（`register(owner, ...)` 里是 `owner.effect(() => owner.webServer.register(route))`）。而 cordis 的 `effect` 会另起一个 **fiber**，**注入授权不随子 fiber 继承**——所以 `webCtx.effect(() => webCtx.connection.rpc.handle(...))` 仍然越权抛错（0.7.1 就栽在这），必须像宿主自带的 `dsh-ppt` 那样**直接在 inject 回调里调用**。该注册还被挪到 `apply` 末尾并加独立 try/catch：它只服务客户端菜单，失败绝不该影响人设注入与工具。0.6.2 / 0.7.0 / 0.7.1 在 DSH Desktop 0.9.1 上的故障（DSH 起不来、或界面人设菜单空白）都源于此，请升级到 ≥0.7.2。
 - **插件不会拖垮宿主**：`apply()` 外层有兜底 try/catch，插件内部的任何异常都降级为「部分功能不可用 + `logger.error`」，不再阻断 DSH 启动。
 - **peer 声明只留宿主运行时保证提供的包**：`@deepseek-ai/dsh-client-ui-primitives` 这类前端包由宿主模块图在运行时提供，**不声明为 peer**——新版桌面安装器做严格 peer 闭包校验，声明它会连带检查它自己的 peer（`dsh-client-runtime`），导致安装/更新被拒绝（desktop 会写进 `.generations-deferred.json` 并冻结整个 profile 迁移）。它仍在 `devDependencies`（tsc 类型与 tsdown external 需要）。
 

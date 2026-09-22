@@ -1266,28 +1266,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		},
 	});
 	// ── RPC 通道 ──
-	// 必须在**注入了 webServer 的作用域**里注册：新宿主的 `connection.rpc.handle` 内部会
-	// 用调用方 ctx 执行 `owner.webServer.register(route)`（见 dsh-client-connection 的
-	// `owner.effect(() => owner.webServer.register(route))`），缺注入时 cordis 直接抛
-	// "cannot get property \"webServer\" without inject"。宿主自带的 dsh-ppt / dsh-api-gateway
-	// 也都是 `ctx.inject(["webServer"], (webCtx) => webCtx.connection.rpc.handle(...))` 这个写法。
-	// 用作用域注入而不是把 webServer 塞进顶层 inject：没有 web 载体的宿主（headless）里只
-	// 失去 RPC 通道，插件其余功能照常工作，不会被 inject 卡住。
-	ctx.inject(["webServer"], (webCtx: any) => {
-		webCtx.effect(
-			() =>
-				webCtx.connection.rpc.handle(LUME_CHANNEL, async (endpoint: string, payload: unknown) => {
-					currentStore ??= await storesReady;
-					identity ??= await identityReady;
-					const result = await handleEndpoint(endpoint, payload);
-					if (endpoint !== "list" && endpoint !== "getSessionPersona") {
-						webCtx.logger?.warn?.(`lume: rpc ${endpoint} ${JSON.stringify(payload ?? {})} → ok=${result.ok}${result.ok ? "" : ` code=${result.error.code}`}`);
-					}
-					return result;
-				}, { authority: "trusted-host" }),
-			"lume: rpc channel",
-		);
-	});
+	// 挪到 apply 的最后注册：它只服务客户端菜单（人设列表/蒸馏/管理），
+	// 绝不该挡住人设段、工具与易变段的注册（0.7.1 的教训：这里抛错 → 整段 apply 中断 → 界面看不到人设）。
+	// 注册本身见下方 registerRpcChannel()。
 
 	// ── 系统提示词段落 ──
 	ctx.effect(
@@ -1361,4 +1342,39 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		});
 	}, "lume.tool-notice-context()");
 
+	registerRpcChannel(ctx);
+
+	/**
+	 * 注册客户端 RPC 通道（`/lume`）。放在最后 + 独立 try/catch：
+	 * 它只服务客户端菜单，任何失败都不该影响人设注入、工具与易变段。
+	 *
+	 * 关键细节（0.7.1 踩过）：必须**直接在注入作用域里调用** `connection.rpc.handle`，
+	 * 不能包 `effect`——新宿主的实现在 `register(owner, ...)` 里执行
+	 * `owner.effect(() => owner.webServer.register(route))`，而 cordis 的 `effect` 会另起
+	 * 一个 fiber，**注入授权不随子 fiber 继承**，于是 `owner.webServer` 再次越权并抛
+	 * "cannot get property \"webServer\" without inject"。宿主自带的 dsh-ppt 也正是直接在
+	 * inject 回调里调用（不包 effect）。没有 web 载体的宿主（headless）只是没有 RPC 通道。
+	 */
+	function registerRpcChannel(scope: any): void {
+		scope.inject(["webServer"], (webCtx: any) => {
+			try {
+				webCtx.connection.rpc.handle(
+					LUME_CHANNEL,
+					async (endpoint: string, payload: unknown) => {
+						currentStore ??= await storesReady;
+						identity ??= await identityReady;
+						const result = await handleEndpoint(endpoint, payload);
+						if (endpoint !== "list" && endpoint !== "getSessionPersona") {
+							webCtx.logger?.warn?.(`lume: rpc ${endpoint} ${JSON.stringify(payload ?? {})} → ok=${result.ok}${result.ok ? "" : ` code=${result.error.code}`}`);
+						}
+						return result;
+					},
+					{ authority: "trusted-host" },
+				);
+			} catch (error) {
+				// 局部兜底：RPC 通道起不来只是菜单不可用，人设注入与工具必须照常。
+				webCtx.logger?.error?.("lume: RPC 通道注册失败（仅客户端菜单不可用，其余功能不受影响）", error);
+			}
+		});
+	}
 }

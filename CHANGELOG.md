@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.7.2 (2026-09-22)
+
+0.7.1 只修了一半：RPC 通道虽然挪进了 `ctx.inject(["webServer"], ...)`，但**调用被包在 `webCtx.effect(...)` 里**——cordis 的 `effect` 会另起一个 **fiber**，而**注入授权不随子 fiber 继承**，于是宿主内部的 `owner.webServer.register(route)` 再次越权。现象是：宿主不再崩（兜底生效），但 apply 在那行中断 → **人设段、工具、RPC 全没注册 → 界面人设菜单空白**（用户反馈「之前人设都没了」；数据其实一条没少）。
+
+- **fix** 去掉 `effect` 包裹，**直接在 inject 回调里调用** `connection.rpc.handle(...)`——与宿主自带的 `dsh-ppt` 完全一致：
+
+  ```js
+  ctx.inject(["webServer"], (webCtx) => {
+      webCtx.connection.rpc.handle("/lume", handler, { authority: "trusted-host" });
+  });
+  ```
+- **fix** RPC 注册**挪到 apply 末尾**并加**独立 try/catch**：它是客户端菜单（人设列表/蒸馏/管理）专用的，任何失败都只该丢菜单，绝不能再中断人设段、工具与易变段的注册。提取为 `registerRpcChannel(scope)`，全程有注释说明为什么不能包 effect。
+- **test** 夹具改为**照实建模 cordis 的 fiber 语义**（`inject` 授予访问权、`effect` 另起 fiber 且**不继承**授权；`rpc.handle` 在无授权时抛真实错误文案）。`test/host-compat.test.ts` 增至 7 例，其中包含**夹具自检**（证明"包 effect 就会抛"这条回归锁真的有效）与「RPC 失败时人设段/工具照常注册」的直接断言——即事故症状本身被测试锁死。
+- 全量 **320 用例全绿**。
+
 ## v0.7.1 (2026-09-22)
 
 本版是**兼容性修复**：0.6.2 与 0.7.0 在 **DSH Desktop 0.9.1（宿主包 0.1.5-rc.2）** 上会导致 **DSH 无法启动**，且插件无法更新。两个独立成因都已修掉。

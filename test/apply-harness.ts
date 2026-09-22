@@ -73,6 +73,12 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 	const registeredTools = new Map<string, { name?: string; execute?: (args: unknown, exec: unknown) => Promise<unknown> }>();
 	let rpc: ((endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown }>) | null = null;
 
+	// 模拟 cordis 的 fiber 语义：`inject(deps, cb)` 授予依赖访问权，而 `effect(cb)`
+	// 会另起子 fiber —— **子 fiber 不继承这份授权**。这正是 0.7.1 真实踩到的坑：
+	// 把 `webCtx.connection.rpc.handle(...)` 包在 `webCtx.effect(...)` 里，
+	// 宿主内部 `owner.webServer.register(route)` 就再次越权抛错。夹具照实建模，
+	// 让「必须直接在 inject 回调里调用」成为可回归的不变量。
+	let scopeGrant = webServerAvailable;
 	const ctx: Record<string, unknown> = {
 		storageDomain: {
 			open: async () => ({
@@ -81,17 +87,32 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 			}),
 		},
 		effect: (fn: () => unknown) => {
-			fn();
+			const prev = scopeGrant;
+			scopeGrant = false;
+			try {
+				return fn();
+			} finally {
+				scopeGrant = prev;
+			}
 		},
 		/** cordis 语义：依赖齐全才执行回调；不齐全就静默等待（这里等价于永不执行）。 */
 		inject: (deps: string[], cb: (scope: any) => void) => {
 			const available = (name: string) => (name === "webServer" ? webServerAvailable : true);
-			if (deps.every(available)) cb(ctx);
+			if (!deps.every(available)) return () => {};
+			const prev = scopeGrant;
+			scopeGrant = webServerAvailable;
+			try {
+				cb(ctx);
+			} finally {
+				scopeGrant = prev;
+			}
 			return () => {};
 		},
 		connection: {
 			rpc: {
 				handle: (_channel: string, handler: typeof rpc) => {
+					// 宿主内部的 `owner.webServer.register(route)`：owner = 当前 fiber
+					if (!scopeGrant) throw new Error('cannot get property "webServer" without inject');
 					rpc = handler;
 					return () => {};
 				},

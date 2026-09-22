@@ -21,12 +21,12 @@ const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 const PACKAGE = "lume-dsh-plugin";
 
 function run(args, options = {}) {
-	return execFileSync(NPM, args, { cwd: ROOT, encoding: "utf8", stdio: options.capture ? "pipe" : "inherit" });
+	// Windows 下 spawnSync 直接跑 npm.cmd 会 EINVAL（Node 20+ 安全变更），必须走 shell\n	return execFileSync(NPM, args, { cwd: ROOT, encoding: "utf8", stdio: options.capture ? "pipe" : "inherit", shell: process.platform === "win32" });
 }
 
 function check(args) {
 	try {
-		run(["exec", "--no", "--", "node", "scripts/release-check.mjs", ...args], { capture: true });
+		execFileSync(process.execPath, ["scripts/release-check.mjs", ...args], { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
 		return { ok: true, output: "" };
 	} catch (error) {
 		return { ok: false, output: String(error.stdout ?? "") + String(error.stderr ?? "") };
@@ -51,11 +51,11 @@ console.log("  ✓ 已投递（registry 异步处理，下面轮询确认）\n")
 
 console.log("③ 检查真正发布出去的产物");
 let published = { ok: false };
-for (let attempt = 1; attempt <= 10; attempt++) {
+for (let attempt = 1; attempt <= 45; attempt++) {
 	await new Promise((resolve) => setTimeout(resolve, 20000));
 	published = check(["--published", version, "--expect-version", version]);
 	if (published.ok) break;
-	if (!published.output.includes("registry 上没有")) break;
+	if (!published.output.includes("registry 上没有")) break;\n\tif (attempt === 45) {\n\t\tconsole.error("✗ registry 15 分钟仍未出现该版本：**不做任何破坏性操作**（既不弃用也不动 latest）——大概率只是传播慢，稍后用 npm run release:audit --published X 复查");\n\t\tprocess.exit(1);\n\t}
 	console.log(`  … registry 尚未出现 ${version}（第 ${attempt} 次）`);
 }
 

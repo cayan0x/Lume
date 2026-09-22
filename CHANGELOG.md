@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.7.3 (2026-09-22)
+
+0.7.2 让宿主能起来了（兜底生效、DSH 不再崩），但**人设菜单仍然是空的**。原因：新宿主的
+`connection.rpc.handle` 最终执行 `owner.effect(() => owner.webServer.register(route))`，而 `owner` 是
+**读这个服务的那个 ctx**（`dsh-client-connection` 源码注释：*channel registrations belong to the caller fiber*）。
+我们的入口 fiber 在 DSH Desktop 0.9.1 上解析不到 `webServer` → 那行抛错 → RPC 通道没建立 →
+客户端菜单 `list` 拿不到列表（数据一直都在 storages 里，从未丢失）。
+
+- **fix** RPC 注册改为**双路径**：主路径仍是宿主公开 API `connection.rpc.handle`（依赖组合对齐宿主自带的
+  `dsh-api-gateway`：`ctx.inject(["connection", "webServer"], …)`）；它失败时**回退为自注册 HTTP 路由**
+  （`webServer.register({ kind: "prefix", path: "/lume", handler })`，宿主自带 `dsh-ppt` 的写法）。
+  报文与客户端 `conn.rpc.call` 严格一致：请求 `{type:"client-request",rpcId,method,payload}` →
+  响应 `{type:"server-response",rpcId,result}`。回退实现抽成纯函数模块 `src/host/rpc-bridge.ts`，
+  由 12 例协议测试锁住（含 404/415/400、信封校验、rpcId 回显、异常不外漏、信任闸）。
+- **fix** 错误信封补 `details: {}`：客户端 `parseConnectionResponse` 要求失败时 `error.details` 是对象，
+  缺失会直接抛 `invalid server-response failure`——即**此前任何 RPC 错误路径都会让客户端调用炸掉**。
+- **fix** RPC 诊断改成一行可 grep 的中文日志（宿主 logger 直接打 Error 会显示成 `{}`）：成功时报走了哪条路径，
+  失败时报**真实错误文本** + 环境形状（`connection` / `rpc` / `handle` / `webServer` / `get` 各是什么），
+  下次宿主 API 变更时一眼可定位。
+- RPC 注册依旧在 apply 末尾 + 独立 try/catch：它只服务客户端菜单，失败绝不拖累人设注入与工具。
+
+> 影响面：0.7.2 及更早版本在新宿主上「人设菜单空白」都源于此。人设数据（2 个自定义人设、64 条会话映射、记忆/风格）全程完好。
+
 ## v0.7.2 (2026-09-22)
 
 0.7.1 只修了一半：RPC 通道虽然挪进了 `ctx.inject(["webServer"], ...)`，但**调用被包在 `webCtx.effect(...)` 里**——cordis 的 `effect` 会另起一个 **fiber**，而**注入授权不随子 fiber 继承**，于是宿主内部的 `owner.webServer.register(route)` 再次越权。现象是：宿主不再崩（兜底生效），但 apply 在那行中断 → **人设段、工具、RPC 全没注册 → 界面人设菜单空白**（用户反馈「之前人设都没了」；数据其实一条没少）。

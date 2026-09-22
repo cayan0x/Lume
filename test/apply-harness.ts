@@ -6,8 +6,9 @@
  * 的错误不会让任何纯函数测试失败，却会让系统提示词每步改写、前缀缓存全废。这类不变量
  * 只能在真实接线（section / context 注册点）上验证。
  *
- * 另外它模拟 cordis 的 `ctx.inject(deps, cb)` 语义：依赖齐全才执行回调。这让我们能测
- * 「宿主没有 webServer 时只失去 RPC 通道」这条降级路径（0.7.1 的兼容性修复）。
+ * 另外它模拟 cordis 的 `ctx.inject(deps, cb)` 与 `ctx.effect(cb)` 语义：inject 授予依赖访问权，
+ * effect 会另起子 fiber 且**不继承**授权。这让「必须直接在 inject 回调里调用」成为可回归的不变量
+ * （0.7.1 的真实故障：把调用包进 effect → 宿主内部 `owner.webServer` 越权）。
  */
 import { apply } from "../src/index.js";
 import { FakePersonaTable } from "./fake-table.js";
@@ -25,16 +26,20 @@ export interface LumeHarness {
 	/** runtime-context 段（对话尾部快照）注册表。 */
 	contexts: Record<string, HarnessSection>;
 	rpc: () => (endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown; error?: unknown }>;
-	/** RPC 通道是否已注册（宿主没有 webServer 时为 false）。 */
+	/** RPC 通道是否已建立（connection 频道 或 自注册的 webServer 路由）。 */
 	hasRpc: () => boolean;
+	/** 通过回退路径注册到 webServer 的路由（用于断言回退是否生效）。 */
+	registeredRoutes: () => Array<{ kind?: string; path?: string; handler?: unknown }>;
 	/** 已注册的模型工具名（含载具工具）。 */
 	toolNames: () => string[];
 	/** 直接调用一个已注册的模型工具（模拟模型发起调用）。 */
 	callTool: (name: string, args: Record<string, unknown>, sid: string, cwd?: string) => Promise<unknown>;
 	fire: (sid: string, type: string, data?: unknown) => void;
 	fireTurnEnd: (sid: string) => void;
-	/** 捕获到的 logger.error（兜底路径是否被触发）。 */
+	/** 捕获到的 logger.error / logger.warn 文本。 */
 	loggerErrors: string[];
+	/** 捕获到的 logger.warn 文本（RPC 通道诊断走这一档）。 */
+	loggerWarnings: string[];
 	/** 模型看到的 system 提示词（人设段 / 协议段）。 */
 	systemText: (sid: string, part: "persona" | "thinking") => string;
 	/** 模型看到的易变段（任务指令 / 人设数据 / 切换播报）。 */
@@ -52,12 +57,20 @@ export interface HarnessOptions {
 	runtimeContext?: boolean;
 	/** false = 模拟没有 web 载体的宿主（`webServer` 服务永不出现）。 */
 	webServer?: boolean;
+	/** true = 主路径 `connection.rpc.handle` 永远抛错（用于验证回退路由）。 */
+	rpcHandleFails?: boolean;
+	/** true = 回退路径 `webServer.register` 也抛错（用于验证双失败时的诊断输出）。 */
+	webServerRegisterFails?: boolean;
 }
 
 export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 	const runtimeContext = options.runtimeContext ?? true;
 	const webServerAvailable = options.webServer ?? true;
+	const rpcHandleFails = options.rpcHandleFails ?? false;
+	const webServerRegisterFails = options.webServerRegisterFails ?? false;
 	const loggerErrors: string[] = [];
+	const loggerWarnings: string[] = [];
+	const registeredRoutes: Array<{ kind?: string; path?: string; handler?: unknown }> = [];
 	const tables = new Map<string, FakePersonaTable>();
 	const tableFor = (name: string): FakePersonaTable => {
 		let t = tables.get(name);
@@ -108,10 +121,19 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 			}
 			return () => {};
 		},
+		webServer: {
+			register: (route: { kind?: string; path?: string; handler?: unknown }) => {
+				if (webServerRegisterFails) throw new Error("webServer.register rejected");
+				if (!scopeGrant) throw new Error('cannot get property "webServer" without inject');
+				registeredRoutes.push(route);
+				return () => {};
+			},
+		},
 		connection: {
 			rpc: {
 				handle: (_channel: string, handler: typeof rpc) => {
 					// 宿主内部的 `owner.webServer.register(route)`：owner = 当前 fiber
+					if (rpcHandleFails) throw new Error('cannot get property "webServer" without inject');
 					if (!scopeGrant) throw new Error('cannot get property "webServer" without inject');
 					rpc = handler;
 					return () => {};
@@ -142,7 +164,9 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 		},
 		get: () => undefined,
 		logger: {
-			warn: () => {},
+			warn: (...args: unknown[]) => {
+				loggerWarnings.push(args.map((arg) => (arg instanceof Error ? arg.message : String(arg))).join(" "));
+			},
 			error: (...args: unknown[]) => {
 				loggerErrors.push(args.map((arg) => (arg instanceof Error ? arg.message : String(arg))).join(" "));
 			},
@@ -157,8 +181,10 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 		sections,
 		contexts,
 		rpc: () => rpc as NonNullable<typeof rpc>,
-		hasRpc: () => rpc !== null,
+		hasRpc: () => rpc !== null || registeredRoutes.length > 0,
+		registeredRoutes: () => registeredRoutes,
 		loggerErrors,
+		loggerWarnings,
 		toolNames: () => [...registeredTools.keys()],
 		callTool: async (name, args, sid, cwd = "D:\\Projects\\demo") => {
 			const tool = registeredTools.get(name);

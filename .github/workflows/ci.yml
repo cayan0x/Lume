@@ -29,6 +29,9 @@ jobs:
         run: npm test
 
       # 产物契约：客户端 bundle 必须是 __ModuleLoader__ 工厂格式
+      # Release gate: turn every real incident into an assertion on the artifact (see RELEASING.md)
+      - name: Release gate (host-compat invariants)
+        run: node scripts/release-check.mjs
       - name: Verify client bundle contract
         run: |
           head -3 lib/client.js | grep -q '__ModuleLoader__.load' || {

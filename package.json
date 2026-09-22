@@ -65,7 +65,10 @@
     "build": "tsc -p tsconfig.build.json && tsdown",
     "bundle": "tsdown",
     "watch": "tsdown --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "release:check": "npm run build && node scripts/release-check.mjs",
+    "release:publish": "node scripts/publish.mjs",
+    "release:audit": "node scripts/release-check.mjs --published"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

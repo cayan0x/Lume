@@ -99,7 +99,7 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("renderRequirements") && text.includes("appendRequirement"),
 	},
 	{
-		file: "lib/host/signals.js",
+		file: "lib/core/signals.js",
 		id: "requirement-drift",
 		what: "需求漂移词法检测存在（模型输出里出现需求没提的变更类型词就顶一句）",
 		incident: "现场：需求说「新增选项」，模型推论「删除/割接」，被用户当场纠正两次",

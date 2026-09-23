@@ -59,12 +59,13 @@ import { buildCarrierGapNotice, buildCitationDirective, buildContractMethodDirec
 import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
+import { initStores } from "./host/bootstrap.js";
 import { registerLumeTools } from "./host/tools.js";
 import { createSessionDisposedHandler, createSessionEventHandler } from "./host/session-events.js";
 import { DEFAULT_TRIGGER_THRESHOLDS, applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger, type TriggerId, type TriggerThresholds } from "./host/triggers.js";
 
 
-/** schemastery → domainTable 形参的桥接（与 identity.ts 同款）。 */
+/** schemastery → domainTable 形参的桥接（与 stores.identity().ts 同款）。 */
 const recordSchema = zodLike;
 
 /** 会话人设选择的持久层（键 = sessionId）。 */
@@ -211,71 +212,17 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
 
-	// ── 存储就绪：会话选择域（必有）+ 身份域（失败降级为无档案功能）──
-	let currentStore: PersonaStore | FilePersonaStore | null = null;
-	let identity: IdentityStore | null = null;
-	const storesReady = (async () => {
-		try {
-			const domain = await ctx.storageDomain.open(LUME_DOMAIN_SPEC);
-			ctx.effect(
-				() => async () => {
-					await domain.close();
-				},
-				"lume: close state domain",
-			);
-			const store = new PersonaStore(domain.table(SESSION_PERSONA_TABLE), { maxSessions: MAX_SESSIONS });
-			const migrated = await migrateLegacyState(store, legacyStatePath);
-			if (migrated) ctx.logger?.warn?.("lume: 已从 assets/persona-state.json 迁移旧的人设记忆");
-			return store;
-		} catch (error) {
-			ctx.logger?.warn?.("lume: storageDomain 不可用，降级为 assets 文件存储", error);
-			return new FilePersonaStore(legacyStatePath, { maxSessions: MAX_SESSIONS });
-		}
-	})();
-	const identityReady = (async () => {
-		try {
-			const domain = await ctx.storageDomain.open(LUME_IDENTITY_SPEC);
-			ctx.effect(
-				() => async () => {
-					await domain.close();
-				},
-				"lume: close identity domain",
-			);
-				return new IdentityStore({
-					profile: domain.table("profile"),
-					memory_facts: domain.table("memory_facts"),
-					style_rules: domain.table("style_rules"),
-					corpus_pins: domain.table("corpus_pins"),
-					custom_personas: domain.table("custom_personas"),
-				});
-		} catch (error) {
-			ctx.logger?.warn?.("lume: 身份域不可用，档案/记忆/自定义人设功能降级", error);
-			return null;
-		}
-	})();
-	void storesReady.then((store) => {
-		currentStore = store;
+	// ── 存储与生命周期（会话/身份/反思/项目四域）── 实现见 host/bootstrap.ts
+	const stores = initStores({
+		ctx,
+		legacyStatePath,
+		maxSessions: MAX_SESSIONS,
+		projectMemoryOn: config.projectMemory ?? true,
+		migrateLegacyState,
+		personaDomainSpec: LUME_DOMAIN_SPEC,
+		sessionPersonaTable: SESSION_PERSONA_TABLE,
+		describeError,
 	});
-	void identityReady.then((store) => {
-		identity = store;
-	});
-
-	// ── 反思域（会话结束后打分，失败降级为无反思功能）──
-	let reflectionStore: ReflectionStore | null = null;
-	const reflectionReady = (async () => {
-		try {
-			const domain = await ctx.storageDomain.open(LUME_REFLECTION_SPEC);
-			ctx.effect(() => async () => { await domain.close(); }, "lume: close reflection domain");
-			const store = new ReflectionStore(domain.table("logs"));
-			const migrated = await store.migrateLegacy();
-			if (migrated > 0) ctx.logger?.warn?.(`lume: 已迁移 ${migrated} 条旧版反思日志`);
-			return store;
-		} catch (error) {
-			ctx.logger?.warn?.("lume: 反思域不可用，反思日志降级", error);
-			return null;
-		}
-	})();
-	void reflectionReady.then((s) => { reflectionStore = s; });
 
 	// ── 项目域：任务契约 / 改动台账 / 假设台账 / 项目知识（失败降级为无载具功能）──
 	const projectMemoryOn = config.projectMemory ?? true;
@@ -286,7 +233,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		changeStreak: config.triggerChangeStreak ?? DEFAULT_TRIGGER_THRESHOLDS.changeStreak,
 		deadPathFails: config.triggerDeadPathFails ?? DEFAULT_TRIGGER_THRESHOLDS.deadPathFails,
 	};
-	let project: ProjectStore | null = null;
 	/** 请求是不是任务型（按形态决定方法块；提示装配与事件处理共用）。 */
 	function isTaskQuery(st: SessionRuntime): boolean {
 		return TASK_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? "");
@@ -295,39 +241,11 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	/**
 	 * fire-and-forget 的持久化：**失败必须留痕**。
 	 *
-	 * 现场教训（2026-09-23）：一整批写入路径用 `void projectReady.then(...)` 且没有 catch，
+	 * 现场教训（2026-09-23）：一整批写入路径用 `void stores.projectReady.then(...)` 且没有 catch，
 	 * 出问题时不报错也不入账（ledger 一直 undefined），六个功能静默失效很久才被发现。
 	 */
-	function projectTask(sid: string, label: string, run: (store: ProjectStore) => Promise<unknown> | unknown): void {
-		void projectReady
-			.then((store) => {
-				if (!store) return;
-				return Promise.resolve(run(store));
-			})
-			.catch((error) => ctx.logger?.warn?.(`lume: [${sid}] ${label} 失败：${describeError(error)}`));
-	}
 
-	const projectReady = (async () => {
-		if (!projectMemoryOn) return null;
-		try {
-			const domain = await ctx.storageDomain.open(LUME_PROJECT_SPEC);
-			ctx.effect(() => async () => { await domain.close(); }, "lume: close project domain");
-			return new ProjectStore({
-				contract: domain.table("contract"),
-				ledger: domain.table("ledger"),
-				hypotheses: domain.table("hypotheses"),
-				facts: domain.table("facts"),
-			design: domain.table("design"),
-			requirements: domain.table("requirements"),
-			});
-		} catch (error) {
-			ctx.logger?.warn?.("lume: 项目域不可用，任务契约/台账/项目知识降级", error);
-			return null;
-		}
-	})();
-	void projectReady.then((s) => { project = s; });
-
-	const registry = new PersonaRegistry(builtins, () => identity);
+	const registry = new PersonaRegistry(builtins, () => stores.identity());
 	ctx.logger?.warn?.(`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}，能力=载具+触发器+设计pass+需求锚点）`);
 	ctx.logger?.warn?.(`lume: llmRoute 初始化策略：agentDefaultModel → settings → 回退`);
 
@@ -479,7 +397,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		st.userText = "";
 		st.assistantText = "";
 		try {
-			if (!extractionEnabled || !identity) return;
+			if (!extractionEnabled || !stores.identity()) return;
 			const personaName = st.lastInjected;
 			if (!personaName || !userText) return;
 
@@ -489,12 +407,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			if (shouldConsiderCorrection(userText) && !isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) {
 				const route = resolveAuxRoute(extractionRouteOverride, llmRoute);
 				if (route) {
-					const prompt = buildCorrectionPrompt(userText, assistantText, identity.getStyleRules(personaName).map((r) => r.rule));
+					const prompt = buildCorrectionPrompt(userText, assistantText, stores.identity().getStyleRules(personaName).map((r: any) => r.rule));
 					const output = await callLlm(route, prompt.system, prompt.userText, 400);
 					const rule = output === null ? null : parseCorrectionRule(output);
 					if (rule) {
 						st.lastExtractionAt = Date.now();
-						await identity.addStyleRule(personaName, rule, (a, b) => jaccard(a, b) >= 0.6);
+						await stores.identity().addStyleRule(personaName, rule, (a: any, b: any) => jaccard(a, b) >= 0.6);
 						ctx.logger?.warn?.(`lume: 纠偏捕获 → ${personaName}: ${rule}`);
 					}
 				}
@@ -503,32 +421,32 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			// 通道 B：语料摘录——用户认可上一轮回复「像本人」时，把真实对话对
 			// 摘录进 corpus_pins（注入时并入采样池，让语气随真实使用收敛）。
 			if (shouldCaptureCorpus(userText) && pinCandidate && pinCandidate.assistant) {
-				const written = await identity.addCorpusPin(personaName, { user: pinCandidate.user, assistant: pinCandidate.assistant, at: Date.now() }, (a, b) => jaccard(a, b) >= 0.8);
+				const written = await stores.identity().addCorpusPin(personaName, { user: pinCandidate.user, assistant: pinCandidate.assistant, at: Date.now() }, (a: any, b: any) => jaccard(a, b) >= 0.8);
 				if (written) ctx.logger?.warn?.(`lume: 语料摘录 → ${personaName}: ${pinCandidate.assistant.slice(0, 40)}`);
 			}
 
 			// 通道 C：记忆提取（原有路径）
 			if (!shouldConsider(userText)) return;
 			if (isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) return;
-			const existing = identity.getMemory(personaName);
+			const existing = stores.identity().getMemory(personaName);
 			if (isDuplicateFact(userText, existing)) return;
 			const prompt = buildExtractionPrompt(
 				userText,
 				assistantText,
-				existing.map((f) => f.text),
+				existing.map((f: any) => f.text),
 			);
 			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute), prompt.system, prompt.userText, 800);
 			if (output === null) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）模型无输出`); return; }
 			st.lastExtractionAt = Date.now();
-			const fresh = mergeNewFacts(parseFacts(output), identity.getMemory(personaName));
+			const fresh = mergeNewFacts(parseFacts(output), stores.identity().getMemory(personaName));
 			for (const fact of fresh) {
-				const written = await identity.addMemory(personaName, fact, (candidate, all) => isDuplicateFact(candidate, all));
+				const written = await stores.identity().addMemory(personaName, fact, (candidate: any, all: any) => isDuplicateFact(candidate, all));
 				if (written) ctx.logger?.warn?.(`lume: 提取记忆 → ${personaName}: ${fact}`);
 			}
 			// 取名类事实同步身份档案：下拉显示档案名 + 【你是谁】段生效
 			const named = extractNaming(fresh);
 			if (named) {
-				await identity.setProfileName(personaName, named);
+				await stores.identity().setProfileName(personaName, named);
 				ctx.logger?.warn?.(`lume: 人设 ${personaName} 被命名为「${named}」`);
 			}
 		} catch (error) {
@@ -545,9 +463,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 	// 版本迁移：有本地原始素材的旧角色在后台自动重蒸馏；只替换基础契约/语料，
 	// 身份名、记忆、习得风格与 corpus pins 均留在独立表中，不参与覆盖。
-	void identityReady.then(async (store) => {
+	void stores.identityReady.then(async (store) => {
 		if (!store) return;
-		for (const [personaName, oldCard] of Object.entries(store.listCustomPersonas())) {
+		for (const [personaName, oldCard] of Object.entries(store.listCustomPersonas() as Record<string, any>)) {
 			if (!oldCard.distillSource || (oldCard.distillVersion ?? 0) >= DISTILL_ALGORITHM_VERSION) continue;
 			try {
 				const upgraded = await runDistill({
@@ -626,12 +544,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		const key = projectKeyFor(sid, source);
 		if (!key) return;
 		const pending = st.pendingFacts.splice(0, st.pendingFacts.length);
-		void projectReady
+		void stores.projectReady
 		.then(async (store) => {
 			if (!store) return;
 			let saved = 0;
 			for (const fact of pending) {
-				const ok = await store.addFact(key, fact, (candidate, existing) => existing.some((entry) => jaccard(entry.text, candidate) >= 0.7));
+				const ok = await store.addFact(key, fact, (candidate: any, existing: any) => existing.some((entry: any) => jaccard(entry.text, candidate) >= 0.7));
 				if (ok) saved++;
 			}
 			ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
@@ -660,12 +578,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		}
 		const changed = changesOf(sid);
 		const targets = realVerify ? undefined : [readbackTarget!];
-		if (!realVerify && !changed.some((item) => item.target === readbackTarget)) return;
+		if (!realVerify && !changed.some((item: any) => item.target === readbackTarget)) return;
 		const firstLine = resultText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
 		const evidence = realVerify
 			? `自动：${commandSummary(st.lastToolArgs)} → ${firstLine.slice(0, 80)}`
 			: `自动：回读 ${readbackTarget} → ${firstLine.slice(0, 60)}`;
-		void projectReady
+		void stores.projectReady
 		.then(async (store) => {
 			const count = (await store?.verifyChanges(sid, { before: Date.now(), evidence, targets })) ?? 0;
 			if (count > 0) ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账 ${count} 条 → verified（${evidence.slice(0, 60)}）`);
@@ -673,31 +591,31 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	}
 
 	function contractOf(sid: string) {
-		return project?.getContract(sid) ?? null;
+		return stores.project()?.getContract(sid) ?? null;
 	}
 
 	function changesOf(sid: string) {
-		return project?.getChanges(sid) ?? [];
+		return stores.project()?.getChanges(sid) ?? [];
 	}
 
 	function hypothesesOf(sid: string) {
-		return project?.getHypotheses(sid) ?? [];
+		return stores.project()?.getHypotheses(sid) ?? [];
 	}
 
 	function factsOf(sid: string, context: any) {
 		const projectKey = projectKeyFor(sid, context);
-		return project && projectKey ? project.getFacts(projectKey) : [];
+		return stores.project() && projectKey ? stores.project().getFacts(projectKey) : [];
 	}
 
 	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
 	/** 本会话的设计决策（设计 pass 产出）。 */
 	/** 本会话的需求锚点（用户原话，逐字）。 */
 	function requirementsOf(sid: string) {
-		return project?.getRequirements(sid) ?? [];
+		return stores.project()?.getRequirements(sid) ?? [];
 	}
 
 	function designOf(sid: string) {
-		return project?.getDesign(sid) ?? [];
+		return stores.project()?.getDesign(sid) ?? [];
 	}
 
 	/** 该不该顶〔设计三问〕：要动数据/接口 + 还没写下设计 + 不是纯问答。 */
@@ -786,7 +704,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		clearNotice,
 		projectMemoryOn,
 		behaviorTriggersOn,
-		projectTask,
+		projectTask: stores.projectTask,
 		flushPendingFacts,
 		settleVerification,
 		contractOf,
@@ -835,14 +753,14 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		readResultSignals,
 		applyVerifyOutcome,
 		recordResultText,
-		reflectionReady,
+		reflectionReady: stores.reflectionReady,
 		reflectionEnabled,
 		resolveAuxRoute,
 		buildReflectionPrompt,
 		callLlm,
 		parseReflectionScore,
-		// 必须是 getter：project 在 index.ts 里是异步赋值，直接传值会永远拿到 undefined
-		projectOf: () => project,
+		// 必须是 getter：stores.project() 在 index.ts 里是异步赋值，直接传值会永远拿到 undefined
+		projectOf: () => stores.project(),
 	};
 
 	const sessionDisposedHandler = createSessionDisposedHandler(sessionEventDeps);
@@ -859,10 +777,10 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		normalizeHypothesis,
 		normalizeProjectFact,
 		normalizeDesign,
-		identity,
+		identity: stores.identity(),
 		isDuplicateFact,
 		jaccard,
-		projectOf: () => project,
+		projectOf: () => stores.project(),
 	};
 
 	// 工具定义本体在 host/tools.ts（调用点必须在 deps 声明之后）
@@ -898,7 +816,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		buildCompactionNotice,
 		documentDirective: (q: string, ctx2: any) => buildDocumentDirective({ query: q, capabilities: probeDocumentCapabilities(ctx.get("tools"), ctx2?.agent) }),
 		structureToolName,
-		reflectionFeedback: () => reflectionStore?.getFeedback() ?? null,
+		reflectionFeedback: () => stores.reflectionStore()?.getFeedback() ?? null,
 		pickRequirementCorpus,
 		splitRequirementItems,
 		coverageRows,
@@ -938,9 +856,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 		// 会话选择尚未就绪（启动竞态）：只出任务协议，人设段留空——与旧实现一致，
 		// 也避免把「尚未选择」误记成一次人设切换。
-		if (!currentStore) return { thinkingStable, thinkingRuntime, personaStable: "", personaData: "", boundary: "" };
+		if (!stores.currentStore()) return { thinkingStable, thinkingRuntime, personaStable: "", personaData: "", boundary: "" };
 
-		const selected = currentStore.get(sid);
+		const selected = stores.currentStore().get(sid);
 		const personaName = selected ?? defaultName;
 		const previous = st.lastInjected;
 		if (previous !== undefined && previous !== personaName) {
@@ -967,9 +885,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		const personaStable = buildPersonaContractSection({ persona, profileName });
 		const personaData = buildPersonaRuntimeSection({
 			persona,
-			memories: personaName ? identity?.getMemory(personaName) ?? [] : [],
-			styleRules: personaName ? identity?.getStyleRules(personaName) ?? [] : [],
-			corpusPins: personaName ? identity?.getCorpusPins(personaName) ?? [] : [],
+			memories: personaName ? stores.identity()?.getMemory(personaName) ?? [] : [],
+			styleRules: personaName ? stores.identity()?.getStyleRules(personaName) ?? [] : [],
+			corpusPins: personaName ? stores.identity()?.getCorpusPins(personaName) ?? [] : [],
 			query,
 			turnIndex: st.turnIndex,
 			sessionKey: sid,
@@ -1015,37 +933,37 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			return builtins;
 		},
 		get store() {
-			return currentStore!;
+			return stores.currentStore()!;
 		},
 		get registry() {
 			return registry;
 		},
 		get identity() {
-			return identity;
+			return stores.identity();
 		},
 		get distill() {
 			return distillRunner;
 		},
 		getProjectState(sessionId: string) {
 			// 诊断视图：任务载具 + 项目知识（供排查"模型到底看到了什么"）。
-			if (!project) return null;
+			if (!stores.project()) return null;
 			const st = runtime.get(sessionId);
 			return {
 				projectKey: st.projectKey,
-				contract: project.getContract(sessionId),
-				changes: project.getChanges(sessionId),
-				hypotheses: project.getHypotheses(sessionId),
-				facts: st.projectKey ? project.getFacts(st.projectKey) : [],
-					design: project ? project.getDesign(sessionId) : [],
-					requirements: project ? project.getRequirements(sessionId) : [],
+				contract: stores.project().getContract(sessionId),
+				changes: stores.project().getChanges(sessionId),
+				hypotheses: stores.project().getHypotheses(sessionId),
+				facts: st.projectKey ? stores.project().getFacts(st.projectKey) : [],
+					design: stores.project() ? stores.project().getDesign(sessionId) : [],
+					requirements: stores.project() ? stores.project().getRequirements(sessionId) : [],
 				triggers: { ...st.triggerCounters, fired: st.triggerFiredAt },
 			};
 		},
 		async clearProjectFacts(sessionId: string) {
-			if (!project) return false;
+			if (!stores.project()) return false;
 			const st = runtime.get(sessionId);
 			if (!st.projectKey) return false;
-			await project.clearFacts(st.projectKey);
+			await stores.project().clearFacts(st.projectKey);
 			return true;
 		},
 	});
@@ -1141,8 +1059,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 */
 	function registerRpcChannel(scope: any): void {
 		const dispatch = async (endpoint: string, payload: unknown) => {
-			currentStore ??= await storesReady;
-			identity ??= await identityReady;
+			await stores.ensureReady();
 			return handleEndpoint(endpoint, payload);
 		};
 		// 依赖组合与宿主自带 dsh-api-gateway 一致（["connection", "webServer"]）。

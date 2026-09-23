@@ -73,14 +73,14 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("export function projectKeyOf") && !text.includes('return "unknown"'),
 	},
 	{
-		file: "lib/index.js",
+		files: ["lib/host/session-events.js"],
 		id: "auto-change-ledger",
 		what: "mutate 类工具调用会自动写入改动台账（不依赖模型自觉）",
 		incident: "0.7.0 实测：lume_change 零调用、ledger 表 0 行——载具写了却永远空着",
 		check: (text) => text.includes("upsertChange(sid, { target") && /summarizeToolChange|（自动）/.test(text),
 	},
 	{
-		file: "lib/index.js",
+		files: ["lib/host/tools.js"],
 		id: "contract-count-required",
 		what: "lume_contract 的 expectCount 在 schema 里必填（否则模型只填目标就交差）",
 		incident: "0.7.0 实测：3 份真实契约的 expectCount/actualCount 全是 -1（未估未回填）",
@@ -143,7 +143,7 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("EXECUTE_EXTRA_RE"),
 	},
 	{
-		file: "lib/index.js",
+		files: ["lib/host/session-events.js", "lib/core/ledger.js"],
 		id: "requirement-anchor",
 		what: "需求锚点由插件自动落账并逐字回显（renderRequirements）",
 		incident: "2026-09-23 现场：契约 0 次调用、用户原话没被固定 → 模型用自己的转述工作（新增字段→复用 create_id）",
@@ -171,7 +171,7 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("设计三问") && text.includes("lume_design"),
 	},
 	{
-		file: "lib/index.js",
+		files: ["lib/host/tools.js", "lib/core/ledger.js"],
 		id: "design-carrier",
 		what: "lume_design 载具已注册且设计决策会回显（renderDesign）",
 		incident: "同上：设计决策必须跨轮/跨压缩留在上下文里，否则会随进展漂移",
@@ -256,8 +256,8 @@ async function collectTarget(publishedVersion) {
                 // 本地目标的文件清单 = 基础清单 + FILE_INVARIANTS 声明的文件。
                 // 为什么要合并：清单原来手写，断言里新增一个文件（如 lib/core/citations.js）却忘了加清单时，
                 // text() 会读到空串 → 检查**静默失败**（本次踩到：citation-gate / question-discipline 假红）。
-                const baseFiles = ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/core/signals.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js", "lib/host/project.js", "lib/host/session-runtime.js"];
-                const declaredFiles = (typeof FILE_INVARIANTS === "undefined" ? [] : FILE_INVARIANTS).map((item) => item.file);
+                const baseFiles = ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/core/signals.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js", "lib/host/project.js", "lib/host/session-runtime.js", "lib/host/tools.js", "lib/host/session-events.js", "lib/host/prompt-blocks.js", "lib/host/notices.js", "lib/host/host-events.js", "lib/core/coverage.js", "lib/core/citations.js", "lib/core/persona-limits.js", "lib/host/thinking.js"];
+                const declaredFiles = (typeof FILE_INVARIANTS === "undefined" ? [] : FILE_INVARIANTS).flatMap((item) => item.files ?? [item.file]);
                 for (const relative of [...new Set([...baseFiles, ...declaredFiles])]) {
 			const full = path.join(ROOT, relative);
 			files.set(`package/${relative}`, existsSync(full) ? readFileSync(full) : Buffer.from(""));
@@ -328,8 +328,18 @@ async function main() {
 		if (!ok) failures.push(item);
 	}
 	for (const item of FILE_INVARIANTS) {
-		const ok = Boolean(item.check(text(target.files, item.file)));
-		rows.push({ id: item.id, ok, what: item.what, incident: item.incident });
+		// 断言可以跨文件：拆分后能力会分散到 host/core 模块，此时用 files 数组取并集文本；
+		// 顺带自检「断言指向的产物文件是否存在」——文件清单写错会让断言在空文本上假红/假绿。
+		const names = item.files ?? [item.file];
+		const missing = names.filter((name) => !text(target.files, name));
+		const probe = names.map((name) => text(target.files, name)).join("\n");
+		const ok = missing.length === 0 && Boolean(item.check(probe));
+		rows.push({
+			id: item.id,
+			ok,
+			what: missing.length > 0 ? `${item.what}（⚠️ 门禁指错的产物文件：${missing.join("、")} 不存在）` : item.what,
+			incident: item.incident,
+		});
 		if (!ok) failures.push(item);
 	}
 	{

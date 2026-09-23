@@ -17,14 +17,18 @@ import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import z from "@deepseek-ai/schemastery";
 import {
 	CHANGE_CAP,
+	DESIGN_CAP,
 	HYPOTHESIS_CAP,
 	PROJECT_FACT_CAP,
 	normalizeChange,
+	normalizeDesign,
 	normalizeProjectFact,
+	trimDesign,
 	trimChanges,
 	trimFacts,
 	type ChangeItem,
 	type ChangeStatus,
+	type DesignDecision,
 	type Hypothesis,
 	type HypothesisStatus,
 	type ProjectFact,
@@ -62,7 +66,9 @@ export const LUME_PROJECT_SPEC = defineDomain({
 		/** 假设台账（键 = sessionId）。 */
 		hypotheses: domainTable(zodLike(z.array(z.object({ text: z.string(), evidence: z.string(), status: z.string(), at: z.number() })))),
 		/** 项目知识（键 = projectKey，跨会话共享）。 */
-		facts: domainTable(zodLike(z.array(z.object({ kind: z.string(), text: z.string(), at: z.number() })))),
+		/** 设计决策（键 = sessionId）：功能型任务的设计 pass 产出，跨轮/跨压缩保留。 */
+	design: domainTable(zodLike(z.array(z.object({ point: z.string(), choice: z.string(), rejected: z.string(), impact: z.string(), at: z.number() })))),
+	facts: domainTable(zodLike(z.array(z.object({ kind: z.string(), text: z.string(), at: z.number() })))),
 	},
 });
 
@@ -114,17 +120,20 @@ export class ProjectStore {
 	readonly #ledgerTable: IdentityTable;
 	readonly #hypothesisTable: IdentityTable;
 	readonly #factTable: IdentityTable;
+	readonly #designTable: IdentityTable;
 
 	constructor(tables: {
 		contract: IdentityTable;
 		ledger: IdentityTable;
 		hypotheses: IdentityTable;
 		facts: IdentityTable;
+		design: IdentityTable;
 	}) {
 		this.#contractTable = tables.contract;
 		this.#ledgerTable = tables.ledger;
 		this.#hypothesisTable = tables.hypotheses;
 		this.#factTable = tables.facts;
+		this.#designTable = tables.design;
 	}
 
 	// ── 契约 ──
@@ -260,10 +269,31 @@ export class ProjectStore {
 
 	/** 会话结束清理：任务态数据不跨会话保留（项目知识是另一张表，不受影响）。 */
 	async clearSession(sid: string): Promise<void> {
-		await Promise.all([this.#contractTable.delete(sid), this.#ledgerTable.delete(sid), this.#hypothesisTable.delete(sid)]);
+		await Promise.all([this.#contractTable.delete(sid), this.#ledgerTable.delete(sid), this.#hypothesisTable.delete(sid), this.#designTable.delete(sid)]);
 	}
 
 	/** 诊断用：当前项目键下的事实条数。 */
+	// ── 设计决策（会话态，跨轮跨压缩保留）──
+
+	getDesign(sid: string): DesignDecision[] {
+		const value = this.#designTable.get(sid);
+		if (!Array.isArray(value)) return [];
+		return value
+			.map((entry) => {
+				const raw = entry as Record<string, unknown>;
+				return normalizeDesign({ point: raw?.point, choice: raw?.choice, rejected: raw?.rejected, impact: raw?.impact }, typeof raw?.at === "number" ? raw.at : 0);
+			})
+			.filter((item): item is DesignDecision => item !== null);
+	}
+
+	/** 同一决策点视为更新（改主意就覆盖，保留新的理由）。 */
+	async upsertDesign(sid: string, item: DesignDecision): Promise<void> {
+		const items = this.getDesign(sid);
+		const index = items.findIndex((entry) => entry.point === item.point);
+		if (index >= 0) items[index] = { ...items[index]!, ...item };
+		else items.push(item);
+		await this.#designTable.put(sid, trimDesign(items, DESIGN_CAP));
+	}
 	factCount(projectKey: string): number {
 		return this.getFacts(projectKey).length;
 	}

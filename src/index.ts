@@ -38,11 +38,14 @@ import { isCompactionCheckpoint } from "./host/compaction.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 import { appendLumeLog } from "./host/diag.js";
 import { advancePhase, buildAlignmentCorrection, buildCasualDirective, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolFailureNotice, classifyInteraction, isUserAuthored, taskPhaseForMode } from "./host/protocol.js";
+import { DESIGN_SIGNAL_RE } from "./host/protocol.js";
 import { buildDocumentDirective, probeDocumentCapabilities } from "./host/documents.js";
 import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectStableThinkingProtocol } from "./host/thinking.js";
 import { normalizeChange, normalizeContract, normalizeHypothesis, normalizeProjectFact, projectKeyOf, renderChangeLedger, renderContract, renderHypotheses, renderProjectFacts } from "./core/ledger.js";
+import { normalizeDesign, renderDesign } from "./core/ledger.js";
 import { classifyTool, readResultSignals } from "./core/signals.js";
 import { buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildStructureHint, composeBlocks } from "./host/methods.js";
+import { buildDesignMethodDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { DEFAULT_TRIGGER_THRESHOLDS, applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger, type TriggerId, type TriggerThresholds } from "./host/triggers.js";
 
@@ -280,6 +283,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				ledger: domain.table("ledger"),
 				hypotheses: domain.table("hypotheses"),
 				facts: domain.table("facts"),
+			design: domain.table("design"),
 			});
 		} catch (error) {
 			ctx.logger?.warn?.("lume: 项目域不可用，任务契约/台账/项目知识降级", error);
@@ -607,7 +611,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						// 自动改动台账：mutate 类工具一被调用就先记一条——实测模型几乎不会主动调 lume_change
 						// （4 个会话里 0 次），而 edit/write 每次会话几十次。载具必须由插件自己落账，
 						// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
-						if (projectMemoryOn && st.toolKind === "mutate") {
+						if (st.toolKind === "inspect" && targetPathFromToolEvent(event.data)) st.triggerCounters.codeInspects++;
+							if (projectMemoryOn && st.toolKind === "mutate") {
 							const target = targetPathFromToolEvent(event.data);
 							if (target) {
 								const toolName = String((event.data as { name?: unknown } | undefined)?.name ?? "tool");
@@ -640,6 +645,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 									diagnosing: st.interactionMode === "diagnosis",
 									hasContract: contractOf(sid) !== null,
 									unverifiedChanges: changesOf(sid).filter((item) => item.status !== "verified" && item.status !== "skipped").length,
+									hasDesign: designOf(sid).length > 0,
+									designSignal: DESIGN_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? ""),
 									hypothesesTouched: st.hypothesesTouched,
 								},
 								triggerThresholds,
@@ -830,6 +837,16 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	}
 
 	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
+	/** 本会话的设计决策（设计 pass 产出）。 */
+	function designOf(sid: string) {
+		return project?.getDesign(sid) ?? [];
+	}
+
+	/** 该不该顶〔设计三问〕：要动数据/接口 + 还没写下设计 + 不是纯问答。 */
+	function needsDesignPass(sid: string, st: SessionRuntime, query: string, mode: SessionRuntime["interactionMode"]): boolean {
+		return mode !== "question" && DESIGN_SIGNAL_RE.test(query) && designOf(sid).length === 0;
+	}
+
 	function structureToolName(context: any): string | null {
 		try {
 			const schemas = ctx.get("tools")?.schemas?.(context?.agent);
@@ -861,9 +878,13 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			// 契约：有就回显（交付轮切成对账口径），没有且是任务轮就先教它写一份。
 			{ text: renderContract(contract, st.taskPhase === "deliver") },
 			{ text: !contract && isTask ? buildContractMethodDirective() : null, droppable: true },
+			// 设计三问：设计型任务且还没写下设计时反复顶（实测一次提示会被忽略）
+			{ text: needsDesignPass(sid, st, query, mode) ? buildDesignMethodDirective() : null, droppable: true },
 			// 台账与假设：存在就回显——让模型「看见」自己的计划，而不是记在脑子里。
 			{ text: changes.length > 0 ? renderChangeLedger(changes) : null },
 			{ text: renderHypotheses(hypothesesOf(sid)) },
+			// 设计决策：跨轮/跨压缩回显，让「数据落在哪 / 接口 / 范式 / 取舍」不随上下文漂移
+			{ text: renderDesign(designOf(sid)) },
 			// 项目知识：只在与项目相关的轮次出现（闲聊不该背仓库事实）。
 			{ text: isTask ? renderProjectFacts(factsOf(sid, context)) : null, droppable: true },
 			// 方法块：按任务形态出现；文档方法论只在判定为文档任务时出现。
@@ -1096,6 +1117,29 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				},
 			}),
 		);
+	ctx.tools.register(
+		defineTool({
+			name: "lume_design",
+			description:
+				"记一条设计决策（功能型任务的设计 pass）：决策点 → 选择 → 被放弃的方案与理由 → 影响面。新增字段/接口/页面这类需求，动手前先写；写下后会跨轮回显，交付时按它对账。",
+			parameters: {
+				point: { type: "string", required: true, description: "决策点：例如「权限人字段存在哪」" },
+				choice: { type: "string", required: true, description: "定下来的做法（一句话）" },
+				rejected: { type: "string", description: "被放弃的方案与理由（没有它就是没做取舍）" },
+				impact: { type: "string", description: "影响面：会经过哪些既有路径（其它 tab/导出/导入/报表/外部同步）" },
+			},
+			output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已记录设计决策" }] },
+			execute: async (args: Record<string, unknown>, exec: any) => {
+				if (!project) throw new Error("lume project store is unavailable");
+				const sid = String(exec?.agent?.session?.id ?? "");
+				if (!sid) throw new Error("lume_design requires an active session");
+				const item = normalizeDesign({ point: args.point, choice: args.choice, rejected: args.rejected, impact: args.impact }, Date.now());
+				if (!item) throw new Error("lume_design requires point and choice");
+				await project.upsertDesign(sid, item);
+				return { ok: true };
+			},
+		}),
+	);
 	}, "lume: carrier tools");
 
 	}, "lume: persona tools");
@@ -1291,6 +1335,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				changes: project.getChanges(sessionId),
 				hypotheses: project.getHypotheses(sessionId),
 				facts: st.projectKey ? project.getFacts(st.projectKey) : [],
+					design: project ? project.getDesign(sessionId) : [],
 				triggers: { ...st.triggerCounters, fired: st.triggerFiredAt },
 			};
 		},

@@ -22,6 +22,9 @@ export const CHANGE_TEXT_CAP = 160;
 export const HYPOTHESIS_CAP = 20;
 /** 项目知识上限：按时间挤旧，死路记录优先保留（它最省时间）。 */
 export const PROJECT_FACT_CAP = 40;
+/** 设计决策上限：一次任务的设计决策点到 20 个已经很多了。 */
+export const DESIGN_CAP = 20;
+export const DESIGN_TEXT_CAP = 160;
 export const FACT_TEXT_CAP = 200;
 
 export interface TaskContract {
@@ -265,4 +268,38 @@ export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | n
 /** 台账/契约是否存在未验证项——触发器「连写不验」与交付对账都要用。 */
 export function hasUnverified(items: ChangeItem[]): boolean {
 	return items.some((item) => item.status === "done" || item.status === "planned");
+}
+
+export interface DesignDecision {
+	/** 决策点：例如「权限人字段存在哪」 */
+	point: string;
+	/** 选择：定下来的做法（一句话） */
+	choice: string;
+	/** 被放弃的方案与理由：没有取舍记录就说明没做过设计 */
+	rejected: string;
+	/** 影响面：这条决策会经过哪些既有路径 */
+	impact: string;
+	at: number;
+}
+
+export function normalizeDesign(input: Record<string, unknown>, at: number): DesignDecision | null {
+	const point = clip(input.point, CONTRACT_ITEM_CAP);
+	const choice = clip(input.choice, DESIGN_TEXT_CAP);
+	if (!point || !choice) return null;
+	return { point, choice, rejected: clip(input.rejected, DESIGN_TEXT_CAP), impact: clip(input.impact, DESIGN_TEXT_CAP), at };
+}
+
+export function trimDesign(items: DesignDecision[], cap = DESIGN_CAP): DesignDecision[] {
+	return items.length <= cap ? items : items.slice(-cap);
+}
+
+/** 渲染设计决策：决策点在前，取舍与影响面在后（三者缺一就是没做完设计 pass）。 */
+export function renderDesign(items: DesignDecision[], limit = 8): string | null {
+	if (items.length === 0) return null;
+	const lines = items.slice(-limit).map((item, index) => {
+		const rejected = item.rejected ? `｜放弃：${item.rejected}` : "｜⚠ 没写被放弃的方案";
+		const impact = item.impact ? `｜影响面：${item.impact}` : "";
+		return `${index + 1}. ${item.point} → ${item.choice}${rejected}${impact}`;
+	});
+	return `〔设计决策｜本会话，跨轮跨压缩保留〕\n${lines.join("\n")}\n定下来的决策不要反复推翻；要改就写一条新的并说明为什么推翻上一条。`;
 }

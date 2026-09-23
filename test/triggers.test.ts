@@ -63,7 +63,7 @@ describe("readResultSignals", () => {
 	});
 });
 
-const CTX: ToolTriggerContext = { turnIndex: 0, isTask: true, diagnosing: false, hasContract: false, unverifiedChanges: 0, hypothesesTouched: false };
+const CTX: ToolTriggerContext = { turnIndex: 0, isTask: true, diagnosing: false, hasContract: false, unverifiedChanges: 0, hasDesign: false, designSignal: false, hypothesesTouched: false };
 
 function feed(kind: Parameters<typeof applyToolSignal>[1], times: number, counters: TriggerCounters = newTriggerCounters(), signals = OK): TriggerCounters {
 	for (let i = 0; i < times; i++) {
@@ -152,6 +152,22 @@ describe("evaluateToolTrigger", () => {
 		expect(evaluateToolTrigger(counters, CTX)?.text).toContain("lume_project_note");
 	});
 
+	it("设计型任务摸了足够多代码但还没有设计记录 → 设计缺失提醒（点名 lume_design）", () => {
+		const counters = feed("inspect", 1);
+		counters.codeInspects = DEFAULT_TRIGGER_THRESHOLDS.designAfterInspects;
+		const fire = evaluateToolTrigger(counters, { ...CTX, designSignal: true });
+		expect(fire?.id).toBe("design-missing");
+		expect(fire?.text).toContain("lume_design");
+	});
+
+	it("已有设计记录 / 不是设计型需求 / 摸的代码不够 → 都不提醒", () => {
+		const counters = feed("inspect", 1);
+		counters.codeInspects = 20;
+		expect(evaluateToolTrigger(counters, { ...CTX, designSignal: true, hasDesign: true })).toBeNull();
+		expect(evaluateToolTrigger(counters, { ...CTX, designSignal: false })).toBeNull();
+		counters.codeInspects = 1;
+		expect(evaluateToolTrigger(counters, { ...CTX, designSignal: true })).toBeNull();
+	});
 	it("闲聊轮不触发收敛提醒", () => {
 		const counters = feed("inspect", 20);
 		expect(evaluateToolTrigger(counters, { ...CTX, isTask: false })).toBeNull();

@@ -19,7 +19,8 @@ export type TriggerId =
 	| "hypothesis-stale"
 	| "converge"
 	| "criteria-drift"
-	| "knowledge-capture";
+	| "knowledge-capture"
+	| "design-missing";
 
 export interface TriggerCounters {
 	/** 连续只读探查次数（被改动/验证/写载具打断）。 */
@@ -34,10 +35,12 @@ export interface TriggerCounters {
 	mutations: number;
 	/** 会话累计工具步数（用于项目知识采集提醒）。 */
 	steps: number;
+	/** 摸到真实文件路径的只读探查次数（设计 pass 的触发依据） */
+	codeInspects: number;
 }
 
 export function newTriggerCounters(): TriggerCounters {
-	return { inspectStreak: 0, mutateStreak: 0, verifyFailStreak: 0, verifyEnvHits: 0, mutations: 0, steps: 0 };
+	return { inspectStreak: 0, mutateStreak: 0, verifyFailStreak: 0, verifyEnvHits: 0, mutations: 0, steps: 0, codeInspects: 0 };
 }
 
 /** 计数器推进：语义是「行为模式」，因此只在类别切换或验证成败时重置。 */
@@ -90,6 +93,8 @@ export interface TriggerThresholds {
 	deadPathFails: number;
 	/** 项目知识采集提醒的步数门槛。 */
 	knowledgeSteps: number;
+	/** 摸到多少次代码之后，若还没有设计记录就顶〔设计三问〕 */
+	designAfterInspects: number;
 }
 
 export const DEFAULT_TRIGGER_THRESHOLDS: TriggerThresholds = {
@@ -97,6 +102,8 @@ export const DEFAULT_TRIGGER_THRESHOLDS: TriggerThresholds = {
 	changeStreak: 4,
 	deadPathFails: 3,
 	knowledgeSteps: 20,
+	// 6：实测这类型任务的轨迹是「grep/read 十几轮 → 直接动手」，6 次摸到代码就是该做设计的时点
+	designAfterInspects: 6,
 };
 
 export interface ToolTriggerContext {
@@ -106,6 +113,10 @@ export interface ToolTriggerContext {
 	diagnosing: boolean;
 	hasContract: boolean;
 	unverifiedChanges: number;
+	/** 本会话是否已有设计决策记录 */
+	hasDesign: boolean;
+	/** 这条需求是不是「要动数据/接口」的设计型任务 */
+	designSignal: boolean;
 	/** 本轮是否更新过假设台账（更新过就不再提醒）。 */
 	hypothesesTouched: boolean;
 }
@@ -145,6 +156,12 @@ export function evaluateToolTrigger(counters: TriggerCounters, ctx: ToolTriggerC
 		return {
 			id: "contract-missing",
 			text: "〔载具缺失〕你已经动手改动，但还没写下任务契约。花一次调用写清：目标（可观察的结果）、范围（精确到路径/模块/章节）、预计数量、完成判据（可执行）、非目标（明确不动什么）、待确认（≤2 个）。之后每步以契约为准，交付时按它逐项对账——用 lume_contract。",
+		};
+	}
+	if (ctx.isTask && ctx.designSignal && !ctx.hasDesign && counters.codeInspects >= thresholds.designAfterInspects) {
+		return {
+			id: "design-missing",
+			text: `〔设计缺失〕你已经读了 ${counters.codeInspects} 处代码，但还没有一条设计决策。功能型任务最容易在这里翻车：直接照需求改代码，把「数据落在哪 / 接口长什么样 / 照哪个既有范式」留给临场发挥。现在花一次调用写进 lume_design（point / choice / rejected / impact 各一行），写完再动手。`,
 		};
 	}
 	if (ctx.isTask && counters.inspectStreak >= thresholds.inspectStreak) {

@@ -92,6 +92,20 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("EXECUTE_EXTRA_RE"),
 	},
 	{
+		file: "lib/host/methods.js",
+		id: "design-method-block",
+		what: "设计三问方法块存在（数据落在哪 / 接口长什么样 / 照哪个既有范式 + 取舍/回归面/分期）",
+		incident: "2026-09-23 现场：B2I 优惠视图与订单属性需求，模型澄清需求 + 找代码后直接动手，全程 0 条设计决策",
+		check: (text) => text.includes("设计三问") && text.includes("lume_design"),
+	},
+	{
+		file: "lib/index.js",
+		id: "design-carrier",
+		what: "lume_design 载具已注册且设计决策会回显（renderDesign）",
+		incident: "同上：设计决策必须跨轮/跨压缩留在上下文里，否则会随进展漂移",
+		check: (text) => text.includes('"lume_design"') && text.includes("renderDesign"),
+	},
+	{
 		file: "lib/host/triggers.js",
 		id: "triggers-name-tools",
 		what: "触发器文案点名工具（增量验证→lume_change；验证降级→lume_project_note）",

@@ -118,3 +118,42 @@ describe("P1-3 反思：跳过原因必须可观测（上一版完全看不到�
 		expect(harness.loggerWarnings.join("\n")).toContain("反思跳过");
 	});
 });
+
+describe("设计层：设计三问 + 设计决策载具（0.7.5）", () => {
+	it("功能型任务轮注入〔设计三问〕并点名 lume_design", async () => {
+		const harness = await bootLume();
+		harness.fire(SID, "user/message", userMessage("优惠视图新增权限人字段，业务类型下拉加三个选项，分页改成带总数"));
+		const text = harness.runtimeText(SID, "thinking");
+		expect(text).toContain("设计三问");
+		expect(text).toContain("lume_design");
+	});
+
+	it("写下设计决策后：它进注入，且不再顶设计三问", async () => {
+		const harness = await bootLume();
+		harness.fire(SID, "user/message", userMessage("优惠视图新增权限人字段"));
+		await harness.callTool(
+			"lume_design",
+			{ point: "权限人字段存哪", choice: "反查 create_id/modify_id，不落库", rejected: "落库冗余（要迁移、且与主数据可能不一致）", impact: "列表/导出/搜索" },
+			SID,
+			CWD,
+		);
+		const rows = harness.table("design").get(SID) as Array<{ point: string; rejected: string }> | undefined;
+		expect(rows?.[0]?.point).toBe("权限人字段存哪");
+		expect(rows?.[0]?.rejected).toContain("落库冗余");
+		const text = harness.runtimeText(SID, "thinking");
+		expect(text).toContain("设计决策");
+		expect(text).not.toContain("设计三问");
+	});
+
+	it("摸了 6 处代码还没有设计记录 → 触发器顶〔设计缺失〕（带次数）", async () => {
+		const harness = await bootLume();
+		harness.fire(SID, "user/message", userMessage("新增订单属性接口并同步给企微"));
+		for (let i = 0; i < 6; i++) {
+			harness.fire(SID, "tool/call", { name: "read", args: { path: `src/f${i}.java` } });
+			harness.fire(SID, "tool/result", { message: { content: [{ type: "text", text: "ok" }] } });
+		}
+		const text = harness.runtimeText(SID, "thinking");
+		expect(text).toContain("设计缺失");
+		expect(text).toContain("lume_design");
+	});
+});

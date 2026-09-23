@@ -202,7 +202,7 @@ async function collectTarget(publishedVersion) {
 		const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
 		const files = new Map();
 		files.set("package/package.json", Buffer.from(JSON.stringify(pkg)));
-		for (const relative of ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js"]) {
+		for (const relative of ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/core/signals.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js", "lib/host/project.js", "lib/host/session-runtime.js"]) {
 			const full = path.join(ROOT, relative);
 			files.set(`package/${relative}`, existsSync(full) ? readFileSync(full) : Buffer.from(""));
 		}

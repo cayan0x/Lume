@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { classifyTool, deadPathKind, readResultSignals } from "../src/core/signals.js";
+import { unrequestedChangeWords } from "../src/core/signals.js";
 import {
 	DEFAULT_TRIGGER_THRESHOLDS,
 	applyToolSignal,
@@ -196,5 +197,13 @@ describe("cooldownOk", () => {
 		expect(cooldownOk(null, 5)).toBe(true);
 		expect(cooldownOk(4, 5, 2)).toBe(false);
 		expect(cooldownOk(3, 5, 2)).toBe(true);
+	});
+});
+
+describe("unrequestedChangeWords", () => {
+	it("检出模型输出里需求没有的变更类型词", () => {
+		expect(unrequestedChangeWords("业务类型新增三个选项", "如果业务类型删除就要割接")).toEqual(["删除", "割接"]);
+		expect(unrequestedChangeWords("删除这个字段", "确认删除")).toEqual([]);
+		expect(unrequestedChangeWords("新增字段", "")).toEqual([]);
 	});
 });

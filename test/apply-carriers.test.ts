@@ -157,3 +157,35 @@ describe("设计层：设计三问 + 设计决策载具（0.7.5）", () => {
 		expect(text).toContain("lume_design");
 	});
 });
+
+describe("需求锚点与需求漂移（0.7.5）", () => {
+	it("任务型用户消息 → 原话被逐字锚定，并在注入里回显", async () => {
+		const harness = await bootLume();
+		harness.fire(SID, "user/message", userMessage("在数据表里新增一个权限人字段，不要复用原来的字段"));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const rows = harness.table("requirements").get(SID) as Array<{ text: string }> | undefined;
+		expect(rows?.[0]?.text).toContain("新增一个权限人字段");
+		const text = harness.runtimeText(SID, "thinking");
+		expect(text).toContain("需求锚点");
+		expect(text).toContain("新增一个权限人字段");
+		expect(text).toContain("需求解读");
+	});
+
+	it("需求只写了「新增」，模型输出里出现「删除/割接」→ 顶需求漂移", async () => {
+		const harness = await bootLume();
+		harness.fire(SID, "user/message", userMessage("业务类型下拉新增移动业务、宽带业务"));
+		await new Promise((resolve) => setTimeout(resolve, 0)); // 锚点是异步落账，助手消息要等它写入
+		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "如果业务类型删除，旧数据就要割接" }] } });
+		const text = harness.runtimeText(SID, "thinking");
+		expect(text).toContain("需求漂移");
+		expect(text).toContain("删除");
+	});
+
+	it("需求自己就写了删除 → 不算漂移", async () => {
+		const harness = await bootLume();
+		harness.fire(SID, "user/message", userMessage("把这个字段删除，并清理历史数据"));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "确认要删除字段并清理历史数据" }] } });
+		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求漂移");
+	});
+});

@@ -92,6 +92,27 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("EXECUTE_EXTRA_RE"),
 	},
 	{
+		file: "lib/index.js",
+		id: "requirement-anchor",
+		what: "需求锚点由插件自动落账并逐字回显（renderRequirements）",
+		incident: "2026-09-23 现场：契约 0 次调用、用户原话没被固定 → 模型用自己的转述工作（新增字段→复用 create_id）",
+		check: (text) => text.includes("renderRequirements") && text.includes("appendRequirement"),
+	},
+	{
+		file: "lib/host/signals.js",
+		id: "requirement-drift",
+		what: "需求漂移词法检测存在（模型输出里出现需求没提的变更类型词就顶一句）",
+		incident: "现场：需求说「新增选项」，模型推论「删除/割接」，被用户当场纠正两次",
+		check: (text) => text.includes("unrequestedChangeWords"),
+	},
+	{
+		file: "lib/host/methods.js",
+		id: "design-respects-spec",
+		what: "设计三问以「需求已明确的选择照做」为前提（不再鼓励重新论证需求）",
+		incident: "现场：模型拿需求写死的「新增字段」去论证「复用 create_id/modify_id」，被判「没有代码设计架构的思想」",
+		check: (text) => text.includes("需求已明确") && text.includes("照做"),
+	},
+	{
 		file: "lib/host/methods.js",
 		id: "design-method-block",
 		what: "设计三问方法块存在（数据落在哪 / 接口长什么样 / 照哪个既有范式 + 取舍/回归面/分期）",

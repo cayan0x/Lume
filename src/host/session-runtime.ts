@@ -58,6 +58,10 @@ export interface SessionRuntime {
 	/** 本会话所属项目键（由工作目录派生）：跨会话的项目知识按它归属。 */
 	/** 会话工作目录（prompt context 里必定有，工具/事件里可能没有）：项目键的第二来源。 */
 	cwd: string | null;
+	/** 本轮用户是否刚给了/改了需求（用于顶〔需求解读〕三条硬规则）。 */
+	requirementFresh: boolean;
+	/** 需求漂移提示（模型输出里出现需求原话没有的变更类型词时置位）。 */
+	driftNotice: string | null;
 	projectKey: string | null;
 	/** 最近一次工具调用的行为类别（成败要到结果阶段才判定，需要它配对）。 */
 	toolKind: ToolKind;
@@ -121,6 +125,8 @@ function defaultRuntime(): SessionRuntime {
 		intent: null,
 		stableDigest: null,
 		cwd: null,
+		requirementFresh: false,
+		driftNotice: null,
 		projectKey: null,
 		toolKind: "other",
 		triggerCounters: newTriggerCounters(),

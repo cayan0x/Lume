@@ -13,7 +13,7 @@ import { ProjectStore } from "../src/host/project.js";
 import { FakePersonaTable } from "./fake-table.js";
 
 function makeStore() {
-	const tables = { contract: new FakePersonaTable(), ledger: new FakePersonaTable(), hypotheses: new FakePersonaTable(), facts: new FakePersonaTable(), design: new FakePersonaTable() };
+	const tables = { contract: new FakePersonaTable(), ledger: new FakePersonaTable(), hypotheses: new FakePersonaTable(), facts: new FakePersonaTable(), design: new FakePersonaTable(), requirements: new FakePersonaTable() };
 	return { store: new ProjectStore(tables as never), tables };
 }
 

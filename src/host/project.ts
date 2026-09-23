@@ -19,16 +19,20 @@ import {
 	CHANGE_CAP,
 	DESIGN_CAP,
 	HYPOTHESIS_CAP,
+	REQUIREMENT_CAP,
 	PROJECT_FACT_CAP,
 	normalizeChange,
 	normalizeDesign,
 	normalizeProjectFact,
+	normalizeRequirement,
 	trimDesign,
+	trimRequirements,
 	trimChanges,
 	trimFacts,
 	type ChangeItem,
 	type ChangeStatus,
 	type DesignDecision,
+	type RequirementAnchor,
 	type Hypothesis,
 	type HypothesisStatus,
 	type ProjectFact,
@@ -67,6 +71,8 @@ export const LUME_PROJECT_SPEC = defineDomain({
 		hypotheses: domainTable(zodLike(z.array(z.object({ text: z.string(), evidence: z.string(), status: z.string(), at: z.number() })))),
 		/** 项目知识（键 = projectKey，跨会话共享）。 */
 		/** 设计决策（键 = sessionId）：功能型任务的设计 pass 产出，跨轮/跨压缩保留。 */
+	/** 需求锚点（键 = sessionId）：用户原话逐字保留，每轮回显——治「用自己的转述替代需求」。 */
+	requirements: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
 	design: domainTable(zodLike(z.array(z.object({ point: z.string(), choice: z.string(), rejected: z.string(), impact: z.string(), at: z.number() })))),
 	facts: domainTable(zodLike(z.array(z.object({ kind: z.string(), text: z.string(), at: z.number() })))),
 	},
@@ -121,6 +127,7 @@ export class ProjectStore {
 	readonly #hypothesisTable: IdentityTable;
 	readonly #factTable: IdentityTable;
 	readonly #designTable: IdentityTable;
+	readonly #requirementTable: IdentityTable;
 
 	constructor(tables: {
 		contract: IdentityTable;
@@ -128,12 +135,14 @@ export class ProjectStore {
 		hypotheses: IdentityTable;
 		facts: IdentityTable;
 		design: IdentityTable;
+		requirements: IdentityTable;
 	}) {
 		this.#contractTable = tables.contract;
 		this.#ledgerTable = tables.ledger;
 		this.#hypothesisTable = tables.hypotheses;
 		this.#factTable = tables.facts;
 		this.#designTable = tables.design;
+		this.#requirementTable = tables.requirements;
 	}
 
 	// ── 契约 ──
@@ -269,7 +278,7 @@ export class ProjectStore {
 
 	/** 会话结束清理：任务态数据不跨会话保留（项目知识是另一张表，不受影响）。 */
 	async clearSession(sid: string): Promise<void> {
-		await Promise.all([this.#contractTable.delete(sid), this.#ledgerTable.delete(sid), this.#hypothesisTable.delete(sid), this.#designTable.delete(sid)]);
+		await Promise.all([this.#contractTable.delete(sid), this.#ledgerTable.delete(sid), this.#hypothesisTable.delete(sid), this.#designTable.delete(sid), this.#requirementTable.delete(sid)]);
 	}
 
 	/** 诊断用：当前项目键下的事实条数。 */
@@ -294,6 +303,28 @@ export class ProjectStore {
 		else items.push(item);
 		await this.#designTable.put(sid, trimDesign(items, DESIGN_CAP));
 	}
+	// ── 需求锚点（会话态）──
+
+	getRequirements(sid: string): RequirementAnchor[] {
+		const value = this.#requirementTable.get(sid);
+		if (!Array.isArray(value)) return [];
+		return value
+			.map((entry) => {
+				const raw = entry as Record<string, unknown>;
+				return normalizeRequirement({ text: raw?.text }, typeof raw?.at === "number" ? raw.at : 0);
+			})
+			.filter((item): item is RequirementAnchor => item !== null);
+	}
+
+	/** 逐字追加一条用户原话（近似重复的忽略，避免同一句被记两次）。 */
+	async appendRequirement(sid: string, item: RequirementAnchor): Promise<boolean> {
+		const items = this.getRequirements(sid);
+		if (items.some((entry) => entry.text === item.text)) return false;
+		items.push(item);
+		await this.#requirementTable.put(sid, trimRequirements(items, REQUIREMENT_CAP));
+		return true;
+	}
+
 	factCount(projectKey: string): number {
 		return this.getFacts(projectKey).length;
 	}

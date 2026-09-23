@@ -42,10 +42,11 @@ import { DESIGN_SIGNAL_RE } from "./host/protocol.js";
 import { buildDocumentDirective, probeDocumentCapabilities } from "./host/documents.js";
 import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectStableThinkingProtocol } from "./host/thinking.js";
 import { normalizeChange, normalizeContract, normalizeHypothesis, normalizeProjectFact, projectKeyOf, renderChangeLedger, renderContract, renderHypotheses, renderProjectFacts } from "./core/ledger.js";
-import { normalizeDesign, renderDesign } from "./core/ledger.js";
+import { normalizeDesign, renderDesign, renderRequirements } from "./core/ledger.js";
 import { classifyTool, readResultSignals } from "./core/signals.js";
+import { unrequestedChangeWords } from "./core/signals.js";
 import { buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildStructureHint, composeBlocks } from "./host/methods.js";
-import { buildDesignMethodDirective } from "./host/methods.js";
+import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { DEFAULT_TRIGGER_THRESHOLDS, applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger, type TriggerId, type TriggerThresholds } from "./host/triggers.js";
 
@@ -284,6 +285,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				hypotheses: domain.table("hypotheses"),
 				facts: domain.table("facts"),
 			design: domain.table("design"),
+			requirements: domain.table("requirements"),
 			});
 		} catch (error) {
 			ctx.logger?.warn?.("lume: 项目域不可用，任务契约/台账/项目知识降级", error);
@@ -579,6 +581,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 							const explicitCorrection = /不是这个意思|不是我说的|你理解错|答非所问|听不懂|我说的是|我指的是|不对|错了|别这样|重新来/i.test(text);
 							const repeatedRequest = normalized.length >= 5 && st.recentUserQueries.includes(normalized);
 							st.userText = text;
+							// 需求锚点：**插件自己逐字记**，不依赖模型调用工具——实测「先量化后动手」被注入 14 次，
+							// 契约仍 0 次；而模型会用自己的转述工作（「新增字段」被转成「复用 create_id」）→ 必须锚定原话。
+							if (projectMemoryOn && (TASK_SIGNAL_RE.test(text) || DESIGN_SIGNAL_RE.test(text))) {
+								void projectReady.then((store) => store?.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }));
+								st.requirementFresh = true;
+							}
 							st.alignmentCorrection = explicitCorrection
 								? buildAlignmentCorrection("user-correction")
 								: repeatedRequest
@@ -597,6 +605,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						const text = messageText((event.data as { message?: unknown } | undefined)?.message);
 						if (text) {
 							st.assistantText = text;
+							// 需求漂移（词法级、零成本）：模型输出里出现需求原话没有的变更类型词 → 顶一句
+							const requirementText = requirementsOf(sid).map((item) => item.text).join("\n");
+							if (requirementText) st.driftNotice = buildDriftDirective(unrequestedChangeWords(requirementText, text));
 							st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
 							if (st.recentTurns.length > 12) st.recentTurns.shift();
 						}
@@ -838,6 +849,11 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
 	/** 本会话的设计决策（设计 pass 产出）。 */
+	/** 本会话的需求锚点（用户原话，逐字）。 */
+	function requirementsOf(sid: string) {
+		return project?.getRequirements(sid) ?? [];
+	}
+
 	function designOf(sid: string) {
 		return project?.getDesign(sid) ?? [];
 	}
@@ -880,11 +896,15 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			{ text: !contract && isTask ? buildContractMethodDirective() : null, droppable: true },
 			// 设计三问：设计型任务且还没写下设计时反复顶（实测一次提示会被忽略）
 			{ text: needsDesignPass(sid, st, query, mode) ? buildDesignMethodDirective() : null, droppable: true },
+			// 需求解读三条硬规则：用户刚给/改了需求时顶
+			{ text: st.requirementFresh ? buildRequirementMethodDirective() : null, droppable: true },
 			// 台账与假设：存在就回显——让模型「看见」自己的计划，而不是记在脑子里。
 			{ text: changes.length > 0 ? renderChangeLedger(changes) : null },
 			{ text: renderHypotheses(hypothesesOf(sid)) },
 			// 设计决策：跨轮/跨压缩回显，让「数据落在哪 / 接口 / 范式 / 取舍」不随上下文漂移
 			{ text: renderDesign(designOf(sid)) },
+			// 需求锚点：逐字回显用户原话（非可丢块——它是最不该漂移的东西）
+			{ text: renderRequirements(requirementsOf(sid)) },
 			// 项目知识：只在与项目相关的轮次出现（闲聊不该背仓库事实）。
 			{ text: isTask ? renderProjectFacts(factsOf(sid, context)) : null, droppable: true },
 			// 方法块：按任务形态出现；文档方法论只在判定为文档任务时出现。
@@ -893,6 +913,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			{ text: mode === "execute" || mode === "diagnosis" ? buildStructureHint(structureToolName(context)) : null, droppable: true },
 			{ text: st.turnNudge },
 			{ text: st.triggerNudge },
+			{ text: st.driftNotice },
 		];
 	}
 
@@ -1336,6 +1357,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				hypotheses: project.getHypotheses(sessionId),
 				facts: st.projectKey ? project.getFacts(st.projectKey) : [],
 					design: project ? project.getDesign(sessionId) : [],
+					requirements: project ? project.getRequirements(sessionId) : [],
 				triggers: { ...st.triggerCounters, fired: st.triggerFiredAt },
 			};
 		},

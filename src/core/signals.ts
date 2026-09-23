@@ -79,3 +79,18 @@ export function deadPathKind(envHits: number, failStreak: number): "env" | "retr
 	if (failStreak < 3) return null;
 	return envHits >= 2 ? "env" : "retry";
 }
+
+/**
+ * 需求漂移检测（词法级、零成本）：模型的输出里出现了**需求原话里没有**的变更类型词。
+ *
+ * 现场样本：需求写「业务类型下拉新增三个选项」，模型却推论出「删除/割接」——用户当场纠正。
+ * 这类脑补完全可以用词法检出：动词在模型侧出现、在用户侧从未出现。
+ */
+const CHANGE_TYPE_WORDS = ["删除", "删掉", "下线", "停用", "替换", "割接", "回滚", "重构", "改名", "重命名", "迁移", "拆分", "合并"];
+
+export function unrequestedChangeWords(requirementText: string, candidateText: string): string[] {
+	const requirement = String(requirementText ?? "");
+	const candidate = String(candidateText ?? "");
+	if (!candidate) return [];
+	return CHANGE_TYPE_WORDS.filter((word) => candidate.includes(word) && !requirement.includes(word));
+}

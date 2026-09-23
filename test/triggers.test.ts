@@ -5,8 +5,9 @@
  * 也要测它**不该乱响**（闲聊、正常节奏、无契约的纯问答都不能触发），否则提示会变噪音。
  */
 import { describe, expect, it } from "vitest";
+import { trimRequirements } from "../src/core/ledger.js";
 import { classifyTool, deadPathKind, readResultSignals } from "../src/core/signals.js";
-import { unrequestedChangeWords } from "../src/core/signals.js";
+import { DRIFT_NOTICE_MAX, auditOpenQuestions, countOpenQuestions, isRealVerifyCommand, summarizeToolChange, unrequestedChangeWords } from "../src/core/signals.js";
 import {
 	DEFAULT_TRIGGER_THRESHOLDS,
 	applyToolSignal,
@@ -201,9 +202,126 @@ describe("cooldownOk", () => {
 });
 
 describe("unrequestedChangeWords", () => {
-	it("检出模型输出里需求没有的变更类型词", () => {
-		expect(unrequestedChangeWords("业务类型新增三个选项", "如果业务类型删除就要割接")).toEqual(["删除", "割接"]);
+	it("模型把需求没提的变更说成自己要做的 → 检出（这才是要拦的脑补）", () => {
+		expect(unrequestedChangeWords("业务类型新增三个选项", "建议删掉旧的「小合约」值")).toEqual(["删掉"]);
+		expect(unrequestedChangeWords("业务类型新增三个选项", "需要把存量数据割接成新值")).toEqual(["割接"]);
+		expect(unrequestedChangeWords("新增字段", "我会把 create_id 替换成新字段")).toEqual(["替换"]);
+	});
+
+	it("条件 / 风险 / 讨论 / 否定语境 → 不检出（2026-09-23 误报事故：模型因此开始躲词）", () => {
+		expect(unrequestedChangeWords("业务类型新增三个选项", "如果业务类型删除，旧数据就要割接")).toEqual([]);
+		expect(unrequestedChangeWords("业务类型新增三个选项", "割接影响面：只影响管理页与导入导出")).toEqual([]);
+		expect(unrequestedChangeWords("历史数据要批量导入", "该字段 2025-03-17 引入，当时没做数据迁移")).toEqual([]);
+		expect(unrequestedChangeWords("历史数据要批量导入", "不提割接/迁移/替换，只说补空值")).toEqual([]);
+		expect(unrequestedChangeWords("历史数据要批量导入", "要不要迁移？风险是什么")).toEqual([]);
+	});
+
+	it("需求自己写过 / 本轮已报过 / 空输出 → 不检出", () => {
 		expect(unrequestedChangeWords("删除这个字段", "确认删除")).toEqual([]);
+		expect(unrequestedChangeWords("新增字段", "建议删掉旧值", ["删掉"])).toEqual([]);
 		expect(unrequestedChangeWords("新增字段", "")).toEqual([]);
+	});
+
+	it("每会话限次是常量（反复顶会让模型学会忽略）", () => {
+		expect(DRIFT_NOTICE_MAX).toBe(2);
+	});
+});
+
+describe("isRealVerifyCommand（C1 自动推进台账的口径）", () => {
+	it("真验证：编译 / 测试 / 检查 / 构建", () => {
+		for (const command of ["npm test", "npm run build", "npx vitest run", "node node_modules/.bin/tsc -p tsconfig.json", "mvn -o test", "pnpm lint"]) {
+			expect(isRealVerifyCommand(JSON.stringify({ command }))).toBe(true);
+		}
+	});
+
+	it("不是真验证：git grep / ls / cat（把它们当验证会把未验证洗白）", () => {
+		for (const command of ['git grep -n "bus_type"', "Get-ChildItem -Force", "git log --oneline -5"]) {
+			expect(isRealVerifyCommand(JSON.stringify({ command }))).toBe(false);
+		}
+	});
+});
+
+describe("countOpenQuestions（提问纪律的结构化核对）", () => {
+	it("现场数据：turn 20 那条「还没定的三个」清单 → 3 项", () => {
+		const answer = [
+			"**已经定死的**",
+			"1. 权限人是新增列",
+			"",
+			"**还没定的三个**",
+			"1. `status` 的双口径：Excel 信值，还是按生失效时间强制算？",
+			"",
+			"2. 权限人搜索的下拉候选从哪来：本表已有权限人去重，还是实时查用户表",
+			"",
+			"3. 分页那条：后端分页接口有没有返回 total、越界时返回空还是报错",
+			"",
+			"**整块还没谈的**",
+			"需求第四条那半——企微批量导入属性。",
+		].join("\n");
+		expect(countOpenQuestions(answer)).toBe(3);
+	});
+
+	it("现场数据：turn 21 那条认账回答（没有待定清单）→ 0 项", () => {
+		const answer = ["**先撤那三个**", "1. 生产库类型：跟这个需求没关系。撤。", "2. 分页：核实了，后端已经返回 total。撤。", "3. 权限人下拉：这个我自己定，撤。", "**status 的双口径是什么意思**", "同一字段三个入口两套算法。"].join("\n");
+		expect(countOpenQuestions(answer)).toBe(0);
+	});
+
+	it("阈值内 / 无标题 / 空文本 → 不计", () => {
+		expect(countOpenQuestions("**待确认**\n1. 一个\n2. 两个")).toBe(2);
+		expect(countOpenQuestions("方案已经定了：改前端夹一下 currentPage。")).toBe(0);
+		expect(countOpenQuestions(null)).toBe(0);
+	});
+
+	it("现场数据：turn 22 那条「标一条待定：status 口径」→ 条目无行号证据，要顶（1 条也要顶）", () => {
+		const answer = "**文档里要标一条待定**：status 口径。我先按「跟 Excel 的值走」写（和导入新增的行为保持一致），标成待确认。你不认的话我改成按生失效时间重算。";
+		const audit = auditOpenQuestions(answer);
+		expect(audit.count).toBe(1);
+		expect(audit.unsupported.length).toBe(1);
+		expect(audit.unsupported[0]).toContain("status 口径");
+	});
+
+	it("带行号证据的待定条目 → 不算「自己造的疑问」", () => {
+		const audit = auditOpenQuestions("**待确认**\n1. status 该听谁：导入路径 WtpfGoodsPrepertyDefServiceImpl:534 直写 Excel 值，页面 226-231 按时间重算");
+		expect(audit.count).toBe(1);
+		expect(audit.unsupported).toEqual([]);
+	});
+
+	it("说明「代码答不了」的条目 → 不算（环境/账号类问题本来就是真阻塞）", () => {
+		const audit = auditOpenQuestions("**待确认**\n1. 生产库是 MySQL 还是 PG：配置在配置中心，代码库里查不到\n2. 线上分页越界行为：我登录不了环境，需要你提供");
+		expect(audit.count).toBe(2);
+		expect(audit.unsupported).toEqual([]);
+	});
+});
+
+describe("summarizeToolChange（自动台账条目要能当交付依据）", () => {
+	it("从 new_string / content 取首行摘要", () => {
+		expect(summarizeToolChange({ file_path: "a.ts", old_string: "x", new_string: "\n  const a = 1;\n  const b = 2;" }, "edit")).toBe("const a = 1;");
+		expect(summarizeToolChange({ path: "b.ts", content: "export function f() {}\n" }, "write")).toBe("export function f() {}");
+	});
+
+	it("取不到内容 → 退化成「工具 + 路径」，不编造", () => {
+		expect(summarizeToolChange({ path: "c.ts" }, "edit")).toContain("c.ts");
+		expect(summarizeToolChange(null, "edit")).toBe("由 edit 修改");
+	});
+});
+
+describe("需求锚点保留策略（2026-09-23 现场：需求原文被评审粘贴挤出表外）", () => {
+	it("有结构的需求原文优先保留，闲聊与评审先被挤掉", () => {
+		const REQ = "三、B2I优惠视图新增字段 1、新增权限人字段 （1）列表页新增权限人 （2）批量导入时导入账号为权限人 2、业务类型调整 （1）下拉新增三项 4、历史数据的权限人和业务类型都需开发做批量数据导入---具体数据待运营梳理后提供";
+		const items = [
+			{ text: "历史数据的业务类型要批量导入", at: 1 },
+			{ text: "嗯", at: 2 },
+			{ text: REQ, at: 3 },
+			...Array.from({ length: 10 }, (_, i) => ({ text: `🔴 必须处理（${i}） 1. 文档 2.1.${i} 要改 2. 编号${i}`, at: 4 + i })),
+		];
+		const kept = trimRequirements(items, 10);
+		expect(kept.some((item) => item.text === REQ)).toBe(true);
+		expect(kept.length).toBe(10);
+	});
+
+	it("没有需求原文时退化为「首条 + 最近」", () => {
+		const items = Array.from({ length: 12 }, (_, i) => ({ text: `闲聊 ${i}`, at: i }));
+		const kept = trimRequirements(items, 10);
+		expect(kept[0]!.text).toBe("闲聊 0");
+		expect(kept.length).toBe(10);
 	});
 });

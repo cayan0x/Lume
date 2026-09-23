@@ -1,0 +1,7 @@
+{
+	"turn": 2,
+	"step": 5,
+	"callId": "call_00_3lCGiOSrsjZmCELrz9sF1030",
+	"name": "read",
+	"arguments": "{\"file_path\":\"b2i-front/b2i-front/src/views/b2i/components/productManage/fictitiousProduct_tab1.vue\",\"limit\":270,\"offset\":1}"
+}

@@ -12,7 +12,9 @@
  * 转成对产物的断言，让同类错误再也出不了工厂。
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -75,7 +77,7 @@ const FILE_INVARIANTS = [
 		id: "auto-change-ledger",
 		what: "mutate 类工具调用会自动写入改动台账（不依赖模型自觉）",
 		incident: "0.7.0 实测：lume_change 零调用、ledger 表 0 行——载具写了却永远空着",
-		check: (text) => text.includes("upsertChange(sid, { target") && text.includes("自动）由"),
+		check: (text) => text.includes("upsertChange(sid, { target") && /summarizeToolChange|（自动）/.test(text),
 	},
 	{
 		file: "lib/index.js",
@@ -83,6 +85,55 @@ const FILE_INVARIANTS = [
 		what: "lume_contract 的 expectCount 在 schema 里必填（否则模型只填目标就交差）",
 		incident: "0.7.0 实测：3 份真实契约的 expectCount/actualCount 全是 -1（未估未回填）",
 		check: (text) => text.includes('expectCount: { type: "number", required: true'),
+	},
+	{
+		file: "lib/core/coverage.js",
+		id: "requirement-coverage",
+		what: "需求覆盖核对存在：按**用户原文**切条目，并把需求原句与交付物里的句子并列（替代模型自证式「N 条全有落点」）",
+		incident: "2026-09-23 现场：交付文档自称「8 条全有落点、已验证」，那张对照表却是模型自己切自己填的；实际藏着三类硬伤——与需求原文矛盾（历史权限人）、论据错（resultMap）、落点错（whereSql），最后靠人让 goose 复核才发现",
+		check: (text) => text.includes("export function splitRequirementItems") && text.includes("export function coverageRows") && text.includes("export function danglingSectionRefs"),
+	},
+	{
+		file: "lib/core/citations.js",
+		id: "citation-gate",
+		what: "引用-证据对齐存在：回答里引用没读过的行会被核对（unsupportedCitations + 证据索引）",
+		incident: "2026-09-23 现场：模型用「单条新增分支」的注释（:159-160）断定导入路径不改 status，用户反问后才认错（导入路径在 :534）",
+		check: (text) => text.includes("export function unsupportedCitations") && text.includes("export function recordReadArgs"),
+	},
+	{
+		file: "lib/index.js",
+		id: "auto-verify-ledger",
+		what: "成功的真验证会自动把台账推进到 verified，失败立刻顶「先修红」（不依赖模型调 lume_change）",
+		incident: "0.7.4 实测：4 个会话 0 次 lume_change、0 次状态推进——「未验证」永远是未验证",
+		check: (text) => text.includes("verifyChanges(sid, { before") && text.includes("settleVerification"),
+	},
+	{
+		file: "lib/core/signals.js",
+		id: "real-verify-command",
+		what: "真验证判据存在（git grep 这类通用命令不算验证，避免把「未验证」洗白）",
+		incident: "自动推进台账若把 git grep 当验证，台账会撒谎——比不做更糟",
+		check: (text) => text.includes("export function isRealVerifyCommand") && text.includes("REAL_VERIFY_RE"),
+	},
+	{
+		file: "lib/index.js",
+		id: "question-audit",
+		what: "提问纪律的结构化核对存在：一轮抛出 >2 条「待你定」会被核对（把核实责任推回模型）",
+		incident: "2026-09-23 现场：用户只问「方案清楚了吗」，模型回 4 条待你定、其中 3 条是自己造的疑问（用户反问后才撤）",
+		check: (text) => text.includes("auditOpenQuestions") && text.includes("buildQuestionAuditDirective"),
+	},
+	{
+		file: "lib/index.js",
+		id: "pending-facts-flush",
+		what: "项目知识在 cwd 未知时暂存、拿到 cwd 后补落盘（不再静默丢弃）",
+		incident: "2026-09-23 现场：模型主动调 3 次 lume_project_note，全部因「无法确定工作目录」被丢弃，facts 表一条没有",
+		check: (text) => text.includes("flushPendingFacts") && text.includes("pendingFacts"),
+	},
+	{
+		file: "lib/host/thinking.js",
+		id: "question-discipline",
+		what: "恒定协议含「提问纪律」（先核实前提／待确认 ≤2／不许把「我没查环境」列成待你定）",
+		incident: "现场：规则的**位置**决定它生不生效——挂在〔需求解读〕上时，产生假问题的那一轮它不在场",
+		check: (text) => text.includes("提问纪律") && text.includes("待确认"),
 	},
 	{
 		file: "lib/host/protocol.js",
@@ -202,7 +253,12 @@ async function collectTarget(publishedVersion) {
 		const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
 		const files = new Map();
 		files.set("package/package.json", Buffer.from(JSON.stringify(pkg)));
-		for (const relative of ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/core/signals.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js", "lib/host/project.js", "lib/host/session-runtime.js"]) {
+                // 本地目标的文件清单 = 基础清单 + FILE_INVARIANTS 声明的文件。
+                // 为什么要合并：清单原来手写，断言里新增一个文件（如 lib/core/citations.js）却忘了加清单时，
+                // text() 会读到空串 → 检查**静默失败**（本次踩到：citation-gate / question-discipline 假红）。
+                const baseFiles = ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/core/signals.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js", "lib/host/project.js", "lib/host/session-runtime.js"];
+                const declaredFiles = (typeof FILE_INVARIANTS === "undefined" ? [] : FILE_INVARIANTS).map((item) => item.file);
+                for (const relative of [...new Set([...baseFiles, ...declaredFiles])]) {
 			const full = path.join(ROOT, relative);
 			files.set(`package/${relative}`, existsSync(full) ? readFileSync(full) : Buffer.from(""));
 		}
@@ -217,6 +273,25 @@ async function collectTarget(publishedVersion) {
 
 function text(files, name) {
 	return files.get(`package/${name}`)?.toString("utf8") ?? "";
+}
+
+/**
+ * 分层规则（src 级）：`core` 是纯逻辑，不得依赖 `host`/`client`；`host` 不得依赖 `client`。
+ * 2026-09-23 架构检查时发现唯一破例：core/card.ts → host/identity.ts（真值依赖，不只是类型）。
+ * 这类依赖靠人记不住，所以进发布门禁。
+ */
+function checkLayering() {
+	const walk = (dir) =>
+		readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+			const full = join(dir, entry.name);
+			return entry.isDirectory() ? walk(full) : /\.[cm]?tsx?$/.test(entry.name) ? [full] : [];
+		});
+	const coreFiles = walk("src/core");
+	const hostFiles = walk("src/host");
+	const read = (file) => readFileSync(file, "utf8");
+	const coreViolations = coreFiles.filter((file) => /from\s+"\.\.?\/(host|client)\//.test(read(file)));
+	const hostViolations = hostFiles.filter((file) => /from\s+"\.\.?\/client\//.test(read(file)));
+	return { ok: coreViolations.length === 0 && hostViolations.length === 0, coreViolations, hostViolations };
 }
 
 async function main() {
@@ -257,6 +332,16 @@ async function main() {
 		rows.push({ id: item.id, ok, what: item.what, incident: item.incident });
 		if (!ok) failures.push(item);
 	}
+	{
+		const layering = checkLayering();
+		rows.push({
+			id: "layering",
+			ok: layering.ok,
+			what: "分层规则：core 不依赖 host/client，host 不依赖 client（违反：" + [...layering.coreViolations, ...layering.hostViolations].join("、") + "）",
+			incident: "2026-09-23 架构检查发现的唯一破例 core/card.ts → host/identity.ts：反向依赖会让纯逻辑层无法独立测试",
+		});
+		if (!layering.ok) failures.push({ id: "layering" });
+	}
 	run(BUNDLE_INVARIANTS, clientJs);
 	run(PACKAGE_INVARIANTS, packageJson);
 
@@ -265,6 +350,14 @@ async function main() {
 		failures.push({ id: "version-match" });
 	} else if (expectVersion) {
 		rows.push({ id: "version-match", ok: true, what: `package.json 版本等于期望值 ${expectVersion}`, incident: "" });
+	}
+
+	// 只报数不拦截：协议正文的改动会作废整段前缀缓存（真机实测：一次重启 ≈ 190K tokens 全价重算），
+	// 把指纹印在发布日志里，让人一眼看出"这次发布是不是动了协议正文"。协议改动请攒批。
+	{
+		const probe = text(target.files, "lib/host/thinking.js");
+		const digest = createHash("sha256").update(probe).digest("hex").slice(0, 12);
+		rows.push({ id: "protocol-text-fingerprint", ok: true, what: `协议正文指纹 ${digest}（改动会作废整段前缀缓存 ~190K tokens，请攒批）`, incident: "" });
 	}
 
 	for (const row of rows) {

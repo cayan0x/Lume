@@ -1,3 +1,4 @@
+import { isRequirementStatement } from "./coverage.js";
 /**
  * 任务载具的纯逻辑层：任务契约、改动台账、假设台账、项目知识。
  *
@@ -319,10 +320,20 @@ export function normalizeRequirement(input: Record<string, unknown>, at: number)
 	return { text, at };
 }
 
-/** 首条（原始需求）永远保留，其余按时间挤旧。 */
+/**
+ * 首条永远保留，**有结构的需求原文优先保留**（闲聊与评审粘贴先被挤掉）。
+ *
+ * 现场教训（2026-09-23）：需求原文在第 4 条，后面被 8 段评审粘贴挤出了表外 →
+ * 需求覆盖核对只能拿评审条目当需求逐条列，反而误导。只按时间挤旧是不够的，要按"是不是需求"分层。
+ */
 export function trimRequirements(items: RequirementAnchor[], cap = REQUIREMENT_CAP): RequirementAnchor[] {
 	if (items.length <= cap) return items;
-	return [items[0]!, ...items.slice(-(cap - 1))];
+	const [first, ...rest] = items;
+	const keep = rest.filter((item) => isRequirementStatement(item.text));
+	const others = rest.filter((item) => !isRequirementStatement(item.text));
+	const room = cap - 1;
+	if (keep.length >= room) return [first!, ...keep.slice(-room)];
+	return [first!, ...keep, ...others.slice(-(room - keep.length))];
 }
 
 /**

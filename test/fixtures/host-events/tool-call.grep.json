@@ -1,0 +1,7 @@
+{
+	"turn": 2,
+	"step": 2,
+	"callId": "call_00_JMdQntakL4UDnUqvcey23799",
+	"name": "grep",
+	"arguments": "{\"pattern\":\"优惠状态|优惠名称|优惠编码\",\"path\":\"b2i-front\"}"
+}

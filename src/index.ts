@@ -30,13 +30,16 @@ import { DistillJobRunner, DISTILL_ALGORITHM_VERSION, runDistill } from "./host/
 import { jaccard } from "./core/retrieval.js";
 import { fnv1a32 } from "./core/sampling.js";
 import { detectLeak } from "./core/leak-detector.js";
-import { messageText } from "./core/text.js";
+import { messageText, visibleText } from "./core/text.js";
+import { formatWindows, recordReadArgs, recordResultText, unsupportedCitations } from "./core/citations.js";
 import { composeBoundary } from "./host/boundary.js";
 import { SessionRuntimeStore } from "./host/session-runtime.js";
 import type { SessionRuntime } from "./host/session-runtime.js";
 import { isCompactionCheckpoint } from "./host/compaction.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 import { appendLumeLog } from "./host/diag.js";
+import { clearNotice, forceNotice, noticeOpen, noticeText, setNotice } from "./host/notices.js";
+import { toolArgsOf, toolNameOf, toolTargetOf } from "./host/host-events.js";
 import { advancePhase, buildAlignmentCorrection, buildCasualDirective, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolFailureNotice, classifyInteraction, isUserAuthored, taskPhaseForMode } from "./host/protocol.js";
 import { DESIGN_SIGNAL_RE } from "./host/protocol.js";
 import { buildDocumentDirective, probeDocumentCapabilities } from "./host/documents.js";
@@ -44,10 +47,18 @@ import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectStableThinkingProtocol } from
 import { normalizeChange, normalizeContract, normalizeHypothesis, normalizeProjectFact, projectKeyOf, renderChangeLedger, renderContract, renderHypotheses, renderProjectFacts } from "./core/ledger.js";
 import { normalizeDesign, renderDesign, renderRequirements } from "./core/ledger.js";
 import { classifyTool, readResultSignals } from "./core/signals.js";
-import { unrequestedChangeWords } from "./core/signals.js";
-import { buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildStructureHint, composeBlocks } from "./host/methods.js";
+import { auditOpenQuestions, isRealVerifyCommand, summarizeToolChange, toolArtifactText, unrequestedChangeWords, type ResultSignals } from "./core/signals.js";
+import { coverageRows, danglingSectionRefs, hasFigureRefs, pickRequirementCorpus, splitRequirementItems } from "./core/coverage.js";
+
+/** 〔提问核对〕每会话上限（提问纪律的纠偏；比引用核对更敏感，限得更死）。 */
+const QUESTION_AUDIT_MAX = 2;
+
+/** 只把「文档类产物」当交付物收进覆盖核对（源码改动进去只会制造噪音）。 */
+const DOC_ARTIFACT_RE = /\.(md|markdown|txt)$/i;
+import { buildCarrierGapNotice, buildCitationDirective, buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildQuestionAuditDirective, buildRequirementCoverageDirective, buildStructureHint, buildUnverifiedDeliveryNotice, composeBlocks } from "./host/methods.js";
 import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
+import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { DEFAULT_TRIGGER_THRESHOLDS, applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger, type TriggerId, type TriggerThresholds } from "./host/triggers.js";
 
 
@@ -274,6 +285,26 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		deadPathFails: config.triggerDeadPathFails ?? DEFAULT_TRIGGER_THRESHOLDS.deadPathFails,
 	};
 	let project: ProjectStore | null = null;
+	/** 请求是不是任务型（按形态决定方法块；提示装配与事件处理共用）。 */
+	function isTaskQuery(st: SessionRuntime): boolean {
+		return TASK_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? "");
+	}
+
+	/**
+	 * fire-and-forget 的持久化：**失败必须留痕**。
+	 *
+	 * 现场教训（2026-09-23）：一整批写入路径用 `void projectReady.then(...)` 且没有 catch，
+	 * 出问题时不报错也不入账（ledger 一直 undefined），六个功能静默失效很久才被发现。
+	 */
+	function projectTask(sid: string, label: string, run: (store: ProjectStore) => Promise<unknown> | unknown): void {
+		void projectReady
+			.then((store) => {
+				if (!store) return;
+				return Promise.resolve(run(store));
+			})
+			.catch((error) => ctx.logger?.warn?.(`lume: [${sid}] ${label} 失败：${describeError(error)}`));
+	}
+
 	const projectReady = (async () => {
 		if (!projectMemoryOn) return null;
 		try {
@@ -584,14 +615,14 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 							// 需求锚点：**插件自己逐字记**，不依赖模型调用工具——实测「先量化后动手」被注入 14 次，
 							// 契约仍 0 次；而模型会用自己的转述工作（「新增字段」被转成「复用 create_id」）→ 必须锚定原话。
 							if (projectMemoryOn && (TASK_SIGNAL_RE.test(text) || DESIGN_SIGNAL_RE.test(text))) {
-								void projectReady.then((store) => store?.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }));
+								projectTask(sid, "需求锚点落账", (store) => store.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }));
 								st.requirementFresh = true;
 							}
-							st.alignmentCorrection = explicitCorrection
+							forceNotice(st, "align", explicitCorrection
 								? buildAlignmentCorrection("user-correction")
 								: repeatedRequest
 									? buildAlignmentCorrection("repeated-request")
-									: null;
+									: null);
 							st.recentUserQueries.push(normalized);
 							if (st.recentUserQueries.length > 5) st.recentUserQueries.shift();
 							st.recentTurns.push(`用户: ${text.slice(0, 300)}`);
@@ -602,12 +633,22 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						break;
 					}
 					case "assistant/message": {
-						const text = messageText((event.data as { message?: unknown } | undefined)?.message);
+						// 只取**可见正文**：推理块不参与判定（实测扫推理会让模型开始躲词，见 core/text.ts）
+						const text = visibleText((event.data as { message?: unknown } | undefined)?.message);
 						if (text) {
 							st.assistantText = text;
-							// 需求漂移（词法级、零成本）：模型输出里出现需求原话没有的变更类型词 → 顶一句
-							const requirementText = requirementsOf(sid).map((item) => item.text).join("\n");
-							if (requirementText) st.driftNotice = buildDriftDirective(unrequestedChangeWords(requirementText, text));
+							// 需求漂移（词法级、零成本）：只有模型把**需求没提的变更说成自己要做的**才顶一句。
+							// 语料取「用户侧原话」全集（锚点 + 最近问句 + 本轮原话）——用户自己提过的词不算脑补；
+							// 每会话限次、同词不重报：反复顶会让模型开始躲词而不是解决问题（2026-09-23 实测）。
+							const requirementText = [requirementsOf(sid).map((item) => item.text).join("\n"), st.recentUserQueries.join("\n"), st.userText].join("\n");
+							const driftWords = requirementText && noticeOpen(st, "drift") ? unrequestedChangeWords(requirementText, text, st.driftWordsReported) : [];
+							if (setNotice(st, "drift", buildDriftDirective(driftWords))) st.driftWordsReported.push(...driftWords);
+							// 引用-证据对齐：回答里引用的「文件:行」如果这次没打开过，就摆事实（不训话）。
+							// 只在排除性/决策性措辞出现时才查——普通陈述句不值得每轮都核对。
+							const citations = noticeOpen(st, "citation") ? unsupportedCitations(st.evidence, text) : [];
+							setNotice(st, "citation", buildCitationDirective(citations, (key) => formatWindows(st.evidence, key)));
+							// 提问核对：把"你抛了几个问题"摆出来（现场：4 条"待你定"里 3 条是自己造的疑问）
+							setNotice(st, "question", noticeOpen(st, "question") ? buildQuestionAuditDirective(auditOpenQuestions(text)) : null);
 							st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
 							if (st.recentTurns.length > 12) st.recentTurns.shift();
 						}
@@ -617,19 +658,46 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						st.toolCalls++;
 						if (st.interactionMode === "execute") st.taskPhase = advancePhase(st.taskPhase, "execute");
 						// 行为类别在调用阶段记账（连击），成败到结果阶段才结算。
-						st.toolKind = classifyTool((event.data as { name?: unknown } | undefined)?.name);
+						st.toolKind = classifyTool(toolNameOf(event.data));
 						applyToolSignal(st.triggerCounters, st.toolKind, null);
 						// 自动改动台账：mutate 类工具一被调用就先记一条——实测模型几乎不会主动调 lume_change
 						// （4 个会话里 0 次），而 edit/write 每次会话几十次。载具必须由插件自己落账，
 						// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
-						if (st.toolKind === "inspect" && targetPathFromToolEvent(event.data)) st.triggerCounters.codeInspects++;
+						if (st.toolKind === "inspect" && toolTargetOf(event.data)) st.triggerCounters.codeInspects++;
+						// 引用-证据对齐与定位门槛的输入：read 的窗口、摸过的目标、最近一次调用的命令文本。
+						// 只把 read/view 这类**读文件**的工具记成窗口——grep 的 path 可能只是目录或模式，
+						// 记成"整文件读过"会把没看的行洗白（宁可少记，也不要给假证据）。
+						const callName = toolNameOf(event.data);
+						const callArgs = toolArgsOf(event.data);
+						st.lastToolName = callName || null;
+						st.lastToolArgs = callArgs ? JSON.stringify(callArgs) : null;
+						st.lastToolTarget = toolTargetOf(event.data);
+						if (st.toolKind === "inspect") {
+							if (/read|view|cat|open|head|tail/i.test(callName)) recordReadArgs(st.evidence, callArgs);
+							if (st.lastToolTarget) st.inspectedTargets.add(st.lastToolTarget);
+						}
 							if (projectMemoryOn && st.toolKind === "mutate") {
-							const target = targetPathFromToolEvent(event.data);
+							const target = toolTargetOf(event.data);
 							if (target) {
-								const toolName = String((event.data as { name?: unknown } | undefined)?.name ?? "tool");
-								void projectReady.then((store) =>
-									store?.upsertChange(sid, { target, change: `（自动）由 ${toolName} 修改`, why: "", verify: "", status: "done", at: Date.now() }),
-								);
+								const toolName = toolNameOf(event.data);
+								// 台账条目要能当交付依据用，所以带上内容摘要（原来只有「由 edit 修改」，对模型零信息）
+								const args = toolArgsOf(event.data);
+								const summary = summarizeToolChange(args, toolName);
+								// 文档类产物留正文：覆盖核对要把「需求原句」与「交付物里的句子」并列（这是查矛盾的机械手段）
+								if (DOC_ARTIFACT_RE.test(target)) {
+									const content = toolArtifactText(args);
+									if (content) {
+										st.artifactText = (st.artifactText + "\n" + content).slice(-60000);
+										clearNotice(st, "coverage"); // 换了新产物 → 重新核一次
+									}
+								}
+								projectTask(sid, "自动改动入账", (store) => store.upsertChange(sid, { target, change: `（自动）${toolName}：${summary}`, why: "", verify: "", status: "done", at: Date.now() }));
+							}
+							// 首改前的定位门槛：要改的文件本会话从没被读过就动手 → 顶一次（不改代码，只补定位）
+							if (st.triggerCounters.mutations === 1 && target && !st.inspectedTargets.has(target)) {
+								const seen = [...st.inspectedTargets].slice(-3).join("、") || "（本会话还没读过任何文件）";
+								if (!noticeText(st, "trigger")) forceNotice(st, "trigger", `〔先定位〕你要改 ${target}，但本会话还没有读过它——已经摸过的是：${seen}。先打开要改的那段（含调用方与配置/SQL 绑定），确认现有实现再动手；改完立刻回读或跑最小验证。`);
+								ctx.logger?.warn?.(`lume: [${sid}] 首改未定位：${target}`);
 							}
 						}
 						break;
@@ -647,6 +715,10 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						// 且每类触发器有轮级冷却：提示一多就变噪音，模型会学会忽略。
 						const signals = readResultSignals(resultText, explicitError);
 						applyVerifyOutcome(st.triggerCounters, st.toolKind, signals);
+						// 引用-证据对齐：结果里出现过的「路径:行」也算"看到过"（grep 命中即证据）
+						if (st.toolKind === "inspect" && resultText) recordResultText(st.evidence, resultText);
+						// 验证结算：成功的真验证自动推进台账 / 失败立刻顶一句先修红——都不等模型调工具
+						if (projectMemoryOn) settleVerification(sid, st, resultText, signals);
 						if (behaviorTriggersOn) {
 							const fire = evaluateToolTrigger(
 								st.triggerCounters,
@@ -664,7 +736,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 							);
 							if (fire && cooldownOk(st.triggerFiredAt[fire.id], st.turnIndex)) {
 								st.triggerFiredAt[fire.id] = st.turnIndex;
-								st.triggerNudge = fire.text;
+								forceNotice(st, "trigger", fire.text);
 								ctx.logger?.warn?.(`lume: [${sid}] 行为触发器 ${fire.id}（steps=${st.triggerCounters.steps}，inspect=${st.triggerCounters.inspectStreak}，mutate=${st.triggerCounters.mutateStreak}，verifyFail=${st.triggerCounters.verifyFailStreak}）`);
 								// 环境性死路自动落成项目知识：下次会话不必重踩。
 								if (fire.id === "dead-path" && signals.env && project) {
@@ -687,6 +759,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 					}
 					case "turn/end": {
 						st.turnIndex++;
+						// 轮边界补一次项目知识落盘：此时 cwd 通常已经从提示词上下文拿到
+						flushPendingFacts(sid, session);
 						// 切换窗口的消耗只发生在轮边界（渲染函数只读状态，不再就地清零）：
 						// 同一步里 prompt 会被构建多次，若在渲染里消耗窗口，第二次构建就会
 						// 丢掉接班招呼——那是「注入随构建次数漂移」，正是本版要消灭的东西。
@@ -697,8 +771,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						// 跨轮保留（同一环境不可用是会话级事实）。上轮的提醒到这里失效。
 						st.triggerCounters.inspectStreak = 0;
 						st.triggerCounters.mutateStreak = 0;
-						st.triggerNudge = null;
-						st.turnNudge = null;
+						clearNotice(st, "trigger");
+						forceNotice(st, "turn", null);
 						st.hypothesesTouched = false;
 						if (behaviorTriggersOn && project) {
 							const fire = evaluateTurnTrigger(
@@ -717,10 +791,10 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 								if (fire.id === "criteria-drift") {
 									// 契约对账用「交付口径」渲染原始判据：防判据随进展漂移。
 									st.lastDriftTurn = st.turnIndex;
-									st.turnNudge = renderContract(contractOf(sid), true);
+									forceNotice(st, "turn", renderContract(contractOf(sid), true));
 								} else {
 									st.knowledgePrompted = true;
-									st.turnNudge = fire.text;
+									forceNotice(st, "turn", fire.text);
 								}
 								ctx.logger?.warn?.(`lume: [${sid}] 轮触发器 ${fire.id}（turn=${st.turnIndex}）`);
 							}
@@ -730,15 +804,28 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 						const queryKey = st.userText.trim().replace(/\s+/g, " ").slice(0, 240);
 						if (failed && queryKey && queryKey === st.lastFailureQuery) st.failureStreak++;
 						else if (failed && queryKey) { st.lastFailureQuery = queryKey; st.failureStreak = 1; }
-						else if (!failed) { st.failureStreak = 0; st.lastFailureQuery = null; st.protocolCorrection = null; }
-						if (st.failureStreak >= 2) st.protocolCorrection = "检测到相同请求连续失败：先定位根因并记录已排除假设，再选择不同方案；不要重复同一调用。";
+						else if (!failed) { st.failureStreak = 0; st.lastFailureQuery = null; forceNotice(st, "protocol", null); }
+						if (st.failureStreak >= 2) forceNotice(st, "protocol", "检测到相同请求连续失败：先定位根因并记录已排除假设，再选择不同方案；不要重复同一调用。");
 						const claimsVerification = /验证|测试|构建|检查|确认生效|实际结果|已通过|未验证|无法验证/i.test(st.assistantText);
-						st.postTurnReview = st.interactionMode === "execute" && st.assistantText && !claimsVerification
-							? "〔上轮交付复核〕上一轮执行回复没有给出可见的验证证据。本轮若继续处理同一任务，先确认上轮变更是否真实生效，再继续扩大范围。"
+						// 交付对账（C4）：台账里还有"已改未验"就**列出具体条目**——泛泛提醒"要有验证证据"
+						// 实测没用，摆出未验证的具体项才有可执行性。
+						const deliveryNotice = st.interactionMode === "execute" || st.triggerCounters.mutations > 0 ? buildUnverifiedDeliveryNotice(changesOf(sid)) : null;
+						// 载具缺口：动了代码但契约/设计都空 → 交付时如实说（触发器喊过没用，只能靠事实）
+						const carrierGap = noticeOpen(st, "carrierGap")
+							? buildCarrierGapNotice({ mutations: st.triggerCounters.mutations, hasContract: contractOf(sid) !== null, hasDesign: designOf(sid).length > 0 })
 							: null;
+						setNotice(st, "carrierGap", carrierGap);
+						forceNotice(
+							st,
+							"postTurn",
+							[deliveryNotice, carrierGap].filter(Boolean).join("\n\n") ||
+								(st.interactionMode === "execute" && st.assistantText && !claimsVerification
+									? "〔上轮交付复核〕上一轮执行回复没有给出可见的验证证据。本轮若继续处理同一任务，先确认上轮变更是否真实生效，再继续扩大范围。"
+									: null),
+						);
 						if (st.interactionMode === "execute") st.taskPhase = advancePhase(st.taskPhase, st.toolFailures > 0 || st.toolUnknown > 0 ? "diagnose" : claimsVerification ? "deliver" : "verify");
 						// 即时对齐只影响当前轮；下一轮重新根据用户消息判断，避免纠偏条款滞留。
-						st.alignmentCorrection = null;
+						clearNotice(st, "align");
 						// 风格泄漏检测挂在 turn/end（该事件已被窗口机制验证可靠；assistant/message
 						// 的投递在实测中不可靠）。切换完成后逐轮检查回复是否残留旧人设签名词，
 						// 窗口已关仍检出 → 重开窗口 + 升级播报；一轮干净回复自动解除升级。
@@ -773,9 +860,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				const sid = String(session.id);
 				const st = runtime.get(sid);
 				const turns = [...st.recentTurns];
+				// 会话结束前最后试一次补落盘（session 自带 cwd）；仍然落不了就如实报数，不再静默丢弃。
+				flushPendingFacts(sid, session);
+				if (st.pendingFacts.length > 0) ctx.logger?.warn?.(`lume: [${sid}] 项目知识未落盘（无法确定工作目录）：${st.pendingFacts.length} 条`);
 				runtime.delete(sid);
 				// 任务载具是会话态：任务结束即无意义，清掉避免无界增长（项目知识在另一张表，不受影响）。
-				void projectReady.then((store) => store?.clearSession(sid));
+				projectTask(sid, "清空会话台账", (store) => store.clearSession(sid));
 				// 反思日志：会话结束后空闲时间跑一次小模型，零用户感知 token。
 				// 历史不够长（< 4 条消息）或路由不可用时静默跳过。
 				if (reflectionEnabled && turns.length < 4) ctx.logger?.warn?.(`lume: 反思跳过（${sid}）历史不足：${turns.length} < 4 条消息`);
@@ -815,19 +905,77 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		return st.projectKey ?? key;
 	}
 
-	/** 从工具入参里取目标路径（自动改动台账用）：兼容常见字段名，取不到返回 null——宁可少记，不要记错。 */
-	function targetPathFromToolEvent(data: any): string | null {
-		const args = data?.args ?? data?.input ?? data?.parameters ?? data?.arguments;
-		if (!args || typeof args !== "object") return null;
-		for (const key of ["path", "file_path", "filePath", "file", "filename", "target", "notebook_path"]) {
-			const value = (args as Record<string, unknown>)[key];
-			if (typeof value === "string" && value.trim()) return value.trim().slice(0, 120);
+
+
+	/** 命令摘要：验证证据要写进台账，太长的命令只留前 120 字。 */
+	function commandSummary(raw: string | null): string {
+		if (!raw) return "(未记录命令行)";
+		try {
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
+			const command = parsed?.command ?? parsed?.cmd ?? parsed?.script;
+			if (typeof command === "string" && command.trim()) return command.trim().replace(/\s+/g, " ").slice(0, 120);
+		} catch {
+			/* 不是 JSON：按原文处理 */
 		}
-		return null;
+		return raw.replace(/\s+/g, " ").slice(0, 120);
 	}
 
-	function isTaskQuery(st: SessionRuntime): boolean {
-		return TASK_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? "");
+	/**
+	 * 项目知识补落盘：事件流里拿不到 cwd 时先暂存，等提示词上下文给出 cwd 再补写。
+	 *
+	 * 现场代价（0.7.4）：模型主动调了 3 次 lume_project_note，全部因为"当时还不知道工作目录"
+	 * 被丢弃——facts 表里一条都没有。cwd 在同一轮稍后就能拿到，所以丢弃太早、太永久。
+	 */
+	function flushPendingFacts(sid: string, source: any): void {
+		const st = runtime.get(sid);
+		if (st.pendingFacts.length === 0) return;
+		const key = projectKeyFor(sid, source);
+		if (!key) return;
+		const pending = st.pendingFacts.splice(0, st.pendingFacts.length);
+		void projectReady
+		.then(async (store) => {
+			if (!store) return;
+			let saved = 0;
+			for (const fact of pending) {
+				const ok = await store.addFact(key, fact, (candidate, existing) => existing.some((entry) => jaccard(entry.text, candidate) >= 0.7));
+				if (ok) saved++;
+			}
+			ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
+		});
+	}
+
+	/**
+	 * 验证结算（插件侧的「改一处验一处」）：成功的**真验证**自动把台账推进到 verified，
+	 * 真验证失败立刻顶一句先修红。
+	 *
+	 * 为什么必须插件做：实测模型 4 个会话 0 次调用 lume_change、0 次推进状态，台账里的
+	 * 「未验证」于是永远是未验证。判据取**宁窄勿宽**（`git grep` 不算验证），并把证据
+	 * （命令 + 结果首行）写进 verify 字段，让真假一眼可辨。
+	 */
+	function settleVerification(sid: string, st: SessionRuntime, resultText: string, signals: ResultSignals): void {
+		if (st.toolKind !== "verify" && st.toolKind !== "inspect") return;
+		const realVerify = st.toolKind === "verify" && isRealVerifyCommand(st.lastToolArgs ?? "");
+		const readbackTarget = st.toolKind === "inspect" ? st.lastToolTarget : null;
+		if (!realVerify && !readbackTarget) return;
+		if (signals.failure || signals.unknown) {
+			if (realVerify) {
+				if (!noticeText(st, "trigger")) forceNotice(st, "trigger", `〔验证失败〕刚才那条验证没过（${commandSummary(st.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`);
+				ctx.logger?.warn?.(`lume: [${sid}] 真验证失败：${commandSummary(st.lastToolArgs)}`);
+			}
+			return;
+		}
+		const changed = changesOf(sid);
+		const targets = realVerify ? undefined : [readbackTarget!];
+		if (!realVerify && !changed.some((item) => item.target === readbackTarget)) return;
+		const firstLine = resultText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
+		const evidence = realVerify
+			? `自动：${commandSummary(st.lastToolArgs)} → ${firstLine.slice(0, 80)}`
+			: `自动：回读 ${readbackTarget} → ${firstLine.slice(0, 60)}`;
+		void projectReady
+		.then(async (store) => {
+			const count = (await store?.verifyChanges(sid, { before: Date.now(), evidence, targets })) ?? 0;
+			if (count > 0) ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账 ${count} 条 → verified（${evidence.slice(0, 60)}）`);
+		});
 	}
 
 	function contractOf(sid: string) {
@@ -877,45 +1025,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		}
 	}
 
-	/**
-	 * 任务载具块：契约 / 改动台账 / 假设台账 / 项目知识 + 方法块 + 触发器提醒。
-	 *
-	 * 全部落在尾部快照（易变层）——这正是「载具」现在才做得起的原因：0.6.2 之前每步
-	 * 注入一份会变的状态等于每步作废整段前缀，而快照只在内容变化时才付费（实测 58 步
-	 * 只产生 9 条快照）。顺序上把「此刻最该做的一件事」（触发器提醒）放在最后。
-	 */
-	function carrierBlocks(sid: string, context: any, st: SessionRuntime, query: string, mode: SessionRuntime["interactionMode"]) {
-		if (!projectMemoryOn) return [];
-		const isTask = mode !== "question" || TASK_SIGNAL_RE.test(query);
-		const contract = contractOf(sid);
-		const changes = changesOf(sid);
-		const docDirective = buildDocumentDirective({ query, capabilities: probeDocumentCapabilities(ctx.get("tools"), context?.agent) });
-		return [
-			// 契约：有就回显（交付轮切成对账口径），没有且是任务轮就先教它写一份。
-			{ text: renderContract(contract, st.taskPhase === "deliver") },
-			{ text: !contract && isTask ? buildContractMethodDirective() : null, droppable: true },
-			// 设计三问：设计型任务且还没写下设计时反复顶（实测一次提示会被忽略）
-			{ text: needsDesignPass(sid, st, query, mode) ? buildDesignMethodDirective() : null, droppable: true },
-			// 需求解读三条硬规则：用户刚给/改了需求时顶
-			{ text: st.requirementFresh ? buildRequirementMethodDirective() : null, droppable: true },
-			// 台账与假设：存在就回显——让模型「看见」自己的计划，而不是记在脑子里。
-			{ text: changes.length > 0 ? renderChangeLedger(changes) : null },
-			{ text: renderHypotheses(hypothesesOf(sid)) },
-			// 设计决策：跨轮/跨压缩回显，让「数据落在哪 / 接口 / 范式 / 取舍」不随上下文漂移
-			{ text: renderDesign(designOf(sid)) },
-			// 需求锚点：逐字回显用户原话（非可丢块——它是最不该漂移的东西）
-			{ text: renderRequirements(requirementsOf(sid)) },
-			// 项目知识：只在与项目相关的轮次出现（闲聊不该背仓库事实）。
-			{ text: isTask ? renderProjectFacts(factsOf(sid, context)) : null, droppable: true },
-			// 方法块：按任务形态出现；文档方法论只在判定为文档任务时出现。
-			{ text: isTask && mode !== "question" ? buildImpactDirective() : null, droppable: true },
-			{ text: docDirective ? buildDocumentMethodDirective() : null },
-			{ text: mode === "execute" || mode === "diagnosis" ? buildStructureHint(structureToolName(context)) : null, droppable: true },
-			{ text: st.turnNudge },
-			{ text: st.triggerNudge },
-			{ text: st.driftNotice },
-		];
-	}
 
 	// ── 模型可调用工具（主写入通道）──
 	// 工具 output schema 的 const 语义要求成功值恒为 { ok: true }；失败一律抛错交由框架呈现。
@@ -1129,8 +1238,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 					if (!fact) throw new Error("lume_project_note requires text");
 					const projectKey = projectKeyFor(sid, { agent: exec?.agent });
 						if (!projectKey) {
-							// 拿不到工作目录：不写跨会话表——写一次就会把不同项目的知识串进同一个键（现场事故：facts 的键曾是 "unknown"）
-							ctx.logger?.warn?.(`lume: [${sid}] 项目知识未落盘（无法确定工作目录）`);
+							// 拿不到工作目录时**暂存**而不是丢弃——现场代价：模型主动记的 3 条硬知识全丢了。
+							// 仍然不写跨会话表：写一次就会把不同项目的知识串进同一个键（现场事故：facts 的键曾是 "unknown"）。
+							const rt = runtime.get(sid);
+							rt.pendingFacts.push(fact);
+							if (rt.pendingFacts.length > 8) rt.pendingFacts.shift();
+							ctx.logger?.warn?.(`lume: [${sid}] 项目知识已暂存（工作目录未知，共 ${rt.pendingFacts.length} 条），拿到 cwd 后补落盘`);
 							return { ok: true };
 						}
 						await project.addFact(projectKey, fact, (candidate, existing) => existing.some((entry) => jaccard(entry.text, candidate) >= 0.7));
@@ -1217,6 +1330,46 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 * 依赖会话级状态：当值人设、契约正文、身份名、模型能力。任何按 query / 轮次 /
 	 * 阶段变化的内容都归易变段。
 	 */
+	/** 提示块装配的依赖：块表在 host/prompt-blocks.ts，这里只负责接线。 */
+	const blockDeps: BlockDeps = {
+		projectMemoryOn,
+		taskSignalRe: TASK_SIGNAL_RE,
+		contractOf,
+		changesOf,
+		hypothesesOf,
+		designOf,
+		requirementsOf,
+		factsOf,
+		renderContract,
+		renderChangeLedger,
+		renderHypotheses,
+		renderDesign,
+		renderRequirements,
+		renderProjectFacts,
+		buildContractMethodDirective,
+		buildRequirementMethodDirective,
+		buildDesignMethodDirective,
+		buildImpactDirective,
+		buildDocumentMethodDirective,
+		buildStructureHint,
+		needsDesignPass,
+		buildInteractionDirective,
+		buildTaskPhaseDirective,
+		buildCasualDirective,
+		buildLongSessionGuard,
+		buildSessionAnchor,
+		buildCompactionNotice,
+		documentDirective: (q: string, ctx2: any) => buildDocumentDirective({ query: q, capabilities: probeDocumentCapabilities(ctx.get("tools"), ctx2?.agent) }),
+		structureToolName,
+		reflectionFeedback: () => reflectionStore?.getFeedback() ?? null,
+		pickRequirementCorpus,
+		splitRequirementItems,
+		coverageRows,
+		hasFigureRefs,
+		danglingSectionRefs,
+		buildRequirementCoverageDirective,
+	};
+
 	interface TurnText {
 		thinkingStable: string;
 		thinkingRuntime: string;
@@ -1242,19 +1395,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		// 它们是「此刻最该看的」，紧贴尾部注意力最强位；超预算时先丢可丢块（composeBlocks）。
 				// 记录工作目录：工具 exec / 会话事件里可能拿不到 cwd，项目键靠这里缓存兜住（实测项目知识曾落到 unknown）
 		if (typeof context?.agent?.session?.cwd === "string" && context.agent.session.cwd) st.cwd = context.agent.session.cwd;
-		const thinkingRuntime = composeBlocks([
-			{ text: buildInteractionDirective(mode) },
-			{ text: buildTaskPhaseDirective(st.taskPhase) },
-			{ text: buildCasualDirective(TASK_SIGNAL_RE.test(query)) },
-			{ text: buildLongSessionGuard(st.turnIndex) },
-			{ text: buildSessionAnchor(st.turnIndex, mode, query, st.recentTurns) },
-			{ text: st.alignmentCorrection },
-			{ text: st.postTurnReview },
-			{ text: st.compaction ? buildCompactionNotice(st.compaction, st.turnIndex) : null },
-			{ text: st.protocolCorrection },
-			{ text: reflectionStore?.getFeedback() ?? null, droppable: true },
-			...carrierBlocks(sid, context, st, query, mode),
-		]);
+		// cwd 到手就补落盘暂存的项目知识（这条路径是"cwd 后到"的主要补写时机）
+		flushPendingFacts(sid, context);
+		const thinkingRuntime = composeBlocks(volatileBlocks(blockDeps, { sid, context, st, query, mode }));
 
 		// 会话选择尚未就绪（启动竞态）：只出任务协议，人设段留空——与旧实现一致，
 		// 也避免把「尚未选择」误记成一次人设切换。

@@ -6,9 +6,17 @@
  * - SessionRuntimeStore：带 LRU 上限的 Map，防止 session/disposed 事件丢失时
  *   运行时状态无限增长（v0.3.0 只有 Map + disposed 清理，无兜底）。
  */
+import type { EvidenceIndex } from "../core/citations.js";
+import type { ProjectFact } from "../core/ledger.js";
 import type { ToolKind } from "../core/signals.js";
 import { newTriggerCounters } from "./triggers.js";
 import type { TriggerCounters, TriggerId } from "./triggers.js";
+
+/** 单个提示槽：待注入文本 + 本会话已顶次数（上限见 host/notices.ts 的 NOTICE_CAPS）。 */
+export interface NoticeSlot {
+	text: string | null;
+	used: number;
+}
 
 export interface SessionRuntime {
 	userText: string;
@@ -33,7 +41,6 @@ export interface SessionRuntime {
 	lastExchange: { user: string; assistant: string } | null;
 	/** 近期对话缓冲（反思日志用）：每轮 user/assistant 各推一条，上限 12 条。 */
 	recentTurns: string[];
-	protocolCorrection: string | null;
 	lastFailureQuery: string | null;
 	failureStreak: number;
 	/** 当前用户请求的行为类型；每轮重算，避免把上一轮的执行意图带入下一轮。 */
@@ -61,18 +68,38 @@ export interface SessionRuntime {
 	/** 本轮用户是否刚给了/改了需求（用于顶〔需求解读〕三条硬规则）。 */
 	requirementFresh: boolean;
 	/** 需求漂移提示（模型输出里出现需求原话没有的变更类型词时置位）。 */
-	driftNotice: string | null;
+	/** 提示槽：drift / citation / question / coverage / carrierGap / trigger / turn / postTurn … */
+	notices: Record<string, NoticeSlot>;
+	/** 漂移提示里已经报过的词（同词不重报）。 */
+	driftWordsReported: string[];
+	/** 本会话证据索引（引用核对用）：文件 → 读过的行窗口 / grep 命中的行。 */
+	evidence: EvidenceIndex;
+	/** 本会话写出的文档正文（覆盖核对要把需求原句与交付物句子并列）。 */
+	artifactText: string;
+	/** 首改前的定位门槛：本会话摸过（read/grep 命中）的目标路径。 */
+	inspectedTargets: Set<string>;
+	/**
+	 * cwd 未就绪时暂存的项目知识。
+	 *
+	 * 0.7.4 之前的做法是直接丢弃（宁可不记也不串味），现场代价：模型主动调了 3 次
+	 * lume_project_note，全部没有落盘。cwd 在同一轮稍后（提示词上下文）就能拿到，
+	 * 所以改成暂存 + 补落盘。
+	 */
+	pendingFacts: ProjectFact[];
+	/** 最近一次工具调用的名字与参数（C1/C2 判定"这次是不是真验证"要用命令行文本）。 */
+	lastToolName: string | null;
+	lastToolArgs: string | null;
+	/** 最近一次工具调用的目标路径（回读验证与定位门槛都要用）。 */
+	lastToolTarget: string | null;
 	projectKey: string | null;
 	/** 最近一次工具调用的行为类别（成败要到结果阶段才判定，需要它配对）。 */
 	toolKind: ToolKind;
 	/** 行为触发器计数器：撒网式探查 / 连写不验 / 死路重撞。 */
 	triggerCounters: TriggerCounters;
 	/** 本步要注入的触发器提醒（轮结束时清空）。 */
-	triggerNudge: string | null;
 	/** 每类触发器上次触发的轮次（轮级冷却，防止提示变噪音）。 */
 	triggerFiredAt: Partial<Record<TriggerId, number>>;
 	/** 轮边界触发器（契约对账 / 项目知识采集）的提醒。 */
-	turnNudge: string | null;
 	/** 上次契约对账的轮次。 */
 	lastDriftTurn: number | null;
 	/** 是否已提醒过项目知识采集（每个会话一次）。 */
@@ -80,11 +107,9 @@ export interface SessionRuntime {
 	/** 本轮是否更新过假设台账（更新过就不再提醒维护假设）。 */
 	hypothesesTouched: boolean;
 	/** 当前轮用户明确纠正或重复提问时的临时对齐提醒。 */
-	alignmentCorrection: string | null;
 	/** 最近用户请求的归一化文本，仅用于检测上下文失配，不持久化。 */
 	recentUserQueries: string[];
 	/** 上一轮执行任务的交付声明缺少可见验证时，留给后续任务的低成本提醒。 */
-	postTurnReview: string | null;
 	taskPhase: "answer" | "research" | "discuss" | "diagnose" | "execute" | "verify" | "deliver";
 	toolCalls: number;
 	toolSuccesses: number;
@@ -118,7 +143,6 @@ function defaultRuntime(): SessionRuntime {
 		lastExtractionAt: undefined,
 		lastExchange: null,
 		recentTurns: [],
-		protocolCorrection: null,
 		lastFailureQuery: null,
 		failureStreak: 0,
 		interactionMode: "question",
@@ -126,19 +150,23 @@ function defaultRuntime(): SessionRuntime {
 		stableDigest: null,
 		cwd: null,
 		requirementFresh: false,
-		driftNotice: null,
+		driftWordsReported: [],
+		evidence: new Map(),
+		artifactText: "",
+		notices: {},
+		inspectedTargets: new Set(),
+		pendingFacts: [],
+		lastToolName: null,
+		lastToolArgs: null,
+		lastToolTarget: null,
 		projectKey: null,
 		toolKind: "other",
 		triggerCounters: newTriggerCounters(),
-		triggerNudge: null,
 		triggerFiredAt: {},
-		turnNudge: null,
 		lastDriftTurn: null,
 		knowledgePrompted: false,
 		hypothesesTouched: false,
-		alignmentCorrection: null,
 		recentUserQueries: [],
-		postTurnReview: null,
 		taskPhase: "answer",
 		toolCalls: 0,
 		toolSuccesses: 0,

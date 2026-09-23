@@ -9,10 +9,14 @@
  */
 import { domainTable, defineDomain } from "@deepseek-ai/dsh-storage-domain";
 import z from "@deepseek-ai/schemastery";
+import { BUILTIN_PERSONA_NAMES, CORPUS_CAP, CORPUS_LINE_CAP, MEMORY_CAP, sanitizeCorpus, STYLE_CAP } from "../core/persona-limits.js";
 import type { PersonaSample } from "../core/manifest.js";
 
-export const CORPUS_CAP = 12;
-export const CORPUS_LINE_CAP = 240;
+// 容量与语料净化已移到 core/persona-limits.ts（core 不该依赖 host）；这里再导出，调用点不必全改。
+export { BUILTIN_PERSONA_NAMES, CORPUS_CAP, CORPUS_LINE_CAP, MEMORY_CAP, STYLE_CAP, sanitizeCorpus } from "../core/persona-limits.js";
+
+
+
 
 /**
  * schemastery → 存储域 schema 桥接。
@@ -67,11 +71,10 @@ export const LUME_IDENTITY_SPEC = defineDomain({
 		},
 });
 
-export const MEMORY_CAP = 30;
-export const STYLE_CAP = 20;
 
-/** manifest 内置人设名 —— 自定义创建/删除不可触碰。 */
-export const BUILTIN_PERSONA_NAMES = new Set(["loli", "senpai", "butler", "tsundere", "none"]);
+
+
+
 
 export interface MemoryFact {
 	text: string;
@@ -117,23 +120,7 @@ function asArray<T>(value: unknown): T[] {
 	return Array.isArray(value) ? (value as T[]) : [];
 }
 
-/** 语料净化：只保留 {user?, assistant} 形状的合法样本，超限截断。 */
-export function sanitizeCorpus(value: unknown): PersonaSample[] {
-	if (!Array.isArray(value)) return [];
-	const out: PersonaSample[] = [];
-	for (const item of value) {
-		const assistant = (item as { assistant?: unknown } | undefined)?.assistant;
-		const user = (item as { user?: unknown } | undefined)?.user;
-		if (typeof assistant === "string" && assistant.trim()) {
-			out.push({
-				user: typeof user === "string" ? user.slice(0, CORPUS_LINE_CAP) : "",
-				assistant: assistant.slice(0, CORPUS_LINE_CAP),
-			});
-		}
-		if (out.length >= CORPUS_CAP) break;
-	}
-	return out;
-}
+
 
 function isFactList(value: unknown): value is MemoryFact[] {
 	return Array.isArray(value) && value.every((v) => typeof (v as MemoryFact)?.text === "string" && typeof (v as MemoryFact)?.at === "number");

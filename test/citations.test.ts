@@ -7,7 +7,7 @@
  * turn 18 之前它读到过这个文件的范围是 470-609 / 432-486 / 412-433，**159 这次没打开过**。
  */
 import { describe, expect, it } from "vitest";
-import { covers, extractCitations, formatWindows, newEvidenceIndex, recordReadArgs, recordResultText, shouldCheckCitations, unsupportedCitations } from "../src/core/citations.js";
+import { covers, extractCitations, formatWindows, newEvidenceIndex, recordReadArgs, recordResultText, recordSymbols, shouldCheckCitations, symbolsIn, unsupportedClaims, unsupportedCitations } from "../src/core/citations.js";
 
 const FILE = "b2i\\wtpf-goods\\wtpf-goods-service\\src\\main\\java\\com\\ctzj\\wtpf\\goods\\service\\impl\\WtpfGoodsPrepertyDefServiceImpl.java";
 const KEY = "wtpfgoodsprepertydefserviceimpl.java";
@@ -67,5 +67,58 @@ describe("引用抽取与核对（现场数据）", () => {
 
 	it("本会话没碰过的文件不算错（可能引用自用户消息或外部文档）", () => {
 		expect(unsupportedCitations(index, "例外见 Other.java:999")).toEqual([]);
+	});
+});
+
+/**
+ * 断言-证据对齐（claim gate）：真实事故是 2026-09-23 文档里那句
+ * 「列表查询的 resultMap 里 create_id/modify_id 都没映射，查不出来」——
+ * 事实是**已映射**（DO result 12-15 行），而它正是「必须另开一列」这个决策的依据。
+ * 引用核对接不了这种（它没给行号），所以补一条机械判据：否定断言要么给行号、要么本会话见过。
+ */
+describe("断言-证据对齐（否定断言必须可核实）", () => {
+	const index = () => {
+		const idx = newEvidenceIndex();
+		recordReadArgs(idx, { file_path: "WtpfGoodsPropertyDefDo.java", offset: 1, limit: 60 });
+		return idx;
+	};
+
+	it("符号从未在本会话的工具结果里出现过 → 标记 unseen（最该顶的一种）", () => {
+		const seen = new Set<string>();
+		const claims = unsupportedClaims(index(), seen, "resultMap 里 create_id/modify_id 都没映射。");
+		expect(claims.map((c) => c.reason)).toEqual(["unseen", "unseen", "unseen"]);
+		// resultMap 也是被断言的符号（"它没映射"）——一并要求核实，不能只挑列名
+		expect(claims.map((c) => c.symbol)).toEqual(["create_id", "modify_id", "resultMap"]);
+	});
+
+	it("符号见过、但断言是排除/决策口径且没给行号 → 标记 no-line", () => {
+		const seen = new Set(["create_id", "resultMap"]);
+		const claims = unsupportedClaims(index(), seen, "resultMap 里 create_id 没映射，所以要另开一列。");
+		// 两个符号都见过、且句子是排除/决策口径 → 都要求补行号
+		expect(claims.map((c) => c.symbol)).toEqual(["create_id", "resultMap"]);
+		expect(claims.every((c) => c.reason === "no-line")).toBe(true);
+	});
+
+	it("给了行号的否定断言交给引用核对，这里不重复顶", () => {
+		const seen = new Set<string>();
+		const claims = unsupportedClaims(index(), seen, "create_id 没映射（见 WtpfGoodsPropertyDefDo.java:12）。");
+		expect(claims).toEqual([]);
+	});
+
+	it("没有代码符号的日常否定句不触发（『没有』两个字的句子满地都是）", () => {
+		expect(unsupportedClaims(index(), new Set(), "这轮没有需要确认的事项。")).toEqual([]);
+	});
+
+	it("symbolsIn 只取代码风格符号，且过滤 ok/status 这类通用词", () => {
+		expect(symbolsIn("改 WtpfGoodsPropertyDefMapper.xml 的 whereSql，顺便看 createId 和 `bus_type`")).toEqual(
+			expect.arrayContaining(["whereSql", "createId", "bus_type"]),
+		);
+		expect(symbolsIn("status 是 ok 的")).toEqual([]);
+	});
+
+	it("recordSymbols 把工具结果里见过的符号收进集合（供下轮判定）", () => {
+		const seen = new Set<string>();
+		recordSymbols(seen, "  private String createId;\n  private Date createDate;");
+		expect([...seen]).toEqual(expect.arrayContaining(["createId", "createDate"]));
 	});
 });

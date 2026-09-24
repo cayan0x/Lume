@@ -183,6 +183,26 @@ export function buildUnverifiedDeliveryNotice(items: Array<{ target: string; cha
 	].join("\n");
 }
 
+/**
+ * 〔断言核对〕把「没核实过的否定断言」摆回给模型：符号本会话从没出现过 / 断言没给行号。
+ * 与引用核对的分工：引用核对管「你引用的行你打开过吗」，这条管「你没给行号就说它不存在」。
+ */
+export function buildClaimDirective(claims: Array<{ symbol: string; sentence: string; reason: "unseen" | "no-line" }>): string | null {
+	if (!claims.length) return null;
+	const lines = claims.map((claim, i) => {
+		const why =
+			claim.reason === "unseen"
+				? `（符号 \`${claim.symbol}\` 在本会话的工具结果里**一次都没出现过**）`
+				: `（\`${claim.symbol}\` 见过，但这条断言没给行号）`;
+		return `${i + 1}. 「${claim.sentence}」${why}`;
+	});
+	return [
+		"〔断言核对〕你写了否定性断言，但本会话没有可核实的依据：",
+		...lines,
+		"否定断言和引用一样要给出处：读到那一行再下结论（\"我查过 X，它没有 Y\" 而不是 \"X 没有 Y\"）。",
+	].join("\n");
+}
+
 export function composeBlocks(blocks: Array<{ text: string | null; droppable?: boolean }>, budgetChars = 4200): string {
 	const present = blocks.filter((block): block is { text: string; droppable?: boolean } => Boolean(block.text));
 	let out = present.map((block) => block.text).join("\n\n");

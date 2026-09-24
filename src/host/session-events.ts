@@ -63,6 +63,9 @@ export interface SessionEventDeps {
 	buildCarrierGapNotice: any;
 	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
 	unsupportedCitations: any;
+	unsupportedClaims: any;
+	buildClaimDirective: any;
+	recordSymbols: any;
 	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
 	formatWindows: any;
 	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
@@ -206,6 +209,9 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							// 只在排除性/决策性措辞出现时才查——普通陈述句不值得每轮都核对。
 							const citations = deps.noticeOpen(st, "citation") ? deps.unsupportedCitations(st.evidence, text) : [];
 							deps.setNotice(st, "citation", deps.buildCitationDirective(citations, (key: any) => deps.formatWindows(st.evidence, key)));
+				// 断言-证据对齐：没核实过的否定断言（「X 没映射」）同样要能顶回去
+				const claims = deps.noticeOpen(st, "claim") ? deps.unsupportedClaims(st.evidence, st.seenSymbols, text) : [];
+				deps.setNotice(st, "claim", deps.buildClaimDirective(claims));
 							// 提问核对：把"你抛了几个问题"摆出来（现场：4 条"待你定"里 3 条是自己造的疑问）
 							deps.setNotice(st, "question", deps.noticeOpen(st, "question") ? deps.buildQuestionAuditDirective(deps.auditOpenQuestions(text)) : null);
 							st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
@@ -276,6 +282,8 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						deps.applyVerifyOutcome(st.triggerCounters, st.toolKind, signals);
 						// 引用-证据对齐：结果里出现过的「路径:行」也算"看到过"（grep 命中即证据）
 						if (st.toolKind === "inspect" && resultText) deps.recordResultText(st.evidence, resultText);
+				// 所有工具结果都算「见过」：否定断言只能用见过的东西支撑
+				if (resultText) deps.recordSymbols(st.seenSymbols, resultText);
 						// 验证结算：成功的真验证自动推进台账 / 失败立刻顶一句先修红——都不等模型调工具
 						if (deps.projectMemoryOn) deps.settleVerification(sid, st, resultText, signals);
 						if (deps.behaviorTriggersOn) {

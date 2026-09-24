@@ -78,6 +78,8 @@ export interface SessionRuntime {
 	artifactText: string;
 	/** 首改前的定位门槛：本会话摸过（read/grep 命中）的目标路径。 */
 	inspectedTargets: Set<string>;
+	/** 本会话在工具结果里见过的代码符号（否定断言的核实底线）。 */
+	seenSymbols: Set<string>;
 	/**
 	 * cwd 未就绪时暂存的项目知识。
 	 *
@@ -155,6 +157,7 @@ function defaultRuntime(): SessionRuntime {
 		artifactText: "",
 		notices: {},
 		inspectedTargets: new Set(),
+		seenSymbols: new Set(),
 		pendingFacts: [],
 		lastToolName: null,
 		lastToolArgs: null,

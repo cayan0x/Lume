@@ -66,6 +66,13 @@ const HOST_INVARIANTS = [
 /** 分文件断言：每条检查都在指定产物的文本上跑（本版新增行为，防止退化）。 */
 const FILE_INVARIANTS = [
 	{
+		id: "claim-gate",
+		files: ["lib/core/citations.js", "lib/host/methods.js"],
+		what: "断言-证据对齐（否定断言要么给行号、要么本会话见过）",
+		incident: "2026-09-23 文档：\"resultMap 里 create_id/modify_id 都没映射\" 其实是错的（已映射），而它支撑了\"必须另开一列\"这个决策",
+		check: (text) => text.includes("unsupportedClaims") && text.includes("recordSymbols") && text.includes("断言核对"),
+	},
+	{
 		file: "lib/core/ledger.js",
 		id: "project-key-null",
 		what: "projectKeyOf 拿不到 cwd 时返回 null（不再回落 unknown，避免跨项目串味）",

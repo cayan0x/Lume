@@ -48,6 +48,7 @@ import { normalizeChange, normalizeContract, normalizeHypothesis, normalizeProje
 import { normalizeDesign, renderDesign, renderRequirements } from "./core/ledger.js";
 import { classifyTool, readResultSignals } from "./core/signals.js";
 import { auditOpenQuestions, isRealVerifyCommand, summarizeToolChange, toolArtifactText, unrequestedChangeWords, type ResultSignals } from "./core/signals.js";
+import { recordSymbols, unsupportedClaims } from "./core/citations.js";
 import { coverageRows, danglingSectionRefs, hasFigureRefs, pickRequirementCorpus, splitRequirementItems } from "./core/coverage.js";
 
 /** 〔提问核对〕每会话上限（提问纪律的纠偏；比引用核对更敏感，限得更死）。 */
@@ -55,11 +56,12 @@ const QUESTION_AUDIT_MAX = 2;
 
 /** 只把「文档类产物」当交付物收进覆盖核对（源码改动进去只会制造噪音）。 */
 const DOC_ARTIFACT_RE = /\.(md|markdown|txt)$/i;
-import { buildCarrierGapNotice, buildCitationDirective, buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildQuestionAuditDirective, buildRequirementCoverageDirective, buildStructureHint, buildUnverifiedDeliveryNotice, composeBlocks } from "./host/methods.js";
+import { buildCarrierGapNotice, buildCitationDirective, buildClaimDirective, buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildQuestionAuditDirective, buildRequirementCoverageDirective, buildStructureHint, buildUnverifiedDeliveryNotice, composeBlocks } from "./host/methods.js";
 import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { initStores } from "./host/bootstrap.js";
+import { installPromptSections } from "./host/sections.js";
 import { registerLumeTools } from "./host/tools.js";
 import { createSessionDisposedHandler, createSessionEventHandler } from "./host/session-events.js";
 import { DEFAULT_TRIGGER_THRESHOLDS, applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger, type TriggerId, type TriggerThresholds } from "./host/triggers.js";
@@ -721,6 +723,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		buildUnverifiedDeliveryNotice,
 		buildCarrierGapNotice,
 		unsupportedCitations,
+		unsupportedClaims,
+		buildClaimDirective,
+		recordSymbols,
 		formatWindows,
 		auditOpenQuestions,
 		unrequestedChangeWords,
@@ -972,77 +977,25 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	// 绝不该挡住人设段、工具与易变段的注册（0.7.1 的教训：这里抛错 → 整段 apply 中断 → 界面看不到人设）。
 	// 注册本身见下方 registerRpcChannel()。
 
-	// ── 系统提示词段落 ──
-	ctx.effect(
-		() =>
-			ctx.systemPrompt.section({
-				name: LUME_PERSONA_SECTION,
-				order: personaOrder,
-				text: (context: any) => {
-					const sid = context.agent?.session?.id ?? context.agent?.id;
-					return sid ? systemSectionText(String(sid), context, "persona") : "";
-				},
-			}),
-		"lume.persona-section()",
-	);
-	// 易变段走 runtime-context 通道：宿主把它渲染成对话尾部的一条快照消息（文案自带
-	// "supersedes earlier runtime-context snapshots"，新快照取代旧快照，不堆叠进历史），
-	// 因此它的每一次变化只花自己那几百 token，不作废前面的任何前缀。
-	// 宿主不支持该 API 时 layeredOn=false，易变段已并回 system 段（见 systemSectionText）。
-	if (layeredOn) {
-		const dynamicContexts: Array<{ name: string; order: number; part: "thinking" | "persona" | "boundary" }> = [
+	// ── 系统提示词段与易变段注册（三条通道的用意见 host/sections.ts）──
+	installPromptSections({
+		ctx,
+		layeredOn,
+		personaSection: LUME_PERSONA_SECTION,
+		personaOrder,
+		thinkingSection: LUME_THINKING_SECTION,
+		thinkingOrder: LUME_THINKING_ORDER,
+		contexts: [
 			{ name: LUME_RUNTIME_CONTEXT, order: LUME_RUNTIME_ORDER, part: "thinking" },
 			{ name: LUME_PERSONA_RUNTIME_CONTEXT, order: LUME_PERSONA_RUNTIME_ORDER, part: "persona" },
 			{ name: LUME_BOUNDARY_CONTEXT, order: LUME_BOUNDARY_ORDER, part: "boundary" },
-		];
-		for (const entry of dynamicContexts) {
-			ctx.effect(
-				() =>
-					ctx.systemPrompt.context({
-						name: entry.name,
-						order: entry.order,
-						text: (context: any) => {
-							const sid = context.agent?.session?.id ?? context.agent?.id;
-							return sid ? runtimeContextText(String(sid), context, entry.part) : "";
-						},
-					}),
-				`lume.runtime-context(${entry.name})`,
-			);
-		}
-	}
-	ctx.effect(
-		() =>
-			ctx.systemPrompt.section({
-				name: LUME_THINKING_SECTION,
-				order: LUME_THINKING_ORDER,
-				text: (context: any) => {
-					const sid = context.agent?.session?.id ?? context.agent?.id;
-					return sid ? systemSectionText(String(sid), context, "thinking") : "";
-				},
-				}),
-		"lume.thinking-section()",
-	);
-	// 工具失败提示走 runtime-context 通道：宿主把它渲染成对话尾部的一条消息，
-	// 而不是拼进 system 串。system 串只要变化就会写一条新的 request/header，
-	// 既在界面上多出一行「系统提示词」，也让前缀缓存从系统提示词处整段失效。
-	// `systemPrompt.context` 是宿主较新版本才有的 API，缺失时静默跳过（旧宿主下
-	// 只是失去这条提示，不影响其余功能）。
-	ctx.effect(() => {
-		if (typeof ctx.systemPrompt?.context !== "function") {
-			ctx.logger?.warn?.("lume: 当前宿主不支持 systemPrompt.context，工具失败提示已跳过（不影响其余功能）");
-			return;
-		}
-		return ctx.systemPrompt.context({
-			name: LUME_TOOL_NOTICE_CONTEXT,
-			order: LUME_TOOL_NOTICE_ORDER,
-			text: (context: any) => {
-				const sid = context.agent?.session?.id ?? context.agent?.id;
-				const st = sid ? runtime.get(String(sid)) : null;
-				if (!st) return "";
-				return buildToolFailureNotice({ failures: st.toolFailures, unknown: st.toolUnknown }) ?? "";
-			},
-		});
-	}, "lume.tool-notice-context()");
+		],
+		systemSectionText,
+		runtimeContextText,
+		toolNoticeContext: { name: LUME_TOOL_NOTICE_CONTEXT, order: LUME_TOOL_NOTICE_ORDER },
+		runtime,
+		buildToolFailureNotice,
+	});
 
 	registerRpcChannel(ctx);
 

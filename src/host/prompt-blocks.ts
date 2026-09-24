@@ -119,6 +119,10 @@ export function volatileBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 	if (!deps.projectMemoryOn) return [];
 	const { sid, context, st, query, mode } = input;
+	// 第一轮装配时 cwd 还没到（宿主的运行时快照**晚于**系统提示装配，差 1 毫秒）→
+	// 用「会话目录名 → 工作目录」映射提前补上；否则依赖 cwd 的〔项目知识〕在**新会话第一轮**缺席
+	// （现场 14:15：模型答“我这轮没接上上下文，把方案文件发我”，而库里明明有 40 条知识）。
+	deps.ensureSessionWorkspace(sid, st);
 	const isTask = mode !== "question" || deps.taskSignalRe.test(query);
 	// 方法块只在**已定路由不是问答**时出现：路由说"直接回答、别调工具"，方法块说"先写契约"，
 	// 两者同时出现时模型只能赌（实测 13 轮 0 次契约调用）。问答轮保留事实回显（锚点/台账/知识）。

@@ -26,6 +26,8 @@ const st = (over: Partial<SessionRuntime> = {}): SessionRuntime =>
 const deps = (over: Partial<BlockDeps> = {}): BlockDeps =>
 	({
 		projectMemoryOn: true,
+		// 装配前补工作目录（第一轮 cwd 还没到）；默认不做事，具体用例可覆盖
+		ensureSessionWorkspace: () => {},
 		taskSignalRe: /新增|改/,
 		contractOf: () => null,
 		changesOf: () => [],
@@ -166,5 +168,28 @@ describe("host/prompt-blocks：冷启动注入「上次会话记忆」（0.8.0�
 		const runtime = st({ taskMemories: [memory] });
 		const blocks = carrierBlocks(deps({ isColdStart: () => false }), { sid: "s", context: {}, st: runtime, query: "接着改", mode: "execute" });
 		expect(texts(blocks).join("\n")).not.toContain("上次会话记忆");
+	});
+});
+
+describe("host/prompt-blocks：装配前补工作目录（现场教训）", () => {
+	/**
+	 * 现场（2026-09-24 14:15，新会话 session-4524f0b9）：
+	 *   step/start .084 → system/message .086（装配）→ 运行时快照 .087（cwd 唯一来源）→ request .088
+	 * 第一轮装配时 cwd 还是 null → 〔项目知识〕缺席，模型答"我这轮没接上上下文"。
+	 * 修法是「会话目录名 → 工作目录」映射，但**光声明依赖没用**：
+	 * 我第一版只加了 BlockDeps 字段和 wiring，忘了在装配处调用 → 死代码 → 现场依旧缺席。
+	 * 这条断言就是锁住"必须真的调用"。
+	 */
+	it("carrierBlocks 必须先调用 ensureSessionWorkspace（声明了不调用＝死代码）", () => {
+		const calls: string[] = [];
+		const blocks = carrierBlocks(deps({ ensureSessionWorkspace: (sid: string) => calls.push(sid) }), {
+			sid: "sid-x",
+			context: {},
+			st: st({}),
+			query: "接着优惠视图的任务干活",
+			mode: "execute",
+		});
+		expect(calls).toEqual(["sid-x"]);
+		expect(blocks.length).toBeGreaterThan(0);
 	});
 });

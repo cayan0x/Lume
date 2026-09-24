@@ -12,6 +12,7 @@ import { MemoryStarMap } from "./memory.js";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaSample } from "../core/manifest.js";
 import { inputStyle, labelStyle } from "./form-styles.js";
+import { downloadJson, exportFilename } from "./dom-utils.js";
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;
 type CallRpc = (endpoint: string, payload: unknown) => Promise<{ ok?: boolean; value?: unknown } | undefined>;
@@ -33,15 +34,6 @@ interface FullCard {
 }
 
 /** 浏览器下载 JSON 文件（DSH webview 内可用）。 */
-function downloadJson(filename: string, obj: unknown): void {
-	const blob = new Blob([JSON.stringify(obj, null, 2) + "\n"], { type: "application/json" });
-	const a = document.createElement("a");
-	a.href = URL.createObjectURL(blob);
-	a.download = filename;
-	a.click();
-	URL.revokeObjectURL(a.href);
-}
-
 export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc; items: ManageItem[] }) {
 	const [phase, setPhase] = useState<"list" | "edit" | "import">("list");
 	const [deleteTarget, setDeleteTarget] = useState<{ name: string; label: string } | null>(null);
@@ -129,7 +121,7 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			const res = await callRpc("exportPersona", { personaName: name, includeMemory });
 			if (res?.ok && res.value) {
 				const bundle = res.value as Record<string, unknown>;
-				downloadJson(`${name}.lume.json`, bundle);
+				downloadJson(exportFilename(name), bundle);
 				setExportTarget(null);
 				setNotice(t("manage.exported", { persona: name }));
 			} else {

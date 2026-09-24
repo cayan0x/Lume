@@ -13,71 +13,13 @@
 import { Button } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import { inputStyle } from "./form-styles.js";
+// 星图的常量与纯函数在 client/graph-layout.ts（词法/相似度/时间/颜色/折行——都可单测）
+import { CARD_H, CARD_R, CARD_W, CORE_COLOR, NORMAL_COLOR, OVERLAY_H, OVERLAY_W, brighten, buildGraph, filterByAge, forceStep, hexGlow, hitTestAt, jaccard, relTime, rgba, wrapText } from "./graph-layout.js";
+import type { FilterKey, MemEdge, MemNode, MemoryItem } from "./graph-layout.js";
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;
 type CallRpc = (endpoint: string, payload: unknown) => Promise<{ ok?: boolean; value?: unknown } | undefined>;
 
-interface MemoryItem { text: string; at: number; core: boolean }
-interface MemNode { id: number; text: string; at: number; core: boolean; x: number; y: number; ax: number; ay: number; orbitR: number; orbitPhase: number; orbitSpeed: number; vx: number; vy: number; pinned: boolean }
-interface MemEdge { source: number; target: number; weight: number }
-
-const CARD_W = 260;
-const CARD_H = 72;
-const CARD_R = 12;
-const CORE_COLOR = "#a78bfa";
-const NORMAL_COLOR = "#67e8f9";
-const OVERLAY_W = 960;
-const OVERLAY_H = 600;
-
-type FilterKey = "all" | "7d" | "30d" | "90d";
-const FILTER_MS: Record<FilterKey, number> = { all: 0, "7d": 7 * 864e5, "30d": 30 * 864e5, "90d": 90 * 864e5 };
-
-function tokenize(text: string): string[] {
-	const tokens: string[] = [];
-	const lowered = text.toLowerCase();
-	for (const m of lowered.matchAll(/[a-z0-9]+/g)) tokens.push(m[0]);
-	for (const run of lowered.match(/[\u4e00-\u9fff\u3400-\u4dbf]+/g) ?? []) {
-		if (run.length === 1) { tokens.push(run); continue; }
-		for (let i = 0; i < run.length - 1; i++) tokens.push(run.slice(i, i + 2));
-	}
-	return tokens;
-}
-function jaccard(a: string, b: string): number {
-	const sa = new Set(tokenize(a)), sb = new Set(tokenize(b));
-	if (sa.size === 0 || sb.size === 0) return 0;
-	let hit = 0;
-	sa.forEach((t) => { if (sb.has(t)) hit++; });
-	return hit / (sa.size + sb.size - hit);
-}
-function relTime(ts: number): string {
-	const sec = Math.floor((Date.now() - ts) / 1000);
-	if (sec < 60) return "刚刚";
-	const min = Math.floor(sec / 60);
-	if (min < 60) return `${min} 分钟前`;
-	const hr = Math.floor(min / 60);
-	if (hr < 24) return `${hr} 小时前`;
-	return `${Math.floor(hr / 24)} 天前`;
-}
-function hexGlow(hex: string, alpha: number): string {
-	const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-	return `rgba(${r},${g},${b},${alpha})`;
-}
-function rgba(hex: string, alpha: number): string {
-	const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-	return `rgba(${r},${g},${b},${alpha})`;
-}
-function brighten(hex: string): string {
-	const r = Math.min(255, parseInt(hex.slice(1, 3), 16) + 50);
-	const g = Math.min(255, parseInt(hex.slice(3, 5), 16) + 50);
-	const b = Math.min(255, parseInt(hex.slice(5, 7), 16) + 50);
-	return `rgb(${r},${g},${b})`;
-}
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
-	const chars = text.split(""); const lines: string[] = []; let cur = "";
-	for (const ch of chars) { const test = cur + ch; if (ctx.measureText(test).width > maxW && cur.length > 0) { lines.push(cur); cur = ch; } else cur = test; }
-	if (cur) lines.push(cur);
-	return lines;
-}
 
 export function MemoryStarMap({ open, onClose, personaName, personaLabel, t, callRpc }: { open: boolean; onClose: () => void; personaName: string; personaLabel: string; t: Translate; callRpc: CallRpc }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -101,7 +43,7 @@ export function MemoryStarMap({ open, onClose, personaName, personaLabel, t, cal
 	};
 	useEffect(() => { if (open) void load(); }, [open, personaName]);
 
-	const filtered = memories.filter((m) => !FILTER_MS[filter] || (Date.now() - m.at) <= FILTER_MS[filter]);
+	const filtered = filterByAge(memories, filter, Date.now());
 
 	// 重建图
 	useEffect(() => {
@@ -113,39 +55,18 @@ export function MemoryStarMap({ open, onClose, personaName, personaLabel, t, cal
 		const ctx = canvas.getContext("2d"); if (!ctx) return;
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-		const nodes: MemNode[] = filtered.map((m, id) => {
-			const x = W / 2 + (Math.random() - 0.5) * W * 0.22;
-			const y = H / 2 + (Math.random() - 0.5) * H * 0.22;
-			return { id, text: m.text, at: m.at, core: m.core, x, y, ax: x, ay: y, orbitR: 3 + Math.random() * 5, orbitPhase: Math.random() * Math.PI * 2, orbitSpeed: 0.006 + Math.random() * 0.008, vx: 0, vy: 0, pinned: false };
-		});
-		const edges: MemEdge[] = [];
-		for (let i = 0; i < nodes.length; i++) { for (let j = i + 1; j < nodes.length; j++) { const w = jaccard(nodes[i]!.text, nodes[j]!.text); if (w >= 0.12) edges.push({ source: i, target: j, weight: w }); else if (nodes[i]!.core) edges.push({ source: i, target: j, weight: 0.15 }); else if (nodes[j]!.core) edges.push({ source: i, target: j, weight: 0.15 }); } }
-		const forceStep = () => {
-			const cx = W / 2, cy = H / 2, k = 110;
-			for (let i = 0; i < nodes.length; i++) {
-				const a = nodes[i]!; if (a.pinned) continue;
-				for (let j = i + 1; j < nodes.length; j++) {
-					const b = nodes[j]!; if (b.pinned) continue;
-					let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
-					if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
-					const d = Math.sqrt(d2), f = (k * k) / d;
-					a.vx += (dx / d) * f; a.vy += (dy / d) * f; b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
-				}
-			}
-			for (const e of edges) { const a = nodes[e.source]!, b = nodes[e.target]!; const dx = b.x - a.x, dy = b.y - a.y; const d = Math.sqrt(dx * dx + dy * dy) || 1; const f = (d - 160) * 0.025 * e.weight; if (!a.pinned) { a.vx += (dx / d) * f; a.vy += (dy / d) * f; } if (!b.pinned) { b.vx -= (dx / d) * f; b.vy -= (dy / d) * f; } }
-			for (const n of nodes) { if (n.pinned) continue; n.vx += (cx - n.x) * 0.012; n.vy += (cy - n.y) * 0.012; n.x += n.vx; n.y += n.vy; n.vx *= 0.86; n.vy *= 0.86; if (n.x < 90) n.x = 90; else if (n.x > W - 90) n.x = W - 90; if (n.y < 90) n.y = 90; else if (n.y > H - 90) n.y = H - 90; }
-		};
-		for (let i = 0; i < 250; i++) forceStep();
+		// 建图与力导向在 client/graph-layout.ts（rand 可注入 → 布局可单测）
+		const { nodes, edges } = buildGraph(filtered, { w: W, h: H });
+		for (let i = 0; i < 250; i++) forceStep(nodes, edges, W, H);
 		nodes.forEach((n) => { n.ax = n.x; n.ay = n.y; });
 		graphRef.current = { nodes, edges };
 
 		const stars = Array.from({ length: 240 }, () => ({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.4 + 0.3, a: Math.random() * 0.7 + 0.3, phase: Math.random() * Math.PI * 2 }));
 		let hovered: number | null = null, dragging: MemNode | null = null, dragOffX = 0, dragOffY = 0, dragMoved = false;
-		const hitTest = (mx: number, my: number) => { for (let i = nodes.length - 1; i >= 0; i--) { const n = nodes[i]!; if (mx >= n.x - CARD_W / 2 && mx <= n.x + CARD_W / 2 && my >= n.y - CARD_H / 2 && my <= n.y + CARD_H / 2) return i; } return -1; };
-		const onMove = (e: MouseEvent) => { const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top; if (dragging) { dragging.x = mx - dragOffX; dragging.y = my - dragOffY; dragging.ax = dragging.x; dragging.ay = dragging.y; dragMoved = true; return; } const idx = hitTest(mx, my); hovered = idx >= 0 ? idx : null; canvas.style.cursor = idx >= 0 ? "grab" : "default"; };
-		const onDown = (e: MouseEvent) => { const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top; dragMoved = false; const idx = hitTest(mx, my); if (idx >= 0) { dragging = nodes[idx]!; dragging.pinned = true; dragOffX = mx - dragging.x; dragOffY = my - dragging.y; canvas.style.cursor = "grabbing"; e.preventDefault(); } };
+		const onMove = (e: MouseEvent) => { const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top; if (dragging) { dragging.x = mx - dragOffX; dragging.y = my - dragOffY; dragging.ax = dragging.x; dragging.ay = dragging.y; dragMoved = true; return; } const idx = hitTestAt(nodes, mx, my); hovered = idx >= 0 ? idx : null; canvas.style.cursor = idx >= 0 ? "grab" : "default"; };
+		const onDown = (e: MouseEvent) => { const rect = canvas.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top; dragMoved = false; const idx = hitTestAt(nodes, mx, my); if (idx >= 0) { dragging = nodes[idx]!; dragging.pinned = true; dragOffX = mx - dragging.x; dragOffY = my - dragging.y; canvas.style.cursor = "grabbing"; e.preventDefault(); } };
 		const onUp = () => { if (dragging) { dragging.ax = dragging.x; dragging.ay = dragging.y; dragging.pinned = false; dragging = null; } };
-		const onClick = (e: MouseEvent) => { if (dragMoved) return; const rect = canvas.getBoundingClientRect(); const idx = hitTest(e.clientX - rect.left, e.clientY - rect.top); setSelected(idx >= 0 ? idx : null); if (idx >= 0) setEditing(false); };
+		const onClick = (e: MouseEvent) => { if (dragMoved) return; const rect = canvas.getBoundingClientRect(); const idx = hitTestAt(nodes, e.clientX - rect.left, e.clientY - rect.top); setSelected(idx >= 0 ? idx : null); if (idx >= 0) setEditing(false); };
 		canvas.addEventListener("mousemove", onMove); canvas.addEventListener("mousedown", onDown); canvas.addEventListener("mouseup", onUp); canvas.addEventListener("click", onClick);
 
 		let frame = 0, raf = 0;

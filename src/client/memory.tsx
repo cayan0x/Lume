@@ -49,7 +49,7 @@ export function MemoryStarMap({ open, onClose, personaName, personaLabel, t, cal
 	useEffect(() => {
 		const canvas = canvasRef.current; if (!canvas || !open) return;
 		const dpr = window.devicePixelRatio || 1;
-		const W = OVERLAY_W, H = OVERLAY_H - 56;
+		const W = OVERLAY_W, H = GRAPH_H;
 		canvas.width = W * dpr; canvas.height = H * dpr;
 		canvas.style.width = W + "px"; canvas.style.height = H + "px";
 		const ctx = canvas.getContext("2d"); if (!ctx) return;
@@ -136,7 +136,7 @@ export function MemoryStarMap({ open, onClose, personaName, personaLabel, t, cal
 					<Button size="sm" variant="ghost" onClick={onClose}>{t("manage.close")}</Button>
 				</div>
 				{/* 画布 */}
-				<div style={{ position: "relative", width: "100%", height: OVERLAY_H - 56, borderRadius: "0 0 20px 20px", overflow: "hidden", background: "#04040c" }}>
+				<div style={{ position: "relative", width: "100%", height: GRAPH_H, borderRadius: "0 0 20px 20px", overflow: "hidden", background: "#04040c" }}>
 					<canvas ref={canvasRef} style={{ display: "block" }} />
 					{loading ? <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: 13 }}>{t("status.loading")}</div> : null}
 					{!loading && filtered.length === 0 ? <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: 13 }}>{t("memory.empty")}</div> : null}

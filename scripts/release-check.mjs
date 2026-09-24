@@ -108,7 +108,7 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("export function unsupportedCitations") && text.includes("export function recordReadArgs"),
 	},
 	{
-		file: "lib/index.js",
+		files: ["lib/host/project-access.js"],
 		id: "auto-verify-ledger",
 		what: "成功的真验证会自动把台账推进到 verified，失败立刻顶「先修红」（不依赖模型调 lume_change）",
 		incident: "0.7.4 实测：4 个会话 0 次 lume_change、0 次状态推进——「未验证」永远是未验证",
@@ -129,7 +129,7 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("auditOpenQuestions") && text.includes("buildQuestionAuditDirective"),
 	},
 	{
-		file: "lib/index.js",
+		files: ["lib/host/project-access.js"],
 		id: "pending-facts-flush",
 		what: "项目知识在 cwd 未知时暂存、拿到 cwd 后补落盘（不再静默丢弃）",
 		incident: "2026-09-23 现场：模型主动调 3 次 lume_project_note，全部因「无法确定工作目录」被丢弃，facts 表一条没有",

@@ -61,6 +61,8 @@ import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDrift
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { initStores } from "./host/bootstrap.js";
+import { createAuxLlm } from "./host/llm-aux.js";
+import { createProjectAccess } from "./host/project-access.js";
 import { installPromptSections } from "./host/sections.js";
 import { registerLumeTools } from "./host/tools.js";
 import { createSessionDisposedHandler, createSessionEventHandler } from "./host/session-events.js";
@@ -295,91 +297,35 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		ctx.logger?.warn?.("lume: llmRoute 初始化失败 — 蒸馏/提取在对话前不可用");
 	})();
 
-	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。signal 中止时抛错。
-	 * 组装时保留全部块（text + reasoning），蒸馏解析需要完整的模型输出——
-	 * 推理型模型可能把 JSON 拆在 reasoning 块尾部，只取 text 会拿到半成品。
-	 * 蒸馏类调用传完整控制参数：reasoningEffort=low（复述风模型常吃 4000+ token 复述指令，低推理显著缩短）、
-	 * temperature=0（稳定）。模型不支持低推理时会抛 UNSUPPORTED_REASONING_EFFORT，捕获降级重试（去掉 effort 重发）。 */
-	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<string | null> {
-		if (!route) return null;
-		const llm = ctx.get("llm");
-		if (!llm) return null;
-		try {
-			const messages = [
-				createUserMessage({
-					content: [{ type: "text", text: userText }],
-					source: { kind: "plugin", plugin: "lume" },
-				}),
-			];
-			const assembler = new BlockAssembler();
-			try {
-				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, reasoningEffort: ReasoningEffortId("low"), temperature: 0, ...(signal ? { signal } : {}) })) {
-					assembler.push(chunk);
-				}
-				// 错误经流内 finish chunk 传输（不 throw）——检查 finish.kind === "error"
-				if (assembler.finish.kind === "error") {
-					const code = (assembler.finish as { failure?: { code?: string } }).failure?.code;
-					if (code !== "UNSUPPORTED_REASONING_EFFORT") throw new Error(String((assembler.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
-					// 不支持 effort：降级无 effort 重发
-					const assembler2 = new BlockAssembler();
-					for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
-						assembler2.push(chunk);
-					}
-					if (assembler2.finish.kind === "error") {
-						throw new Error(String((assembler2.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
-					}
-					return assembler2
-						.blocks()
-						.map((block: unknown) => {
-							const text = (block as { text?: unknown })?.text;
-							return typeof text === "string" ? text : "";
-						})
-						.filter((text) => text.length > 0)
-						.join(" ")
-						.trim();
-				}
-			} catch (error) {
-				// throw 形态的错误：非 UNSUPPORTED 直接抛；是则降级重试
-				if ((error as { code?: string })?.code !== "UNSUPPORTED_REASONING_EFFORT") throw error;
-				const assembler2 = new BlockAssembler();
-				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
-					assembler2.push(chunk);
-				}
-				if (assembler2.finish.kind === "error") {
-					throw new Error(String((assembler2.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
-				}
-				return assembler2
-					.blocks()
-					.map((block: unknown) => {
-						const text = (block as { text?: unknown })?.text;
-						return typeof text === "string" ? text : "";
-					})
-					.filter((text) => text.length > 0)
-					.join(" ")
-					.trim();
-			}
-			const allBlocks = assembler
-				.blocks()
-				.map((block: unknown) => {
-					const text = (block as { text?: unknown })?.text;
-					return typeof text === "string" ? text : "";
-				})
-				.filter((text) => text.length > 0);
-			// 诊断探针：完整输出落盘（含 max-tokens 截断标记；追加，一次失败可看全程）
-			try {
-				const existing = readFileSync(LLM_DUMP_PATH, "utf8");
-				const dumps = existing ? JSON.parse(existing) : [];
-				dumps.push({ ts: Date.now(), route: `${route.provider}/${route.model}`, maxTokens, finish: assembler.finish, blocks: allBlocks.map((t) => t.slice(0, 6000)) });
-				writeFileSync(LLM_DUMP_PATH, JSON.stringify(dumps, null, 2), "utf8");
-			} catch { /* 诊断失败不阻断 */ }
-			return allBlocks.join(" ").trim();
-		} catch (error) {
-			if (signal?.aborted) throw error; // 用户取消：向上抛，任务状态走 cancelled
-			ctx.logger?.warn?.("lume: 小模型调用失败，本轮跳过", error);
-			return null;
-		}
-	}
+	// ── 辅助模型调用（实现见 host/llm-aux.ts）──
+	const { callLlm } = createAuxLlm({ ctx, llmRoute: () => llmRoute, llmDumpPath: LLM_DUMP_PATH });
 
+	// ── 载具与项目知识的读取入口（实现见 host/project-access.ts）──
+	const projectAccess = createProjectAccess({
+		ctx,
+		config,
+		runtime,
+		stores,
+		projectTask: stores.projectTask,
+		normalizeProjectFact,
+		isRealVerifyCommand,
+		jaccard,
+		projectKeyOf,
+	});
+	const {
+		projectKeyFor,
+		commandSummary,
+		flushPendingFacts,
+		settleVerification,
+		contractOf,
+		changesOf,
+		hypothesesOf,
+		factsOf,
+		requirementsOf,
+		designOf,
+		needsDesignPass,
+		structureToolName,
+	} = projectAccess;
 	/** 被动提取：三道门 → 小模型 → 合并落盘。按会话串行，失败静默。 */
 	function scheduleExtraction(sid: string, st: SessionRuntime): void {
 		if (st.extracting) {
@@ -490,7 +436,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				ctx.logger?.warn?.(`lume: 角色卡 ${personaName} 后台升级失败，保留旧卡`, error);
 			}
 		}
-	});
+	}).catch((error) => ctx.logger?.warn?.(`lume: 旧角色后台重蒸馏失败：${describeError(error)}`));;
 
 	// ── 会话事件：路由缓存 + 轮次缓冲 + 提取调度 + 清理 ──
 		ctx.effect(
@@ -505,143 +451,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		);
 
 	// ── 载具与项目知识的读取入口（事件处理器 / 工具 / 注入三处共用）──
-	/** 项目键：优先取会话工作目录（跨会话共享同一仓库的知识）。 */
-	function projectKeyFor(sid: string, source: any): string | null {
-		const st = runtime.get(sid);
-		if (st.projectKey) return st.projectKey;
-		// 三种调用来源：提示词 context（{agent:{session}}）、工具 exec（{agent:{session}}）、
-		// 会话事件（session 本身）。统一取到 session 再读 cwd。
-		const session = source?.agent?.session ?? source?.session ?? source;
-		const cwd = String(session?.cwd || st.cwd || "");
-		const key = projectKeyOf(cwd);
-		// 只有拿到真实工作目录才缓存：否则一次无 cwd 的调用会把 "unknown" 固化下来。
-		if (cwd && key) st.projectKey = key;
-		return st.projectKey ?? key;
-	}
-
-
-
-	/** 命令摘要：验证证据要写进台账，太长的命令只留前 120 字。 */
-	function commandSummary(raw: string | null): string {
-		if (!raw) return "(未记录命令行)";
-		try {
-			const parsed = JSON.parse(raw) as Record<string, unknown>;
-			const command = parsed?.command ?? parsed?.cmd ?? parsed?.script;
-			if (typeof command === "string" && command.trim()) return command.trim().replace(/\s+/g, " ").slice(0, 120);
-		} catch {
-			/* 不是 JSON：按原文处理 */
-		}
-		return raw.replace(/\s+/g, " ").slice(0, 120);
-	}
-
-	/**
-	 * 项目知识补落盘：事件流里拿不到 cwd 时先暂存，等提示词上下文给出 cwd 再补写。
-	 *
-	 * 现场代价（0.7.4）：模型主动调了 3 次 lume_project_note，全部因为"当时还不知道工作目录"
-	 * 被丢弃——facts 表里一条都没有。cwd 在同一轮稍后就能拿到，所以丢弃太早、太永久。
-	 */
-	function flushPendingFacts(sid: string, source: any): void {
-		const st = runtime.get(sid);
-		if (st.pendingFacts.length === 0) return;
-		const key = projectKeyFor(sid, source);
-		if (!key) return;
-		const pending = st.pendingFacts.splice(0, st.pendingFacts.length);
-		void stores.projectReady
-		.then(async (store) => {
-			if (!store) return;
-			let saved = 0;
-			for (const fact of pending) {
-				const ok = await store.addFact(key, fact, (candidate: any, existing: any) => existing.some((entry: any) => jaccard(entry.text, candidate) >= 0.7));
-				if (ok) saved++;
-			}
-			ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
-		});
-	}
-
-	/**
-	 * 验证结算（插件侧的「改一处验一处」）：成功的**真验证**自动把台账推进到 verified，
-	 * 真验证失败立刻顶一句先修红。
-	 *
-	 * 为什么必须插件做：实测模型 4 个会话 0 次调用 lume_change、0 次推进状态，台账里的
-	 * 「未验证」于是永远是未验证。判据取**宁窄勿宽**（`git grep` 不算验证），并把证据
-	 * （命令 + 结果首行）写进 verify 字段，让真假一眼可辨。
-	 */
-	function settleVerification(sid: string, st: SessionRuntime, resultText: string, signals: ResultSignals): void {
-		if (st.toolKind !== "verify" && st.toolKind !== "inspect") return;
-		const realVerify = st.toolKind === "verify" && isRealVerifyCommand(st.lastToolArgs ?? "");
-		const readbackTarget = st.toolKind === "inspect" ? st.lastToolTarget : null;
-		if (!realVerify && !readbackTarget) return;
-		if (signals.failure || signals.unknown) {
-			if (realVerify) {
-				if (!noticeText(st, "trigger")) forceNotice(st, "trigger", `〔验证失败〕刚才那条验证没过（${commandSummary(st.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`);
-				ctx.logger?.warn?.(`lume: [${sid}] 真验证失败：${commandSummary(st.lastToolArgs)}`);
-			}
-			return;
-		}
-		const changed = changesOf(sid);
-		const targets = realVerify ? undefined : [readbackTarget!];
-		if (!realVerify && !changed.some((item: any) => item.target === readbackTarget)) return;
-		const firstLine = resultText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
-		const evidence = realVerify
-			? `自动：${commandSummary(st.lastToolArgs)} → ${firstLine.slice(0, 80)}`
-			: `自动：回读 ${readbackTarget} → ${firstLine.slice(0, 60)}`;
-		void stores.projectReady
-		.then(async (store) => {
-			const count = (await store?.verifyChanges(sid, { before: Date.now(), evidence, targets })) ?? 0;
-			if (count > 0) ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账 ${count} 条 → verified（${evidence.slice(0, 60)}）`);
-		});
-	}
-
-	function contractOf(sid: string) {
-		return stores.project()?.getContract(sid) ?? null;
-	}
-
-	function changesOf(sid: string) {
-		return stores.project()?.getChanges(sid) ?? [];
-	}
-
-	function hypothesesOf(sid: string) {
-		return stores.project()?.getHypotheses(sid) ?? [];
-	}
-
-	function factsOf(sid: string, context: any) {
-		const projectKey = projectKeyFor(sid, context);
-		return stores.project() && projectKey ? stores.project().getFacts(projectKey) : [];
-	}
-
-	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
-	/** 本会话的设计决策（设计 pass 产出）。 */
-	/** 本会话的需求锚点（用户原话，逐字）。 */
-	function requirementsOf(sid: string) {
-		return stores.project()?.getRequirements(sid) ?? [];
-	}
-
-	function designOf(sid: string) {
-		return stores.project()?.getDesign(sid) ?? [];
-	}
-
-	/** 该不该顶〔设计三问〕：要动数据/接口 + 还没写下设计 + 不是纯问答。 */
-	function needsDesignPass(sid: string, st: SessionRuntime, query: string, mode: SessionRuntime["interactionMode"]): boolean {
-		return mode !== "question" && DESIGN_SIGNAL_RE.test(query) && designOf(sid).length === 0;
-	}
-
-	function structureToolName(context: any): string | null {
-		try {
-			const schemas = ctx.get("tools")?.schemas?.(context?.agent);
-			if (!Array.isArray(schemas)) return null;
-			for (const schema of schemas) {
-				const name = String((schema as { name?: unknown })?.name ?? "");
-				if (/analy|tree|symbol|lsp|reference|code_map|outline/i.test(name)) return name;
-			}
-			return null;
-		} catch {
-			return null;
-		}
-	}
-
-
-
-	// ── 人设五段式注入 + 切换播报 ──
 	/**
 	 * 权威意图解析：与宿主会话历史对账，而不是只信事件缓存。
 	 *

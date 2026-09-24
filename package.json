@@ -66,9 +66,10 @@
     "bundle": "tsdown",
     "watch": "tsdown --watch",
     "test": "vitest run",
-    "release:check": "npm run build && node scripts/release-check.mjs",
+    "release:check": "npm run lint && npm run build && node scripts/release-check.mjs",
     "release:publish": "node scripts/publish.mjs",
-    "release:audit": "node scripts/release-check.mjs --published"
+    "release:audit": "node scripts/release-check.mjs --published",
+    "lint": "node scripts/lint-arch.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

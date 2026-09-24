@@ -80,9 +80,11 @@ export function initStores(input: StoreInput): StoreHandles {
 			return null;
 		}
 	})();
+	// 已吞异常：内部 try/catch 后返回降级值，句柄赋值不会 reject
 	void storesReady.then((store) => {
 		currentStore = store;
 	});
+	// 已吞异常：内部 try/catch 后返回降级值，句柄赋值不会 reject
 	void identityReady.then((store) => {
 		identity = store;
 	});
@@ -103,6 +105,7 @@ export function initStores(input: StoreInput): StoreHandles {
 			return null;
 		}
 	})();
+	// 已吞异常：内部 try/catch 后返回降级值，句柄赋值不会 reject
 	void reflectionReady.then((s) => { reflectionStore = s; });
 
 	function projectTask(sid: string, label: string, run: (store: ProjectStore) => Promise<unknown> | unknown): void {
@@ -132,6 +135,7 @@ export function initStores(input: StoreInput): StoreHandles {
 			return null;
 		}
 	})();
+	// 已吞异常：内部 try/catch 后返回降级值，句柄赋值不会 reject
 	void projectReady.then((s) => { project = s; });
 
 	/** RPC 等入口可能在存储兑现前被调用：等一次并回填句柄。 */

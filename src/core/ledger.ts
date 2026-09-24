@@ -269,11 +269,6 @@ export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | n
 	return `〔项目知识｜本目录，跨会话累积〕\n${lines.join("\n")}`;
 }
 
-/** 台账/契约是否存在未验证项——触发器「连写不验」与交付对账都要用。 */
-export function hasUnverified(items: ChangeItem[]): boolean {
-	return items.some((item) => item.status === "done" || item.status === "planned");
-}
-
 export interface DesignDecision {
 	/** 决策点：例如「权限人字段存在哪」 */
 	point: string;

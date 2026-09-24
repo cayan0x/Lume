@@ -18,7 +18,7 @@
  */
 import type { Persona } from "../core/manifest.js";
 import type { DistillJobRunner } from "./distill.js";
-import { settleMemoryText, STORY_MEMORY_CAP } from "./distill.js";
+import { settleMemoryText, STORY_MEMORY_CAP } from "./distill-prompt.js";
 import type { IdentityStore } from "./identity.js";
 import type { PersonaRegistry } from "./registry.js";
 import { normalizeCard, parseCard } from "../core/card.js";

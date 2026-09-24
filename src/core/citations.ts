@@ -149,10 +149,6 @@ export function unsupportedCitations(index: EvidenceIndex, text: unknown): Citat
 	return extractCitations(index, text).filter((item) => !covers(index, item.key, item.line));
 }
 
-export function knows(index: EvidenceIndex, key: string): boolean {
-	return (index.get(key)?.length ?? 0) > 0;
-}
-
 export function covers(index: EvidenceIndex, key: string, line: number): boolean {
 	const windows = index.get(key);
 	if (!windows) return false;

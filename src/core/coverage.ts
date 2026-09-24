@@ -76,11 +76,6 @@ export function ngrams(text: string, n: number): string[] {
 	return [...new Set(out)];
 }
 
-/** 兼容旧名（3-gram）。 */
-export function trigrams(text: string): string[] {
-	return ngrams(text, 3);
-}
-
 function sentencesOf(artifact: string): string[] {
 	return artifact
 		.split(/\r?\n|[。；;]/)

@@ -9,6 +9,8 @@ import { Button, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import type { PersonaSample } from "../core/manifest.js";
 import { detectChatLog } from "../core/dialogue-mining.js";
+import { CHAT_TEXT_CAP, POLL_INTERVAL_MS, STAGE_ORDER, TEXT_CAP, applyJobStatus } from "./distill-job.js";
+import type { DistillJobView, DistillStage, DistilledCard } from "./distill-job.js";
 import { inputStyle, labelStyle } from "./form-styles.js";
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;
@@ -16,22 +18,9 @@ type Translate = (key: string, params?: Record<string, unknown>) => string;
 /** conn.rpc.call 的最小面（四参签名，末参恒 void 0）。 */
 type CallRpc = (endpoint: string, payload: unknown) => Promise<{ ok?: boolean; value?: unknown } | undefined>;
 
-interface DistilledCard {
-	key: string;
-	displayName: string;
-	description: string;
-	promptText: string;
-	corpus: PersonaSample[];
-	memory?: Array<{ text: string }>;
-	distillVersion?: number;
-	distillSource?: string;
-	distillHint?: string;
-}
 
 type Phase = "input" | "running" | "preview" | "saved";
-type DistillStage = "mining" | "contract" | "corpus";
 
-const STAGE_ORDER: DistillStage[] = ["mining", "contract", "corpus"];
 
 const TEXT_CAP = 20_000;
 /** 聊天记录素材的宽容上限：原始文本含双人对话+时间戳，噪音过半。 */
@@ -89,43 +78,49 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 		onClose();
 	};
 
-	// 轮询：running 态每 2s 问一次宿主
+	// 轮询：running 态每 2s 问一次宿主。状态 → 界面动作的映射是纯函数（client/distill-job.ts），
+	// 组件这里只把动作落到 setState 上——那条逻辑因此可以单测，不必点界面验证。
 	useEffect(() => {
 		if (phase !== "running" || !jobId) return;
 		let cancelled = false;
 		const timer = setInterval(async () => {
 			try {
 				const res = await callRpc("distillStatus", { jobId });
-				if (cancelled) return;
-				if (!res?.ok) return;
-				const job = res.value as { status: string; card?: DistilledCard; error?: string; stage?: DistillStage } | null;
-				if (job === null || job === undefined) {
-					setError(t("distill.lost"));
-					setPhase("input");
-					return;
-				}
-				if (job.status === "running") {
-					if (job.stage) setStage(job.stage);
-					return;
-				}
-				if (job.status === "done" && job.card) {
-					setCard({ ...job.card, memory: job.card.memory ?? undefined });
-					setStage("corpus");
-					setPhase("preview");
-					setShowComplete(true);
-				} else if (job.status === "error") {
-					setError(t("distill.failed", { message: job.error ?? "unknown" }));
-					setPhase("input");
+				if (cancelled || !res?.ok) return;
+				switch (applyJobStatus(res.value as DistillJobView | null).kind) {
+					case "lost":
+						setError(t("distill.lost"));
+						setPhase("input");
+						break;
+					case "stage":
+						setStage((res.value as DistillJobView).stage ?? null);
+						break;
+					case "done": {
+						const action = applyJobStatus(res.value as DistillJobView);
+						if (action.kind === "done") setCard(action.card);
+						setStage("corpus");
+						setPhase("preview");
+						setShowComplete(true);
+						break;
+					}
+					case "error": {
+						const action = applyJobStatus(res.value as DistillJobView);
+						if (action.kind === "error") setError(t("distill.failed", { message: action.reason }));
+						setPhase("input");
+						break;
+					}
+					default:
+						break;
 				}
 			} catch {
 				/* 网络抖动下一轮再问 */
 			}
-		}, 2000);
+		}, POLL_INTERVAL_MS);
 		return () => {
 			cancelled = true;
 			clearInterval(timer);
 		};
-}, [phase, jobId, callRpc, t]);
+	}, [phase, jobId, callRpc, t]);
 
 		// 蒸馏完成横幅 3 秒后自动消失
 		useEffect(() => {

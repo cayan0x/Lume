@@ -75,9 +75,6 @@ export interface DistillDeps {
 /** 蒸馏阶段标识，客户端据此渲染进度（mining → contract → corpus）。 */
 export type DistillStage = "mining" | "contract" | "corpus";
 
-/** 阶段 → 用户可见文案（客户端词典键名，宿主不落文案，交由客户端本地化）。 */
-export const DISTILL_STAGES: DistillStage[] = ["mining", "contract", "corpus"];
-
 // ── prompt 组装 ────────────────────────────────────────────────────────────
 
 
@@ -260,29 +257,3 @@ export class DistillJobRunner {
 		}
 	}
 }
-
-
-// 兼容旧导入路径：这些名字原本就在这里，客户端与 RPC 仍从 distill.js 取
-export {
-	DISTILL_TEXT_CAP,
-	CHAT_TEXT_CAP,
-	CONTRACT_TOKENS,
-	CORPUS_TOKENS,
-	PROMPT_TEXT_CAP,
-	DISPLAY_NAME_CAP,
-	DESCRIPTION_CAP,
-	summarizeLineLengths,
-	buildContractPrompt,
-	buildCorpusPrompt,
-	normalizeKey,
-	normalizeContract,
-	buildStoryPrompt,
-	STORY_MEMORY_CAP,
-	EVENT_MEMORY_CAP,
-	EVENT_FACTS_CAP,
-	STORY_FACTS_CAP,
-	settleMemoryText,
-	dedupeMemories,
-	buildMemoryPrompt,
-	extractBalancedAt,
-};

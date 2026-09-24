@@ -42,7 +42,7 @@ export interface BlockDeps {
 	renderHypotheses: (items: Hypothesis[]) => string | null;
 	renderDesign: (items: DesignDecision[]) => string | null;
 	renderRequirements: (items: RequirementAnchor[]) => string | null;
-	renderProjectFacts: (facts: ProjectFact[]) => string | null;
+	renderProjectFacts: (facts: ProjectFact[], limit?: number, currentTask?: string | null) => string | null;
 	/** 会话记忆：冷启动判定 + 注入渲染（纯函数，来自 core/task-memory） */
 	isColdStart: typeof taskMemoryMod.isColdStart;
 	renderTaskMemory: typeof taskMemoryMod.renderTaskMemory;
@@ -174,7 +174,7 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		// 项目知识：**任何轮次都渲染**——它是事实（跨会话累积的约定/命令/死路），不是方法指引。
 		// 现场教训：曾只在非问答轮渲染，于是「新开会话先问一句『你知道 X 需求吗』」这种最自然的开场白
 		// 恰好看不到知识，用户会以为沉淀没生效。事实类回显与需求锚点同等处理（可丢块，成本可控）。
-		{ text: deps.renderProjectFacts(deps.factsOf(sid, context)), droppable: true },
+		{ text: deps.renderProjectFacts(deps.factsOf(sid, context), 14, st.sessionTitle), droppable: true },
 		// 方法块：按任务形态出现；文档方法论只在判定为文档任务时出现。
 		{ text: isTask && mode !== "question" ? deps.buildImpactDirective() : null, droppable: true },
 		{ text: docDirective ? deps.buildDocumentMethodDirective() : null },

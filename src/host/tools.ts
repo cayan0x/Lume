@@ -265,7 +265,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_project_note requires an active session");
-					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now());
+					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now(), { taskTitle: deps.runtime.get(sid).sessionTitle });
 					if (!fact) throw new Error("lume_project_note requires text");
 				if (deps.looksSensitive(fact.text))
 					throw new Error("lume_project_note 拒绝含密钥/连接串/凭证的内容：项目知识是**明文跨会话**存储；请改记「存在某类配置，细节见 <文件:行>」");

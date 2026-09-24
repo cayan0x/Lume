@@ -192,6 +192,14 @@ const FILE_INVARIANTS = [
 		incident: "现场实测：方法块/提醒不点名工具时，模型不会调用（lume_change 零调用）",
 		check: (text) => text.includes("lume_change") && text.includes("lume_project_note"),
 	},
+		// 知识作用域：需求特有的结论不该污染别的需求（知识按工作目录共享，会串味）。
+		{
+			id: "knowledge-scope",
+			files: ["lib/core/scope.js", "lib/core/ledger.js", "lib/host/session-events.js"],
+			what: "作用域：repo（同仓库通用）/ task（该需求特有）；注入时按当前需求过滤",
+			incident: "2026-09-24：需求级结论（如某需求的列名约定）出现在别的需求注入里，占额度还误导",
+			check: (text) => text.includes("classifyScope") && text.includes("visibleForTask") && text.includes("taskTitle"),
+		},
 		// 记忆 ID：去重从模糊文本比对升级为内容寻址（同主题 → 同 id → 精确合并/覆盖），并给每条显示编号。
 		{
 			id: "memory-id",

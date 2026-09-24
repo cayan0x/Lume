@@ -13,6 +13,7 @@ import { isRequirementStatement } from "./coverage.js";
  */
 import { fnv1a32 } from "./sampling.js";
 import { memoryId, numberFacts } from "./memory-id.js";
+import { classifyScope, visibleForTask } from "./scope.js";
 
 /** 契约字段长度上限：契约是「一屏能看完」的东西，写长了自己也不看。 */
 export const CONTRACT_TEXT_CAP = 240;
@@ -86,6 +87,13 @@ export interface ProjectFact {
 	 * 落盘时精确去重/覆盖（O(1)），不再靠全表字面相似度。老数据缺 id 时按算法补。
 	 */
 	id?: string;
+	/**
+	 * 作用域：repo = 这个仓库怎么干活（同仓库所有需求共享）；task = 该需求特有（只给同一需求看）。
+	 * 老数据缺省视为 repo（保守：少给一条通用知识比多给一条无关知识代价大）。
+	 */
+	scope?: "repo" | "task";
+	/** scope=task 时记录归属的需求名（会话标题） */
+	task?: string;
 }
 
 const FACT_LABEL: Record<ProjectFactKind, string> = {
@@ -172,7 +180,7 @@ export function normalizeHypothesis(input: Record<string, unknown>, at: number):
 	};
 }
 
-export function normalizeProjectFact(input: Record<string, unknown>, at: number): ProjectFact | null {
+export function normalizeProjectFact(input: Record<string, unknown>, at: number, options: { taskTitle?: string | null } = {}): ProjectFact | null {
 	const text = clip(input.text, FACT_TEXT_CAP);
 	if (!text) return null;
 	const kind = input.kind;
@@ -182,6 +190,8 @@ export function normalizeProjectFact(input: Record<string, unknown>, at: number)
 		at,
 		// 内容寻址 id：同主题 → 同 id（去重/覆盖靠它，不再靠字面相似度）
 		id: memoryId(typeof kind === "string" ? kind : "build", text),
+		// 作用域：需求特有的结论不该污染别的需求（判定见 core/scope.ts，机械规则）
+		...classifyScope(text, options.taskTitle),
 	};
 }
 
@@ -272,10 +282,12 @@ function ageLabel(at: number, now = Date.now()): string {
 }
 
 /** 渲染项目知识：按类别归组；死路单独成节（它最省时间）。 */
-export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | null {
+export function renderProjectFacts(facts: ProjectFact[], limit = 14, currentTask?: string | null): string | null {
 	if (facts.length === 0) return null;
 	const order: ProjectFactKind[] = ["build", "test", "convention", "module", "deadend"];
-	const numbered = numberFacts(facts);
+	// 作用域隔离：通用知识人人可见；需求级知识只给同一需求看（否则会拿别的需求的结论误导当前需求）。
+	const numbered = numberFacts(facts.filter((fact) => visibleForTask(fact, currentTask)));
+	if (numbered.length === 0) return null;
 	const picked = numbered.slice(-limit);
 	const lines: string[] = [];
 	for (const kind of order) {
@@ -283,7 +295,7 @@ export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | n
 		if (group.length === 0) continue;
 		lines.push(`${FACT_LABEL[kind]}：`);
 		// 编号（#n）+ 短 id：用户可点名纠正（“#7 过时了”），模型可引用；id 跨裁剪稳定。
-		for (const entry of group) lines.push(`- #${entry.n}${entry.item.id ? `·${entry.item.id.slice(0, 4)}` : ""} ${entry.item.text}${ageLabel(entry.item.at)}`);
+		for (const entry of group) lines.push(`- #${entry.n}${entry.item.id ? `·${entry.item.id.slice(0, 4)}` : ""} ${entry.item.text}${entry.item.scope === "task" ? "（本需求）" : ""}${ageLabel(entry.item.at)}`);
 	}
 	return `〔项目知识｜本目录，跨会话累积〕\n${lines.join("\n")}`;
 }

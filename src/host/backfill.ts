@@ -31,7 +31,7 @@ export interface BackfillDeps {
 	/** 项目键 = 工作目录哈希。 */
 	projectKeyOf: (cwd: unknown) => string | null;
 	/** 归一化 + 落盘（内部自带相似度去重与上限）。 */
-	normalizeFact: (input: Record<string, unknown>, at: number) => ProjectFact | null;
+		normalizeFact: (input: Record<string, unknown>, at: number, options?: { taskTitle?: string | null }) => ProjectFact | null;
 	addFact: (projectKey: string, fact: ProjectFact) => Promise<boolean>;
 	looksSensitive: (text: string) => boolean;
 	log: (message: string) => void;
@@ -112,6 +112,13 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 		}
 		try {
 			const events = readSessionEvents(item.file);
+					// 会话标题：作用域判定要用（需求级知识只给同一需求看）
+					let sessionTitle = "";
+					for (const scan of events) {
+						if (scan.type !== "session/title") continue;
+						sessionTitle = String((scan.data as { title?: unknown } | undefined)?.title ?? "").slice(0, 60);
+						if (sessionTitle) break;
+					}
 			let cwd: string | null = null;
 			for (const event of events) {
 				if (event.type !== "user/message") continue;
@@ -137,7 +144,7 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 						if (added >= perSession) break;
 						if (deps.looksSensitive(candidate.text)) continue;
 						if (seen.some((prior) => prior === candidate.text)) continue;
-						const fact = deps.normalizeFact({ kind: candidate.kind, text: candidate.text }, Number(event.time) || Date.now());
+						const fact = deps.normalizeFact({ kind: candidate.kind, text: candidate.text }, Number(event.time) || Date.now(), { taskTitle: sessionTitle });
 						if (!fact) continue;
 						seen.push(candidate.text);
 						if (await deps.addFact(key, fact)) added++;

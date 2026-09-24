@@ -328,9 +328,16 @@ export class ProjectStore {
 		// 内容寻址（见 core/memory-id.ts）：同主题就是同一条知识 → 精确命中，不再全表算相似度。
 		const same = fact.id ? facts.findIndex((item) => item.id === fact.id) : -1;
 		if (same >= 0) {
+			const current = facts[same]!;
 			// 先到先得会让后来更完整的表述被丢掉；只有"更具体"（更长且主题一致）才覆盖。
-			if (isMoreSpecific(fact.text, facts[same]!.text)) {
-				facts[same] = fact;
+			if (isMoreSpecific(fact.text, current.text)) {
+				facts[same] = { ...fact, at: current.at };
+				await this.#factTable.put(projectKey, trimFacts(facts, PROJECT_FACT_CAP));
+				return true;
+			}
+			// 唯一例外：作用域修正（老数据没有 scope，补扫时能把它纠正成"本需求"）——这让老库自愈。
+			if (fact.scope && current.scope !== fact.scope) {
+				facts[same] = { ...current, scope: fact.scope, task: fact.task };
 				await this.#factTable.put(projectKey, trimFacts(facts, PROJECT_FACT_CAP));
 				return true;
 			}

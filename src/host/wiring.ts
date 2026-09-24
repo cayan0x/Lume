@@ -20,6 +20,7 @@ import { extractKnowledgeCandidates, looksSensitive } from "../core/knowledge.js
 import { buildContextPressureDirective, contextPressure, renderTaskMemory, isColdStart } from "../core/task-memory.js";
 import { toolArgsOf, toolNameOf, toolTargetOf, workspaceFromSnapshotText } from "./host-events.js";
 import { resolveDsHome, startBackfill } from "./backfill.js";
+import { rememberWorkspace, sessionDirSlug, workspaceFromSlug } from "./workspace-map.js";
 import { TASK_SIGNAL_RE } from "./thinking.js";
 import { applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger } from "./triggers.js";
 import { detectLeak } from "../core/leak-detector.js";
@@ -109,6 +110,7 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		projectTask: input.projectTask,
 		flushPendingFacts: input.access.flushPendingFacts,
 		settleVerification: input.access.settleVerification,
+		rememberWorkspace: rememberSessionWorkspace,
 		saveSessionMemory: input.access.saveSessionMemory,
 		taskMemoriesOf: input.access.taskMemoriesOf,
 		contractOf: input.access.contractOf,
@@ -209,6 +211,7 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
 		renderRequirements,
 		renderProjectFacts,
 		isColdStart,
+		ensureSessionWorkspace,
 		renderTaskMemory,
 		buildContractMethodDirective,
 		buildRequirementMethodDirective,
@@ -243,6 +246,39 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
  * 但会话记录还在硬盘上。分片执行（每片一个会话）以免阻塞宿主同进程的事件循环。
  * 幂等来自 addFact 的相似度去重，所以每次启动重扫是安全的。
  */
+/** 会话目录 slug（本会话在 harness/sessions 下的父目录名）——只查一次，缓存起来。 */
+const slugCache = new Map<string, string | null>();
+function slugOf(sid: string): string | null {
+	if (!slugCache.has(sid)) {
+		const home = resolveDsHome();
+		slugCache.set(sid, home ? sessionDirSlug(sid, home) : null);
+	}
+	return slugCache.get(sid) ?? null;
+}
+
+/**
+ * 第一轮装配时把 cwd 补上：宿主的运行时快照（工作目录的唯一来源）**晚于**系统提示装配，
+ * 所以新会话第一轮会缺〔项目知识〕（现场：14:15 新会话，模型答"我这轮没接上上下文"）。
+ * 用「会话目录名 → 工作目录」的持久映射提前解出来。
+ */
+export function ensureSessionWorkspace(sid: string, st: SessionRuntime): void {
+	if (st.cwd) return;
+	const home = resolveDsHome();
+	if (!home) return;
+	const cwd = workspaceFromSlug(home, slugOf(sid));
+	if (cwd) {
+		st.cwd = cwd;
+		appendLumeLog(`[${sid}] 工作目录来自会话目录映射 → ${cwd}`);
+	}
+}
+
+/** 学到 cwd 时记进映射（本轮稍后、以及下一个会话的第一轮都能用）。 */
+export function rememberSessionWorkspace(sid: string, cwd: string): void {
+	const home = resolveDsHome();
+	if (!home) return;
+	rememberWorkspace(home, slugOf(sid), cwd);
+}
+
 export function startSessionBackfill(input: {
 	/** 可省略：省略时按 DSH_HOME / %APPDATA%\dsh-desktop 探测（宿主进程里 DSH_HOME 常常没有） */
 	dsHome?: string;

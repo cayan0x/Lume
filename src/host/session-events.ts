@@ -72,6 +72,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 								st.cwd = snapshotWorkspace;
 								deps.ctx.logger?.warn?.(`lume: [${sid}] 工作目录已解析（来源：运行时快照）→ ${snapshotWorkspace}`);
 								if (deps.projectMemoryOn) deps.flushPendingFacts(sid, event.data);
+								deps.rememberWorkspace(sid, snapshotWorkspace);
 								// 工作目录已知 → 预取本目录的会话记忆（提示块是同步装配的，先落到缓存）：
 								// 新会话开局要靠它接上「上一个会话干了什么」——上下文撑满时那边已经聊不动了。
 								if (st.taskMemories === null) {

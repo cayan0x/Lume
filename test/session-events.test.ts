@@ -87,6 +87,7 @@ function setup() {
 		projectTask: (sid: string, label: string) => { projectTasks.push([sid, label]); },
 		flushPendingFacts: vi.fn(),
 		saveSessionMemory: async () => true,
+		rememberWorkspace: () => {},
 		taskMemoriesOf: async () => [],
 		contextPressure: () => ({ level: "ok" as const, ratio: 0 }),
 		buildContextPressureDirective: () => "〔上下文接近上限〕",

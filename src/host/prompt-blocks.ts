@@ -45,6 +45,8 @@ export interface BlockDeps {
 	renderProjectFacts: (facts: ProjectFact[], limit?: number, currentTask?: string | null) => string | null;
 	/** 会话记忆：冷启动判定 + 注入渲染（纯函数，来自 core/task-memory） */
 	isColdStart: typeof taskMemoryMod.isColdStart;
+	/** 第一轮装配时 cwd 还没到（宿主快照在装配之后），用 slug→cwd 映射补上 */
+	ensureSessionWorkspace: (sid: string, st: SessionRuntime) => void;
 	renderTaskMemory: typeof taskMemoryMod.renderTaskMemory;
 	// ── 方法块 ──
 	buildContractMethodDirective: () => string;

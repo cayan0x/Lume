@@ -91,6 +91,8 @@ export interface SessionCarrierDeps {
 	saveSessionMemory: ProjectAccess["saveSessionMemory"];
 	taskMemoriesOf: ProjectAccess["taskMemoriesOf"];
 	settleVerification: ProjectAccess["settleVerification"];
+	/** 学到 cwd 时把「会话目录名 → 工作目录」存下来（第一轮装配要靠它） */
+	rememberWorkspace: (sid: string, cwd: string) => void;
 }
 
 /** 判据纯函数（core/host 的纯逻辑）：事件里只调用、不改状态。 */

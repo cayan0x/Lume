@@ -85,6 +85,8 @@ export interface SessionRuntime {
 	agent: {
 		/** 文件 → 读过的行窗口 / grep 命中的行（引用核对）。 */
 		evidence: EvidenceIndex;
+		/** 最近一次「未读就改」的目标（决策分档提醒要指名道姓）。 */
+		lastBlindTarget?: string | null;
 		/** 本会话写出的文档正文（覆盖核对要把需求原句与交付物句子并列）。 */
 		artifactText: string;
 		/** 首改前的定位门槛：本会话摸过（read/grep 命中）的目标路径。 */

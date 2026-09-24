@@ -19,6 +19,7 @@ import type { SessionRuntimeStore } from "./session-runtime.js";
 import type { ProjectStore } from "./project.js";
 import type { ProjectAccess } from "./project-access.js";
 import type { IdentityStore } from "./identity.js";
+import { pathKey } from "../core/citations.js";
 import type * as ledgerMod from "../core/ledger.js";
 import type * as knowledgeMod from "../core/knowledge.js";
 import type * as extractionMod from "./extraction.js";
@@ -249,18 +250,45 @@ export function registerLumeTools(deps: ToolDeps): void {
 			defineTool({
 				name: "lume_hypothesis",
 				description:
-					"假设台账：记录一条正在验证的假设及其证据与状态（open/testing/confirmed/excluded）。排查类任务里每验证一次就更新状态；已排除的假设不要再重复尝试。",
+					"假设台账：记录一条正在验证的假设及其证据与状态（open/testing/confirmed/excluded）。排查类任务里每验证一次就更新状态；已排除的假设不要再重复尝试。**下结论（confirmed/excluded）就是一次裁决**：证据、裁决方式、反例检查三项必填，缺一会被拒。",
 				parameters: {
 					text: { type: "string", required: true, description: "假设内容，一句话" },
-					evidence: { type: "string", description: "支持或推翻它的观察（含命令输出/时间戳摘要）" },
+					evidence: { type: "string", description: "支持或推翻它的观察（含命令输出 / 文件行 / 时间戳）" },
 					status: { type: "string", description: "open | testing | confirmed | excluded" },
+					method: { type: "string", description: "裁决方式：用哪条命令 / 工具、看什么结果判定的（confirmed/excluded 必填）" },
+					counter: { type: "string", description: "反例检查：找过哪些反例，或「已尝试 X 未找到反例」（confirmed/excluded 必填）" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已更新假设台账" }] },
 				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_hypothesis requires an active session");
-					const item = deps.normalizeHypothesis({ text: args.text, evidence: args.evidence, status: args.status }, Date.now());
+					const st = deps.runtime.get(sid);
+					const status = String(args.status ?? "open").trim();
+					const evidence = String(args.evidence ?? "").trim();
+					const method = String(args.method ?? "").trim();
+					const counter = String(args.counter ?? "").trim();
+					// 结论级裁决门禁（机械可判，不比模型自评）：下结论 = 裁决，三样缺一不可。
+					// 为什么要硬拦：真机里「confirmed/excluded」曾经只带一句「已验证 / 无」，
+					// 那种结论无法复核，等于把猜测固化成跨轮次的事实。
+					let stored = evidence;
+					if (status === "confirmed" || status === "excluded") {
+						if (evidence.length < 8)
+							throw new Error("下结论必须带证据：evidence 写清观察（命令输出 / 文件行 / 时间戳），不要只写「已验证」");
+						if (method.length < 6)
+							throw new Error("下结论必须写裁决方式 method：用哪条命令 / 工具、看什么结果判定的（例：npm test 全绿 / grep 到 X）");
+						if (counter.length < 8)
+							throw new Error("下结论必须写反例检查 counter：找过哪些反例，或「已尝试 X 未找到反例」——只写「无」不算");
+						// 证据里的文件引用必须真的看过（与引用核对同一套 pathKey 口径），否则就是编证据
+						const refs = [...evidence.matchAll(/[A-Za-z0-9_./\\-]+\.[A-Za-z]{1,5}(?::\d+)?/g)]
+							.map((m) => m[0].split(":")[0] ?? "")
+							.filter(Boolean);
+						const unseen = [...new Set(refs)].filter((ref) => !st.agent.evidence.has(pathKey(ref)));
+						if (unseen.length > 0) throw new Error(`证据里有本会话没看过的引用：${unseen.join("、")}——先去看过再引用（引用必须能被核对）`);
+						// 三项折进 evidence 一行：不新增存储字段＝不动归一化/渲染/兼容（历史条目照样读得出）
+						stored = `${evidence} ｜ 裁决：${method} ｜ 反例：${counter}`;
+					}
+					const item = deps.normalizeHypothesis({ text: args.text, evidence: stored, status }, Date.now());
 					if (!item) throw new Error("lume_hypothesis requires text");
 					await deps.projectStore().upsertHypothesis(sid, item);
 					deps.runtime.get(sid).hypothesesTouched = true;

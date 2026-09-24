@@ -96,6 +96,20 @@ function feed(
 	return counters;
 }
 
+describe("host/triggers：决策分档（未读就改）", () => {
+	it("改一个本会话没读过的目标 → 先分档（排在「增量验证」之前，因为依据本身有问题）", () => {
+		const counters = { ...newTriggerCounters(), unfoundedChanges: 1, mutateStreak: 9 };
+		const fire = evaluateToolTrigger(counters, { ...CTX, blindTarget: "src/x.ts" });
+		expect(fire?.id).toBe("unfounded-change");
+		expect(fire?.text).toContain("决策分档");
+		expect(fire?.text).toContain("src/x.ts"); // 要指名道姓，模型才知道该核实哪一份
+	});
+	it("没有盲改目标时不出这条（不能拿它当常规提醒）", () => {
+		const counters = { ...newTriggerCounters(), unfoundedChanges: 1 };
+		expect(evaluateToolTrigger(counters, { ...CTX, blindTarget: null })?.id).not.toBe("unfounded-change");
+	});
+});
+
 describe("evaluateToolTrigger", () => {
 	it("连续只读探查到阈值 → 收敛提醒（带具体步数）", () => {
 		const counters = feed("inspect", DEFAULT_TRIGGER_THRESHOLDS.inspectStreak);

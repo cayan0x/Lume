@@ -20,7 +20,8 @@ export type TriggerId =
 	| "converge"
 	| "criteria-drift"
 	| "knowledge-capture"
-	| "design-missing";
+	| "design-missing"
+	| "unfounded-change";
 
 export interface TriggerCounters {
 	/** 连续只读探查次数（被改动/验证/写载具打断）。 */
@@ -37,10 +38,21 @@ export interface TriggerCounters {
 	steps: number;
 	/** 摸到真实文件路径的只读探查次数（设计 pass 的触发依据） */
 	codeInspects: number;
+	/** 改过「本会话从没读过的目标」的次数（决策分档的触发依据）。 */
+	unfoundedChanges: number;
 }
 
 export function newTriggerCounters(): TriggerCounters {
-	return { inspectStreak: 0, mutateStreak: 0, verifyFailStreak: 0, verifyEnvHits: 0, mutations: 0, steps: 0, codeInspects: 0 };
+	return {
+		inspectStreak: 0,
+		mutateStreak: 0,
+		verifyFailStreak: 0,
+		verifyEnvHits: 0,
+		mutations: 0,
+		steps: 0,
+		codeInspects: 0,
+		unfoundedChanges: 0,
+	};
 }
 
 /** 计数器推进：语义是「行为模式」，因此只在类别切换或验证成败时重置。 */
@@ -119,6 +131,8 @@ export interface ToolTriggerContext {
 	designSignal: boolean;
 	/** 本轮是否更新过假设台账（更新过就不再提醒）。 */
 	hypothesesTouched: boolean;
+	/** 最近一次「未读就改」的目标路径（决策分档要指名道姓，模型才知道该核实哪一份）。 */
+	blindTarget?: string | null;
 }
 
 export interface TriggerFire {
@@ -148,6 +162,13 @@ export function evaluateToolTrigger(
 		return {
 			id: "dead-path",
 			text: `〔死路提醒〕同一验证已连续失败 ${n} 次。先归因（输入 / 逻辑 / 接口 / 环境 / 权限），把结论写进假设台账：证实的标 confirmed、排除的标 excluded（用 lume_hypothesis）——已排除的假设不要再试。换一个方案再动手。`,
+		};
+	}
+	// 决策分档：正在拿推测当依据改东西。排在「改多了要验证」之前——因为这一步的**依据**有问题。
+	if (counters.unfoundedChanges > 0 && ctx.blindTarget) {
+		return {
+			id: "unfounded-change",
+			text: `〔决策分档〕这一步在改一个**本会话没读过**的目标：${ctx.blindTarget}。二选一：① 先做最便宜的核实（读一次 / 跑一次 / 查一次引用），拿到事实再改；② 确实要带着不确定动手 → 用 lume_hypothesis 把它落成假设（写清证据与「怎么验证」，并说明「如果这条不成立会怎样」）。不要拿推测当依据直接改。`,
 		};
 	}
 	if (counters.mutateStreak >= thresholds.changeStreak || ctx.unverifiedChanges >= thresholds.changeStreak) {

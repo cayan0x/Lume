@@ -9,6 +9,7 @@
  * 全局：测试替身可以只实现自己关心的那几个。
  */
 import type { SessionRuntime } from "./session-runtime.js";
+import { pathKey } from "../core/citations.js";
 import { claimsVerification, looksLikeFailure } from "../core/signals.js";
 
 import type { HostPayload, LumeHostContext } from "./host-context.js";
@@ -114,6 +115,15 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
 				if (st.toolKind === "inspect" && deps.toolTargetOf(event.data)) st.triggerCounters.codeInspects++;
 				// 越权改动：判成问答却动了文件——「路由判错」的机械证据，比用户抱怨出现得更早。
+				// 决策分档的机械判据：要改的目标在本会话证据索引里查不到 basename（= 没读过就改）。
+				// 用 pathKey 归一（引用常用短名、工具参数常是完整路径），与引用核对同一套口径。
+				if (st.toolKind === "mutate") {
+					const target = deps.toolTargetOf(event.data);
+					if (target && !st.agent.evidence.has(pathKey(target))) {
+						st.triggerCounters.unfoundedChanges++;
+						st.agent.lastBlindTarget = target;
+					} else if (target) st.agent.lastBlindTarget = null;
+				}
 				if (st.toolKind === "mutate" && st.interactionMode === "question")
 					deps.recordMetric({
 						kind: "outcome",
@@ -235,6 +245,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							hasDesign: deps.designOf(sid).length > 0,
 							designSignal: deps.DESIGN_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? ""),
 							hypothesesTouched: st.hypothesesTouched,
+							blindTarget: st.agent.lastBlindTarget ?? null,
 						},
 						deps.triggerThresholds,
 					);

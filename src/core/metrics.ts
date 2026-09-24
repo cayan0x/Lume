@@ -111,6 +111,8 @@ export const TRIGGER_EXPECT: Record<string, EfficacyExpect> = {
 	"dead-path": "verify",
 	"contract-missing": "contract",
 	"design-missing": "design",
+	// 决策分档：预期变化是「把不确定落成假设」（假设数从无到有），而不是空口承诺
+	"unfounded-change": "hypothesis",
 	converge: "ledger",
 	"hypothesis-stale": "hypothesis",
 	"criteria-drift": "none",

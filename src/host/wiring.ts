@@ -19,7 +19,7 @@ import { messageText, visibleText } from "../core/text.js";
 import { extractKnowledgeCandidates, looksSensitive } from "../core/knowledge.js";
 import { buildContextPressureDirective, contextPressure, renderTaskMemory, isColdStart } from "../core/task-memory.js";
 import { toolArgsOf, toolNameOf, toolTargetOf, workspaceFromSnapshotText } from "./host-events.js";
-import { startBackfill } from "./backfill.js";
+import { resolveDsHome, startBackfill } from "./backfill.js";
 import { TASK_SIGNAL_RE } from "./thinking.js";
 import { applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger } from "./triggers.js";
 import { detectLeak } from "../core/leak-detector.js";
@@ -244,14 +244,21 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
  * 幂等来自 addFact 的相似度去重，所以每次启动重扫是安全的。
  */
 export function startSessionBackfill(input: {
-	dsHome: string;
+	/** 可省略：省略时按 DSH_HOME / %APPDATA%\dsh-desktop 探测（宿主进程里 DSH_HOME 常常没有） */
+	dsHome?: string;
 	log: (message: string) => void;
 	addFact: (projectKey: string, fact: ProjectFact) => Promise<boolean>;
 }): () => void {
-	if (!input.dsHome) return () => { /* 没有 DSH_HOME：什么都不做 */ };
+	// 目录定位：显式传入优先，否则探测。曾经的静默降级让“没跑”和“跑了没新增”无法区分（现场踩过）。
+	const dsHome = input.dsHome && input.dsHome.length > 0 ? input.dsHome : resolveDsHome();
+	if (!dsHome) {
+		input.log("lume: 会话补蒸馏跳过（未定位到会话目录：DSH_HOME 未设置，且 %APPDATA%\\dsh-desktop 下没有 harness/sessions）");
+		return () => { /* 无目录：什么都不做 */ };
+	}
+	input.log(`lume: 会话补蒸馏开始（会话目录：${dsHome}）`);
 	return startBackfill(
 		{
-			dsHome: input.dsHome,
+			dsHome,
 			extract: (text, source, userText) => extractKnowledgeCandidates(text, { source, userText }).map((c) => ({ kind: c.kind as string, text: c.text })),
 			messageText,
 			visibleText,

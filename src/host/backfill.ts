@@ -12,11 +12,32 @@
  * - **只认最近一段**：默认回看 7 天，避免每次启动扫全部历史。
  * - **失败静默降级**：宿主内部目录结构变了就什么都不做（只记一行日志），绝不影响启动。
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import type { ProjectFact } from "../core/ledger.js";
 import type { KnowledgeSource } from "../core/knowledge.js";
+
+/**
+ * 定位 DSH 数据目录（补蒸馏要找 `<base>/harness/sessions`）。
+ *
+ * 现场教训（2026-09-24）：最初只认 `DSH_HOME`，而宿主进程里它可能**不存在**（实测 null），
+ * 于是 `startSessionBackfill` 直接静默返回 —— **重启后一条知识都没沉淀，且没有任何日志**。
+ * 现在按候选探测（`%APPDATA%\dsh-desktop` 是现成路径），并且**无论成功失败都留痕**。
+ */
+export function resolveDsHome(env: NodeJS.ProcessEnv = process.env): string | null {
+	const candidates: string[] = [];
+	if (env.DSH_HOME) candidates.push(env.DSH_HOME);
+	if (env.LUME_DS_HOME) candidates.push(env.LUME_DS_HOME);
+	if (env.APPDATA) candidates.push(join(env.APPDATA, "dsh-desktop"));
+	if (env.LOCALAPPDATA) candidates.push(join(env.LOCALAPPDATA, "dsh-desktop"));
+	for (const candidate of candidates) {
+		try {
+			if (existsSync(join(candidate, "harness", "sessions"))) return candidate;
+		} catch { /* 探测失败就试下一个 */ }
+	}
+	return null;
+}
 
 export interface BackfillDeps {
 	/** 宿主数据根（`DSH_HOME`），会话目录在 `<root>/harness/sessions`。 */

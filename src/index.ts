@@ -513,7 +513,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			.then((store) => {
 				if (!store) return;
 				stopBackfill = startSessionBackfill({
-					dsHome: String(process.env.DSH_HOME ?? ""),
 					log: appendLumeLog,
 					addFact: (key, fact) => store.addFact(key, fact, isDuplicateFact),
 				});

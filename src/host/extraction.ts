@@ -16,8 +16,7 @@ export const CORRECTION_KEYWORD_RE =
 
 /** 认可信号：用户明显认可回复「像本人」——值得摘录进语料。
  * 「说得好」太泛（可能只是认可内容），不收。 */
-export const APPROVAL_KEYWORD_RE =
-	/太像了|有内味|有那味|就是这个味|好像你|一模一样|对味|像本人|本人无疑|很你|有你的味|怎么做到这么/;
+export const APPROVAL_KEYWORD_RE = /太像了|有内味|有那味|就是这个味|好像你|一模一样|对味|像本人|本人无疑|很你|有你的味|怎么做到这么/;
 
 /** 一条 LLM 路由（provider + model）。 */
 export interface LlmRoute {
@@ -29,10 +28,7 @@ export interface LlmRoute {
  * 辅助 LLM 路由解析（被动提取/蒸馏共用）：配置的专用模型优先，未配置的维度
  * 逐项回落到主对话路由；任一维度都没有 → null（模型不可用，跳过对应功能）。
  */
-export function resolveAuxRoute(
-	override: { provider?: string; model?: string },
-	conversationRoute: LlmRoute | null,
-): LlmRoute | null {
+export function resolveAuxRoute(override: { provider?: string; model?: string }, conversationRoute: LlmRoute | null): LlmRoute | null {
 	const provider = override.provider ?? conversationRoute?.provider;
 	const model = override.model ?? conversationRoute?.model;
 	return provider && model ? { provider, model } : null;
@@ -74,7 +70,11 @@ export function isCoolingDown(lastExtractionAt: number | undefined, now: number,
 }
 
 /** 组装提取请求（system + 单条 user 消息文本）。调用方自行喂给 llm。 */
-export function buildExtractionPrompt(userText: string, assistantText: string, existingFacts: string[]): { system: string; userText: string } {
+export function buildExtractionPrompt(
+	userText: string,
+	assistantText: string,
+	existingFacts: string[],
+): { system: string; userText: string } {
 	const known = existingFacts.length > 0 ? `已有记忆（勿重复）：\n${existingFacts.map((f) => `- ${f}`).join("\n")}` : "已有记忆：无";
 	return {
 		system: [
@@ -89,7 +89,11 @@ export function buildExtractionPrompt(userText: string, assistantText: string, e
 
 /** 解析模型输出：优先 JSON 数组；退化为「列表样」逐行剥点；非列表样输出一律为空。 */
 export function parseFacts(output: string): string[] {
-	const trimmed = output.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+	const trimmed = output
+		.trim()
+		.replace(/^```(?:json)?/i, "")
+		.replace(/```$/, "")
+		.trim();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(trimmed);
@@ -134,8 +138,13 @@ export function extractNaming(facts: string[]): string | null {
  * 与记忆提取共用「三道门 + 小模型」模式；输出单条规则，由 addStyleRule 的
  * Jaccard 相似替换保证纠偏不断收敛而不是堆叠。
  */
-export function buildCorrectionPrompt(userText: string, assistantText: string, existingRules: string[]): { system: string; userText: string } {
-	const known = existingRules.length > 0 ? `已有风格约定（勿重复）：\n${existingRules.map((r) => `- ${r}`).join("\n")}` : "已有风格约定：无";
+export function buildCorrectionPrompt(
+	userText: string,
+	assistantText: string,
+	existingRules: string[],
+): { system: string; userText: string } {
+	const known =
+		existingRules.length > 0 ? `已有风格约定（勿重复）：\n${existingRules.map((r) => `- ${r}`).join("\n")}` : "已有风格约定：无";
 	return {
 		system: [
 			"你是人设风格约定提炼器。用户刚才对你（人设）的说话方式表达了不满或纠正。",
@@ -145,7 +154,7 @@ export function buildCorrectionPrompt(userText: string, assistantText: string, e
 			"- 一句话祈使句，≤40 字，如「少用叠词和语气词，语气放平」「不要在每句话都夸人」；",
 			"- 已有约定里语义相同的（换个说法但同一个意思）就输出 null，不重复添加；",
 			"- 用户的反馈只是情绪宣泄、没有可执行的风格指令时输出 null。",
-			"只输出一个 JSON 字符串（如 \"少用叠词\"），或 null。不要输出任何其他内容。",
+			'只输出一个 JSON 字符串（如 "少用叠词"），或 null。不要输出任何其他内容。',
 		].join("\n"),
 		userText: `${known}\n\n上一轮：\n用户：${userText}\n助手：${assistantText}`,
 	};
@@ -153,7 +162,11 @@ export function buildCorrectionPrompt(userText: string, assistantText: string, e
 
 /** 解析纠偏输出：合法单条规则返回原文（≤40 字），其余（null/空/非字符串）返回 null。 */
 export function parseCorrectionRule(output: string): string | null {
-	const trimmed = output.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+	const trimmed = output
+		.trim()
+		.replace(/^```(?:json)?/i, "")
+		.replace(/```$/, "")
+		.trim();
 	if (!trimmed || trimmed === "null") return null;
 	let value: unknown;
 	try {

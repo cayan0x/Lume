@@ -28,7 +28,13 @@ function makeInput(opts: { failIdentity?: boolean; failReflection?: boolean; fai
 			open: vi.fn(async (spec: unknown) => {
 				const name = JSON.stringify(spec ?? "").slice(0, 40);
 				opened.push(name);
-				const key = name.includes("identity") ? "identity" : name.includes("reflection") ? "reflection" : name.includes("project") ? "project" : "persona";
+				const key = name.includes("identity")
+					? "identity"
+					: name.includes("reflection")
+						? "reflection"
+						: name.includes("project")
+							? "project"
+							: "persona";
 				if (key === "identity" && opts.failIdentity) throw new Error("identity 域打不开");
 				if (key === "reflection" && opts.failReflection) throw new Error("reflection 域打不开");
 				if (key === "project" && opts.failProject) throw new Error("project 域打不开");
@@ -90,7 +96,9 @@ describe("host/bootstrap：四域降级与 getter 句柄", () => {
 		await handles.projectReady;
 		await Promise.resolve();
 		// 用一个必定抛错的替身 store 驱动 projectTask
-		handles.projectTask("sid-1", "测试写入", () => { throw new Error("写入炸了"); });
+		handles.projectTask("sid-1", "测试写入", () => {
+			throw new Error("写入炸了");
+		});
 		await new Promise((r) => setTimeout(r, 10));
 		expect(warns.some((w) => String(w[0]).includes("测试写入"))).toBe(true);
 	});

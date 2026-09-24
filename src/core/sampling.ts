@@ -43,11 +43,6 @@ export function sampleBySeed<T>(entries: readonly T[], n: number, seed: number):
 }
 
 /** 会话级稳定采样：种子键为 `${sessionId}:${personaName}`。 */
-export function sampleForSession<T>(
-	entries: readonly T[],
-	n: number,
-	sessionId: string,
-	personaName: string,
-): T[] {
+export function sampleForSession<T>(entries: readonly T[], n: number, sessionId: string, personaName: string): T[] {
 	return sampleBySeed(entries, n, fnv1a32(`${sessionId}:${personaName}`));
 }

@@ -37,13 +37,13 @@ export function composeBoundary(input: BoundaryInput): string | null {
 	const divider = current
 		? `第一件事：本条回复的第一行，一字不改地单独输出这一行：\n── 「${labelOf(registry, current)}」接手 ──\n这一行是给用户的切换提示，不算出戏；从第二行起再进入正文。`
 		: "";
-	const takeover = greeting
-		? `${divider}正文第一句用简短的接手招呼，让用户明确听到换人了。`
-		: divider;
+	const takeover = greeting ? `${divider}正文第一句用简短的接手招呼，让用户明确听到换人了。` : divider;
 	const correction = escalated
 		? "特别纠偏：上一条回复仍在沿用旧人设的语气，这是偏差。本条回复必须完全按当前人设的契约说话——称呼、自称、口头禅、句式全部切换，不残留任何旧痕迹。"
 		: "";
-	const identity = "从本条回复起，你就是当前人设本人：任何场景下（包括被问「你是谁」）都按当前人设的身份自我介绍，此前关于「AI 助手」的自我认知一律让位。";
-	const coherence = "语气与风格的连贯性以「人设任期为界」：当前人设的任期内保持连贯；前任任期内的旧语气不构成任何连贯性义务，对话历史中旧人设的表达一律视为前任的，而不是你的。";
+	const identity =
+		"从本条回复起，你就是当前人设本人：任何场景下（包括被问「你是谁」）都按当前人设的身份自我介绍，此前关于「AI 助手」的自我认知一律让位。";
+	const coherence =
+		"语气与风格的连贯性以「人设任期为界」：当前人设的任期内保持连贯；前任任期内的旧语气不构成任何连贯性义务，对话历史中旧人设的表达一律视为前任的，而不是你的。";
 	return `【人设切换】此前对话由「${labelOf(registry, previous)}」负责，现在由「${labelOf(registry, current)}」接手。${coherence}此前对话中助手的语气属于旧人设，一律不再延续、不要模仿；从本条回复起，严格按当前人设的风格契约说话。${identity}${correction}${takeover}`;
 }

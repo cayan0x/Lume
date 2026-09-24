@@ -96,14 +96,14 @@ export function buildPersonaContractSection(input: PersonaContractInput): string
 		// 推理型模型思考时默认以助手口吻组织语言，最终答复会顺着推理的语气走——
 		// 这条锚要求连思考方向都以人设身份展开，是人设能「上身」的第一道闸。
 		const who = input.profileName ?? persona.displayName;
-		parts.push(`〔说话人切换〕现在起你不是通用助手，你是「${who}」。你的每一句话——包括解释、提问、拒绝——都要从「${who}」嘴里说出来，用 TA 的口吻、TA 的用词、TA 的断句。下面的人设契约是唯一标准，任何与它冲突的默认助手习惯一律作废。\n\n${promptText}`);
+		parts.push(
+			`〔说话人切换〕现在起你不是通用助手，你是「${who}」。你的每一句话——包括解释、提问、拒绝——都要从「${who}」嘴里说出来，用 TA 的口吻、TA 的用词、TA 的断句。下面的人设契约是唯一标准，任何与它冲突的默认助手习惯一律作废。\n\n${promptText}`,
+		);
 	}
 
 	// 2. 身份
 	if (input.profileName) {
-		parts.push(
-			`【你是谁】你的名字是「${input.profileName}」。这是你自己的身份，跨会话、跨项目不变；用户在任何地方叫这个名字都是在叫你。`,
-		);
+		parts.push(`【你是谁】你的名字是「${input.profileName}」。这是你自己的身份，跨会话、跨项目不变；用户在任何地方叫这个名字都是在叫你。`);
 	}
 
 	if (parts.length === 0) return "";
@@ -125,14 +125,10 @@ export function buildPersonaRuntimeSection(input: PersonaRuntimeInput): string {
 	const styles = input.styleRules;
 	if (styles.length > 0) {
 		const chosen =
-			config.strategy === "full"
-				? styles.slice(-config.styleInject)
-				: topKByRelevance(styles, (r) => r.rule, query, config.styleInject);
+			config.strategy === "full" ? styles.slice(-config.styleInject) : topKByRelevance(styles, (r) => r.rule, query, config.styleInject);
 		if (chosen.length > 0) {
 			parts.push(
-				`【习得的风格约定】以下是你在对话中学到的最新要求，与基础风格冲突时以此为准：\n${chosen
-					.map((r) => `- ${r.rule}`)
-					.join("\n")}`,
+				`【习得的风格约定】以下是你在对话中学到的最新要求，与基础风格冲突时以此为准：\n${chosen.map((r) => `- ${r.rule}`).join("\n")}`,
 			);
 		}
 	}
@@ -163,12 +159,7 @@ export function buildPersonaRuntimeSection(input: PersonaRuntimeInput): string {
 	const pinCount = Math.min(pins.length, sampleCount);
 	// 摘录语料直接占前 pinCount 个槽位（最新优先），其余槽位从基础语料确定性采样。
 	const pinSlots = pins.slice(-pinCount).reverse();
-	const baseSlots = sampleForSession(
-		persona.corpus ?? [],
-		Math.max(0, sampleCount - pinSlots.length),
-		input.sessionKey,
-		persona.name,
-	);
+	const baseSlots = sampleForSession(persona.corpus ?? [], Math.max(0, sampleCount - pinSlots.length), input.sessionKey, persona.name);
 	const samples = [...pinSlots, ...baseSlots];
 	if (samples.length > 0) {
 		const lines = samples

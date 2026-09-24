@@ -1,119 +1,122 @@
 {
-	"name": "lume-dsh-plugin",
-	"description": "微光 (Lume) — DSH Desktop 增强插件：给会话装上工程纪律与真实关系。纪律层约束「如何正确完成任务」——意图路由、阶段门控、真实工具证据、交付前复核、文档能力感知；方法层把量化需求、改动台账、假设台账与项目知识变成可检查的产出，并用行为触发器在轨迹上纠偏（撒网不收敛 / 连写不验 / 死路重撞）；人设层塑造「以何种风格表达」——从聊天记录、小说、剧本、设定文档蒸馏具名角色，长期记忆与风格随对话演进。约束按需注入，闲聊不额外付 token。",
-	"version": "0.8.0",
-	"type": "module",
-	"main": "lib/index.js",
-	"exports": {
-		".": {
-			"default": "./lib/index.js"
-		},
-		"./client": {
-			"default": "./lib/client.js"
-		},
-		"./package.json": "./package.json"
-	},
-	"dsh": {
-		"bundle": {
-			"patch": "./cordis.patch.yml"
-		},
-		"client": {
-			"inject": [
-				"@deepseek-ai/dsh-client-connection",
-				"@deepseek-ai/dsh-client-locale",
-				"@deepseek-ai/dsh-client-runtime",
-				"@deepseek-ai/dsh-client-ui-conversation",
-				"@deepseek-ai/dsh-client-ui-primitives"
-			],
-			"external": [
-				"react",
-				"react/jsx-runtime",
-				"@deepseek-ai/dsh-client-ui-primitives"
-			],
-			"platform": "web",
-			"immediately": true
-		}
-	},
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/cayan0x/Lume.git"
-	},
-	"keywords": [
-		"dsh-plugin",
-		"persona",
-		"personality",
-		"identity",
-		"memory",
-		"protocol",
-		"task-execution",
-		"distillation",
-		"人设",
-		"记忆"
-	],
-	"engines": {
-		"node": ">=20"
-	},
-	"peerDependencies": {
-		"@deepseek-ai/cordis": "^4.0.1",
-		"@deepseek-ai/dsh-llm": "*",
-		"@deepseek-ai/dsh-storage-domain": "*",
-		"@deepseek-ai/dsh-tools": "*",
-		"@deepseek-ai/schemastery": "^3.18.1"
-	},
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json && tsdown",
-		"bundle": "tsdown",
-		"watch": "tsdown --watch",
-		"test": "vitest run",
-		"release:check": "npm run lint && npm run build && node scripts/release-check.mjs",
-		"release:publish": "node scripts/publish.mjs",
-		"release:audit": "node scripts/release-check.mjs --published",
-		"lint": "node scripts/lint-arch.mjs && tsc -p tsconfig.json --noEmit && node scripts/mechanism-coverage.mjs",
-		"verify:live": "node scripts/verify-live.mjs"
-	},
-	"devDependencies": {
-		"@deepseek-ai/cordis": "^4.0.1",
-		"@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.6",
-		"@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.2",
-		"@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-scope": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-session": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-storage": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-storage-domain": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-storage-json": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-timeout": "^0.0.1-rc.1",
-		"@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
-		"@deepseek-ai/schemastery": "^3.18.1",
-		"@types/node": "^22.20.1",
-		"@types/react": "~18.3.1",
-		"tsdown": "^0.22.14",
-		"typescript": "^5.9.3",
-		"vitest": "^3.2.7"
-	},
-	"files": [
-		"lib",
-		"cordis.patch.yml",
-		"assets/personalities.json",
-		"assets/personalities/*.txt",
-		"assets/personalities/*.jsonl",
-		"CHANGELOG.md"
-	],
-	"peerDependenciesMeta": {
-		"@deepseek-ai/cordis": {
-			"optional": true
-		},
-		"@deepseek-ai/dsh-llm": {
-			"optional": true
-		},
-		"@deepseek-ai/dsh-storage-domain": {
-			"optional": true
-		},
-		"@deepseek-ai/dsh-tools": {
-			"optional": true
-		},
-		"@deepseek-ai/schemastery": {
-			"optional": true
-		}
-	}
+  "name": "lume-dsh-plugin",
+  "description": "微光 (Lume) — DSH Desktop 增强插件：给会话装上工程纪律与真实关系。纪律层约束「如何正确完成任务」——意图路由、阶段门控、真实工具证据、交付前复核、文档能力感知；方法层把量化需求、改动台账、假设台账与项目知识变成可检查的产出，并用行为触发器在轨迹上纠偏（撒网不收敛 / 连写不验 / 死路重撞）；人设层塑造「以何种风格表达」——从聊天记录、小说、剧本、设定文档蒸馏具名角色，长期记忆与风格随对话演进。约束按需注入，闲聊不额外付 token。",
+  "version": "0.8.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "external": [
+        "react",
+        "react/jsx-runtime",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cayan0x/Lume.git"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "persona",
+    "personality",
+    "identity",
+    "memory",
+    "protocol",
+    "task-execution",
+    "distillation",
+    "人设",
+    "记忆"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/dsh-storage-domain": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsdown",
+    "bundle": "tsdown",
+    "watch": "tsdown --watch",
+    "test": "vitest run",
+    "release:check": "npm run lint && npm run build && node scripts/release-check.mjs",
+    "release:publish": "node scripts/publish.mjs",
+    "release:audit": "node scripts/release-check.mjs --published",
+    "lint": "node scripts/lint-arch.mjs && prettier --check src test scripts && tsc -p tsconfig.json --noEmit && node scripts/mechanism-coverage.mjs",
+    "verify:live": "node scripts/verify-live.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-llm": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-scope": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-session": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-storage": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-storage-json": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-timeout": "^0.0.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@types/node": "^22.20.1",
+    "@types/react": "~18.3.1",
+    "prettier": "^3.9.9",
+    "tsdown": "^0.22.14",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "assets/personalities.json",
+    "assets/personalities/*.txt",
+    "assets/personalities/*.jsonl",
+    "CHANGELOG.md"
+  ],
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-storage-domain": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  }
 }

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	BUILTIN_PERSONA_NAMES,
-	IdentityStore,
-	LUME_IDENTITY_SPEC,
-} from "../src/host/identity.js";
+import { BUILTIN_PERSONA_NAMES, IdentityStore, LUME_IDENTITY_SPEC } from "../src/host/identity.js";
 import { FakePersonaTable } from "./fake-table.js";
 
 function makeStore() {
@@ -46,9 +42,7 @@ describe("IdentityStore memory", () => {
 	it("skips duplicates via the dedupe gate", async () => {
 		const { store } = makeStore();
 		await store.addMemory("loli", "用户喜欢深夜写代码", () => false);
-		const written = await store.addMemory("loli", "用户喜欢深夜写代码", (c, all) =>
-			all.some((f) => f.text.includes(c)),
-		);
+		const written = await store.addMemory("loli", "用户喜欢深夜写代码", (c, all) => all.some((f) => f.text.includes(c)));
 		expect(written).toBe(false);
 		expect(store.getMemory("loli")).toHaveLength(1);
 	});
@@ -114,18 +108,18 @@ describe("IdentityStore custom personas", () => {
 	it("refuses to shadow or delete builtin personas", async () => {
 		const { store } = makeStore();
 		for (const name of BUILTIN_PERSONA_NAMES) {
-			await expect(
-				store.setCustomPersona(name, { displayName: "x", description: "", promptText: "y", createdAt: 1 }),
-			).rejects.toThrow(/builtin/);
+			await expect(store.setCustomPersona(name, { displayName: "x", description: "", promptText: "y", createdAt: 1 })).rejects.toThrow(
+				/builtin/,
+			);
 			await expect(store.deleteCustomPersona(name)).rejects.toThrow(/builtin/);
 		}
 	});
 
 	it("validates the persona key format", async () => {
 		const { store } = makeStore();
-		await expect(
-			store.setCustomPersona("Bad Key!", { displayName: "x", description: "", promptText: "y", createdAt: 1 }),
-		).rejects.toThrow(/invalid persona key/);
+		await expect(store.setCustomPersona("Bad Key!", { displayName: "x", description: "", promptText: "y", createdAt: 1 })).rejects.toThrow(
+			/invalid persona key/,
+		);
 	});
 });
 

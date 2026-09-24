@@ -17,7 +17,9 @@ function makeCtx(opts: { withContext?: boolean } = {}) {
 	const warns: unknown[][] = [];
 	const ctx = {
 		logger: { warn: (...args: unknown[]) => warns.push(args) },
-		effect: (fn: () => unknown) => { fn(); },
+		effect: (fn: () => unknown) => {
+			fn();
+		},
 		systemPrompt: {
 			section: (o: Registered) => sections.push(o),
 			context: opts.withContext === false ? undefined : (o: Registered) => contexts.push(o),
@@ -52,7 +54,10 @@ describe("host/sections：注册到哪条通道", () => {
 		const { ctx, sections } = makeCtx();
 		installPromptSections(makeDeps({ ctx }));
 		// 注册顺序：人设契约段在前、思考协议段在后（顺序由各自 order 决定，这里只锁实际注册序）
-		expect(sections.map((s) => [s.name, s.order])).toEqual([["lume:persona", 10000], ["lume:thinking", 1]]);
+		expect(sections.map((s) => [s.name, s.order])).toEqual([
+			["lume:persona", 10000],
+			["lume:thinking", 1],
+		]);
 	});
 
 	it("易变段走 context：deps.contexts 逐个注册 + 工具失败提示段（尾部）", () => {

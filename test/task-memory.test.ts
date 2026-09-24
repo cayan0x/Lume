@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildTaskMemory, buildContextPressureDirective, contextPressure, isColdStart, memoryWeight, renderTaskMemory, renderTaskMemoryMarkdown } from "../src/core/task-memory.js";
+import {
+	buildTaskMemory,
+	buildContextPressureDirective,
+	contextPressure,
+	isColdStart,
+	memoryWeight,
+	renderTaskMemory,
+	renderTaskMemoryMarkdown,
+} from "../src/core/task-memory.js";
 
 /**
  * 会话记忆：解决"上下文满了 → 会话聊不动 → 知识跟着会话一起消失"。
@@ -37,7 +45,10 @@ describe("core/task-memory：构建与注入", () => {
 	});
 
 	it("注入文本给出接续指令、需求原话与死路（接手不用重做）", () => {
-		const text = renderTaskMemory(buildTaskMemory(base), { now: Date.now(), recent: [{ title: "重复支付订单退费", at: Date.now() - 3600_000 }] })!;
+		const text = renderTaskMemory(buildTaskMemory(base), {
+			now: Date.now(),
+			recent: [{ title: "重复支付订单退费", at: Date.now() - 3600_000 }],
+		})!;
 		expect(text).toContain("〔上次会话记忆");
 		expect(text).toContain("继续 B2I 优惠视图新增字段");
 		expect(text).toContain("具体数据待运营梳理后提供");

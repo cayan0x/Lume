@@ -20,7 +20,29 @@
 import { fnv1a32 } from "./sampling.js";
 
 /** 命令名白名单：它们常出现在“这个仓库怎么跑”类知识里。 */
-const COMMANDS = ["mvn", "gradle", "npm", "pnpm", "yarn", "node", "git", "curl", "curl.exe", "psql", "mysql", "docker", "kubectl", "npx", "tsc", "vitest", "jest", "eslint", "dotnet", "python", "pip"];
+const COMMANDS = [
+	"mvn",
+	"gradle",
+	"npm",
+	"pnpm",
+	"yarn",
+	"node",
+	"git",
+	"curl",
+	"curl.exe",
+	"psql",
+	"mysql",
+	"docker",
+	"kubectl",
+	"npx",
+	"tsc",
+	"vitest",
+	"jest",
+	"eslint",
+	"dotnet",
+	"python",
+	"pip",
+];
 
 const UPPER_RE = /[A-Z][A-Z0-9_]{2,}/g;
 const CAMEL_RE = /\b[a-z]+[A-Z][A-Za-z0-9]{2,}/g;
@@ -45,7 +67,7 @@ export function topicKey(text: string): string {
 		for (let i = 0; i < run.length - 1; i++) grams.push(run.slice(i, i + 2));
 		return grams;
 	});
-	const words = (lower.match(/[a-z0-9]{4,}/g) ?? []);
+	const words = lower.match(/[a-z0-9]{4,}/g) ?? [];
 	const picked = [...new Set([...words, ...cjk])].slice(0, 6);
 	return picked.join("+");
 }

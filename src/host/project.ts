@@ -70,36 +70,42 @@ export const LUME_PROJECT_SPEC = defineDomain({
 		),
 		/** 改动台账（键 = sessionId）。 */
 		ledger: domainTable(
-			zodLike(z.array(z.object({ target: z.string(), change: z.string(), why: z.string(), verify: z.string(), status: z.string(), at: z.number() }))),
+			zodLike(
+				z.array(
+					z.object({ target: z.string(), change: z.string(), why: z.string(), verify: z.string(), status: z.string(), at: z.number() }),
+				),
+			),
 		),
 		/** 假设台账（键 = sessionId）。 */
 		hypotheses: domainTable(zodLike(z.array(z.object({ text: z.string(), evidence: z.string(), status: z.string(), at: z.number() })))),
 		/** 项目知识（键 = projectKey，跨会话共享）。 */
 		/** 设计决策（键 = sessionId）：功能型任务的设计 pass 产出，跨轮/跨压缩保留。 */
-	/** 需求锚点（键 = sessionId）：用户原话逐字保留，每轮回显——治「用自己的转述替代需求」。 */
-	/** 会话记忆（键 = projectKey）：结构化导出会话状态，供下次开新会话续接——上下文不能当记忆载体。 */
-	task_memory: domainTable(
-		zodLike(
-			z.array(
-				z.object({
-					sid: z.string(),
-					title: z.string(),
-					turn: z.number(),
-					goal: z.string(),
-					requirement: z.array(z.string()),
-					decided: z.array(z.string()),
-					changed: z.array(z.string()),
-					open: z.array(z.string()),
-					deadends: z.array(z.string()),
-					locate: z.array(z.string()),
-					at: z.number(),
-				}),
+		/** 需求锚点（键 = sessionId）：用户原话逐字保留，每轮回显——治「用自己的转述替代需求」。 */
+		/** 会话记忆（键 = projectKey）：结构化导出会话状态，供下次开新会话续接——上下文不能当记忆载体。 */
+		task_memory: domainTable(
+			zodLike(
+				z.array(
+					z.object({
+						sid: z.string(),
+						title: z.string(),
+						turn: z.number(),
+						goal: z.string(),
+						requirement: z.array(z.string()),
+						decided: z.array(z.string()),
+						changed: z.array(z.string()),
+						open: z.array(z.string()),
+						deadends: z.array(z.string()),
+						locate: z.array(z.string()),
+						at: z.number(),
+					}),
+				),
 			),
 		),
-	),
-	requirements: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
-	design: domainTable(zodLike(z.array(z.object({ point: z.string(), choice: z.string(), rejected: z.string(), impact: z.string(), at: z.number() })))),
-	facts: domainTable(zodLike(z.array(z.object({ kind: z.string(), text: z.string(), at: z.number() })))),
+		requirements: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
+		design: domainTable(
+			zodLike(z.array(z.object({ point: z.string(), choice: z.string(), rejected: z.string(), impact: z.string(), at: z.number() }))),
+		),
+		facts: domainTable(zodLike(z.array(z.object({ kind: z.string(), text: z.string(), at: z.number() })))),
 	},
 });
 
@@ -208,7 +214,10 @@ export class ProjectStore {
 		return value
 			.map((entry) => {
 				const raw = entry as Record<string, unknown>;
-				const normalized = normalizeChange({ target: raw?.target, change: raw?.change, why: raw?.why, verify: raw?.verify, status: raw?.status }, typeof raw?.at === "number" ? raw.at : 0);
+				const normalized = normalizeChange(
+					{ target: raw?.target, change: raw?.change, why: raw?.why, verify: raw?.verify, status: raw?.status },
+					typeof raw?.at === "number" ? raw.at : 0,
+				);
 				return normalized;
 			})
 			.filter((item): item is ChangeItem => item !== null);
@@ -323,7 +332,11 @@ export class ProjectStore {
 	}
 
 	/** 追加项目事实；近似重复的忽略。返回是否写入。 */
-	async addFact(projectKey: string, fact: ProjectFact, isDuplicate: (candidate: string, existing: ProjectFact[]) => boolean): Promise<boolean> {
+	async addFact(
+		projectKey: string,
+		fact: ProjectFact,
+		isDuplicate: (candidate: string, existing: ProjectFact[]) => boolean,
+	): Promise<boolean> {
 		const facts = this.getFacts(projectKey);
 		// 内容寻址（见 core/memory-id.ts）：同主题就是同一条知识 → 精确命中，不再全表算相似度。
 		const same = fact.id ? facts.findIndex((item) => item.id === fact.id) : -1;
@@ -379,7 +392,13 @@ export class ProjectStore {
 
 	/** 会话结束清理：任务态数据不跨会话保留（项目知识是另一张表，不受影响）。 */
 	async clearSession(sid: string): Promise<void> {
-		await Promise.all([this.#contractTable.delete(sid), this.#ledgerTable.delete(sid), this.#hypothesisTable.delete(sid), this.#designTable.delete(sid), this.#requirementTable.delete(sid)]);
+		await Promise.all([
+			this.#contractTable.delete(sid),
+			this.#ledgerTable.delete(sid),
+			this.#hypothesisTable.delete(sid),
+			this.#designTable.delete(sid),
+			this.#requirementTable.delete(sid),
+		]);
 	}
 
 	/** 诊断用：当前项目键下的事实条数。 */
@@ -391,7 +410,10 @@ export class ProjectStore {
 		return value
 			.map((entry) => {
 				const raw = entry as Record<string, unknown>;
-				return normalizeDesign({ point: raw?.point, choice: raw?.choice, rejected: raw?.rejected, impact: raw?.impact }, typeof raw?.at === "number" ? raw.at : 0);
+				return normalizeDesign(
+					{ point: raw?.point, choice: raw?.choice, rejected: raw?.rejected, impact: raw?.impact },
+					typeof raw?.at === "number" ? raw.at : 0,
+				);
 			})
 			.filter((item): item is DesignDecision => item !== null);
 	}

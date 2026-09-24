@@ -115,7 +115,7 @@ describe("纠偏捕获与语料摘录门", () => {
 
 	it("parseCorrectionRule accepts a rule, rejects null and garbage", () => {
 		expect(parseCorrectionRule('"少用叠词"')).toBe("少用叠词");
-		expect(parseCorrectionRule("```json\n\"语气放平\"\n```")).toBe("语气放平");
+		expect(parseCorrectionRule('```json\n"语气放平"\n```')).toBe("语气放平");
 		expect(parseCorrectionRule("null")).toBeNull();
 		expect(parseCorrectionRule('["a","b"]')).toBeNull();
 		expect(parseCorrectionRule("")).toBeNull();

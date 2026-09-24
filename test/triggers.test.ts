@@ -7,7 +7,14 @@
 import { describe, expect, it } from "vitest";
 import { trimRequirements } from "../src/core/ledger.js";
 import { classifyTool, deadPathKind, readResultSignals } from "../src/core/signals.js";
-import { DRIFT_NOTICE_MAX, auditOpenQuestions, countOpenQuestions, isRealVerifyCommand, summarizeToolChange, unrequestedChangeWords } from "../src/core/signals.js";
+import {
+	DRIFT_NOTICE_MAX,
+	auditOpenQuestions,
+	countOpenQuestions,
+	isRealVerifyCommand,
+	summarizeToolChange,
+	unrequestedChangeWords,
+} from "../src/core/signals.js";
 import {
 	DEFAULT_TRIGGER_THRESHOLDS,
 	applyToolSignal,
@@ -65,9 +72,23 @@ describe("readResultSignals", () => {
 	});
 });
 
-const CTX: ToolTriggerContext = { turnIndex: 0, isTask: true, diagnosing: false, hasContract: false, unverifiedChanges: 0, hasDesign: false, designSignal: false, hypothesesTouched: false };
+const CTX: ToolTriggerContext = {
+	turnIndex: 0,
+	isTask: true,
+	diagnosing: false,
+	hasContract: false,
+	unverifiedChanges: 0,
+	hasDesign: false,
+	designSignal: false,
+	hypothesesTouched: false,
+};
 
-function feed(kind: Parameters<typeof applyToolSignal>[1], times: number, counters: TriggerCounters = newTriggerCounters(), signals = OK): TriggerCounters {
+function feed(
+	kind: Parameters<typeof applyToolSignal>[1],
+	times: number,
+	counters: TriggerCounters = newTriggerCounters(),
+	signals = OK,
+): TriggerCounters {
 	for (let i = 0; i < times; i++) {
 		applyToolSignal(counters, kind, null);
 		if (kind === "verify") applyVerifyOutcome(counters, kind, signals);
@@ -229,7 +250,14 @@ describe("unrequestedChangeWords", () => {
 
 describe("isRealVerifyCommand（C1 自动推进台账的口径）", () => {
 	it("真验证：编译 / 测试 / 检查 / 构建", () => {
-		for (const command of ["npm test", "npm run build", "npx vitest run", "node node_modules/.bin/tsc -p tsconfig.json", "mvn -o test", "pnpm lint"]) {
+		for (const command of [
+			"npm test",
+			"npm run build",
+			"npx vitest run",
+			"node node_modules/.bin/tsc -p tsconfig.json",
+			"mvn -o test",
+			"pnpm lint",
+		]) {
 			expect(isRealVerifyCommand(JSON.stringify({ command }))).toBe(true);
 		}
 	});
@@ -261,7 +289,14 @@ describe("countOpenQuestions（提问纪律的结构化核对）", () => {
 	});
 
 	it("现场数据：turn 21 那条认账回答（没有待定清单）→ 0 项", () => {
-		const answer = ["**先撤那三个**", "1. 生产库类型：跟这个需求没关系。撤。", "2. 分页：核实了，后端已经返回 total。撤。", "3. 权限人下拉：这个我自己定，撤。", "**status 的双口径是什么意思**", "同一字段三个入口两套算法。"].join("\n");
+		const answer = [
+			"**先撤那三个**",
+			"1. 生产库类型：跟这个需求没关系。撤。",
+			"2. 分页：核实了，后端已经返回 total。撤。",
+			"3. 权限人下拉：这个我自己定，撤。",
+			"**status 的双口径是什么意思**",
+			"同一字段三个入口两套算法。",
+		].join("\n");
 		expect(countOpenQuestions(answer)).toBe(0);
 	});
 
@@ -272,7 +307,8 @@ describe("countOpenQuestions（提问纪律的结构化核对）", () => {
 	});
 
 	it("现场数据：turn 22 那条「标一条待定：status 口径」→ 条目无行号证据，要顶（1 条也要顶）", () => {
-		const answer = "**文档里要标一条待定**：status 口径。我先按「跟 Excel 的值走」写（和导入新增的行为保持一致），标成待确认。你不认的话我改成按生失效时间重算。";
+		const answer =
+			"**文档里要标一条待定**：status 口径。我先按「跟 Excel 的值走」写（和导入新增的行为保持一致），标成待确认。你不认的话我改成按生失效时间重算。";
 		const audit = auditOpenQuestions(answer);
 		expect(audit.count).toBe(1);
 		expect(audit.unsupported.length).toBe(1);
@@ -280,13 +316,17 @@ describe("countOpenQuestions（提问纪律的结构化核对）", () => {
 	});
 
 	it("带行号证据的待定条目 → 不算「自己造的疑问」", () => {
-		const audit = auditOpenQuestions("**待确认**\n1. status 该听谁：导入路径 WtpfGoodsPrepertyDefServiceImpl:534 直写 Excel 值，页面 226-231 按时间重算");
+		const audit = auditOpenQuestions(
+			"**待确认**\n1. status 该听谁：导入路径 WtpfGoodsPrepertyDefServiceImpl:534 直写 Excel 值，页面 226-231 按时间重算",
+		);
 		expect(audit.count).toBe(1);
 		expect(audit.unsupported).toEqual([]);
 	});
 
 	it("说明「代码答不了」的条目 → 不算（环境/账号类问题本来就是真阻塞）", () => {
-		const audit = auditOpenQuestions("**待确认**\n1. 生产库是 MySQL 还是 PG：配置在配置中心，代码库里查不到\n2. 线上分页越界行为：我登录不了环境，需要你提供");
+		const audit = auditOpenQuestions(
+			"**待确认**\n1. 生产库是 MySQL 还是 PG：配置在配置中心，代码库里查不到\n2. 线上分页越界行为：我登录不了环境，需要你提供",
+		);
 		expect(audit.count).toBe(2);
 		expect(audit.unsupported).toEqual([]);
 	});
@@ -294,7 +334,9 @@ describe("countOpenQuestions（提问纪律的结构化核对）", () => {
 
 describe("summarizeToolChange（自动台账条目要能当交付依据）", () => {
 	it("从 new_string / content 取首行摘要", () => {
-		expect(summarizeToolChange({ file_path: "a.ts", old_string: "x", new_string: "\n  const a = 1;\n  const b = 2;" }, "edit")).toBe("const a = 1;");
+		expect(summarizeToolChange({ file_path: "a.ts", old_string: "x", new_string: "\n  const a = 1;\n  const b = 2;" }, "edit")).toBe(
+			"const a = 1;",
+		);
 		expect(summarizeToolChange({ path: "b.ts", content: "export function f() {}\n" }, "write")).toBe("export function f() {}");
 	});
 
@@ -306,7 +348,8 @@ describe("summarizeToolChange（自动台账条目要能当交付依据）", () 
 
 describe("需求锚点保留策略（2026-09-23 现场：需求原文被评审粘贴挤出表外）", () => {
 	it("有结构的需求原文优先保留，闲聊与评审先被挤掉", () => {
-		const REQ = "三、B2I优惠视图新增字段 1、新增权限人字段 （1）列表页新增权限人 （2）批量导入时导入账号为权限人 2、业务类型调整 （1）下拉新增三项 4、历史数据的权限人和业务类型都需开发做批量数据导入---具体数据待运营梳理后提供";
+		const REQ =
+			"三、B2I优惠视图新增字段 1、新增权限人字段 （1）列表页新增权限人 （2）批量导入时导入账号为权限人 2、业务类型调整 （1）下拉新增三项 4、历史数据的权限人和业务类型都需开发做批量数据导入---具体数据待运营梳理后提供";
 		const items = [
 			{ text: "历史数据的业务类型要批量导入", at: 1 },
 			{ text: "嗯", at: 2 },

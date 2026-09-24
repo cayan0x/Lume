@@ -39,7 +39,11 @@ describe("buildPersonaSection 五段式", () => {
 	});
 
 	it("empty persona with a boundary still emits the takeover announcement (none takeover)", () => {
-		const text = buildPersonaSection({ ...emptyInput, persona: undefined, boundaryText: "【人设切换】此前对话由「晚晴」负责，现在由「默认风格」接手。" });
+		const text = buildPersonaSection({
+			...emptyInput,
+			persona: undefined,
+			boundaryText: "【人设切换】此前对话由「晚晴」负责，现在由「默认风格」接手。",
+		});
 		expect(text).toContain("【人设切换】");
 		expect(text).toContain("默认风格");
 	});

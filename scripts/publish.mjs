@@ -55,7 +55,11 @@ for (let attempt = 1; attempt <= 45; attempt++) {
 	await new Promise((resolve) => setTimeout(resolve, 20000));
 	published = check(["--published", version, "--expect-version", version]);
 	if (published.ok) break;
-	if (!published.output.includes("registry 上没有")) break;\n\tif (attempt === 45) {\n\t\tconsole.error("✗ registry 15 分钟仍未出现该版本：**不做任何破坏性操作**（既不弃用也不动 latest）——大概率只是传播慢，稍后用 npm run release:audit --published X 复查");\n\t\tprocess.exit(1);\n\t}
+		if (!published.output.includes("registry 上没有")) break;
+		if (attempt === 45) {
+			console.error("✗ registry 15 分钟仍未出现该版本：**不做任何破坏性操作**（既不弃用也不动 latest）——大概率只是传播慢，稍后用 npm run release:audit --published <版本> 复查");
+			process.exit(1);
+		}
 	console.log(`  … registry 尚未出现 ${version}（第 ${attempt} 次）`);
 }
 

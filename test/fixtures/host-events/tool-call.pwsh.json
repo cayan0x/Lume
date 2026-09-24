@@ -1,7 +1,7 @@
 {
-	"turn": 2,
-	"step": 1,
-	"callId": "call_00_zUFIOwR82QUvLYEIpYOq7183",
-	"name": "pwsh",
-	"arguments": "{\"command\":\"Get-ChildItem -Force | Select-Object Mode,Name\",\"description\":\"List workspace root entries\"}"
+  "turn": 2,
+  "step": 1,
+  "callId": "call_00_zUFIOwR82QUvLYEIpYOq7183",
+  "name": "pwsh",
+  "arguments": "{\"command\":\"Get-ChildItem -Force | Select-Object Mode,Name\",\"description\":\"List workspace root entries\"}"
 }

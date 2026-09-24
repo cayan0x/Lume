@@ -34,7 +34,21 @@ interface FullCard {
 }
 
 /** 浏览器下载 JSON 文件（DSH webview 内可用）。 */
-export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc; items: ManageItem[] }) {
+export function ManageModal({
+	open,
+	onClose,
+	onSaved,
+	t,
+	callRpc,
+	items,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onSaved: () => void;
+	t: Translate;
+	callRpc: CallRpc;
+	items: ManageItem[];
+}) {
 	const [phase, setPhase] = useState<"list" | "edit" | "import">("list");
 	const [deleteTarget, setDeleteTarget] = useState<{ name: string; label: string } | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
@@ -165,7 +179,13 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 		}
 	};
 
-	const rowStyle = { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--color-border, #222)" } as const;
+	const rowStyle = {
+		display: "flex",
+		alignItems: "center",
+		gap: 8,
+		padding: "8px 0",
+		borderBottom: "1px solid var(--color-border, #222)",
+	} as const;
 
 	return (
 		<Modal
@@ -175,48 +195,98 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			footer={
 				phase === "edit" && editing ? (
 					<>
-						<Button variant="ghost" onClick={() => setPhase("list")}>{t("manage.cancel")}</Button>
-						<Button variant="primary" disabled={!editing.card.displayName.trim() || !editing.card.promptText.trim()} onClick={() => void saveEdit()}>{t("manage.save")}</Button>
+						<Button variant="ghost" onClick={() => setPhase("list")}>
+							{t("manage.cancel")}
+						</Button>
+						<Button
+							variant="primary"
+							disabled={!editing.card.displayName.trim() || !editing.card.promptText.trim()}
+							onClick={() => void saveEdit()}
+						>
+							{t("manage.save")}
+						</Button>
 					</>
 				) : (
-					<Button variant="primary" onClick={onClose}>{t("manage.close")}</Button>
+					<Button variant="primary" onClick={onClose}>
+						{t("manage.close")}
+					</Button>
 				)
 			}
-			>
-				{phase === "list" ? (
-					<div>
-						{exportTarget ? (
-							<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", marginBottom: 12, borderRadius: 8, background: "var(--color-bg-2, #1a1b1e)", border: "1px solid var(--color-border, #333)" }}>
-								<div style={{ flex: 1, minWidth: 0 }}>
-									<div style={{ fontSize: 13, fontWeight: 500 }}>{exportTarget.label}</div>
-									<label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 12, opacity: 0.8, cursor: "pointer" }}>
-										<input type="checkbox" checked={includeMemory} onChange={(e) => setIncludeMemory(e.target.checked)} />
-										{t("manage.export.memory")}
-									</label>
-								</div>
-								<div style={{ display: "flex", gap: 8 }}>
-									<Button size="sm" variant="ghost" onClick={() => setExportTarget(null)}>{t("manage.cancel")}</Button>
-									<Button size="sm" variant="primary" onClick={() => void doExport(exportTarget.name)}>{t("manage.export.confirm")}</Button>
-								</div>
+		>
+			{phase === "list" ? (
+				<div>
+					{exportTarget ? (
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 12,
+								padding: "10px 12px",
+								marginBottom: 12,
+								borderRadius: 8,
+								background: "var(--color-bg-2, #1a1b1e)",
+								border: "1px solid var(--color-border, #333)",
+							}}
+						>
+							<div style={{ flex: 1, minWidth: 0 }}>
+								<div style={{ fontSize: 13, fontWeight: 500 }}>{exportTarget.label}</div>
+								<label
+									style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 12, opacity: 0.8, cursor: "pointer" }}
+								>
+									<input type="checkbox" checked={includeMemory} onChange={(e) => setIncludeMemory(e.target.checked)} />
+									{t("manage.export.memory")}
+								</label>
 							</div>
-							) : null}
-							{deleteTarget ? (
-								<div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", marginBottom: 12, borderRadius: 8, background: "var(--color-danger-bg, rgba(229, 85, 102, 0.10))", border: "1px solid var(--color-danger, #e56)" }}>
-									<div style={{ flex: 1, minWidth: 0 }}>
-										<div style={{ fontSize: 13, fontWeight: 500 }}>{deleteTarget.label}</div>
-										<div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>{t("manage.delete.warning")}</div>
-									</div>
-									<div style={{ display: "flex", gap: 8 }}>
-										<Button size="sm" variant="ghost" onClick={() => setDeleteTarget(null)}>{t("manage.cancel")}</Button>
-										<Button size="sm" variant="primary" onClick={() => void doDelete(deleteTarget.name)}>{t("manage.confirm.delete")}</Button>
-									</div>
-								</div>
-							) : null}
-							<div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-								<input ref={fileRef} type="file" accept=".json,application/json" style={{ display: "none" }} onChange={(e) => void doImport(e.target.files?.[0])} />
-								<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("manage.import")}</Button>
+							<div style={{ display: "flex", gap: 8 }}>
+								<Button size="sm" variant="ghost" onClick={() => setExportTarget(null)}>
+									{t("manage.cancel")}
+								</Button>
+								<Button size="sm" variant="primary" onClick={() => void doExport(exportTarget.name)}>
+									{t("manage.export.confirm")}
+								</Button>
 							</div>
-						{items.length === 0 ? <div style={{ padding: "16px 0", fontSize: 13, opacity: 0.7 }}>{t("manage.empty")}</div> : null}
+						</div>
+					) : null}
+					{deleteTarget ? (
+						<div
+							style={{
+								display: "flex",
+								alignItems: "center",
+								gap: 12,
+								padding: "10px 12px",
+								marginBottom: 12,
+								borderRadius: 8,
+								background: "var(--color-danger-bg, rgba(229, 85, 102, 0.10))",
+								border: "1px solid var(--color-danger, #e56)",
+							}}
+						>
+							<div style={{ flex: 1, minWidth: 0 }}>
+								<div style={{ fontSize: 13, fontWeight: 500 }}>{deleteTarget.label}</div>
+								<div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>{t("manage.delete.warning")}</div>
+							</div>
+							<div style={{ display: "flex", gap: 8 }}>
+								<Button size="sm" variant="ghost" onClick={() => setDeleteTarget(null)}>
+									{t("manage.cancel")}
+								</Button>
+								<Button size="sm" variant="primary" onClick={() => void doDelete(deleteTarget.name)}>
+									{t("manage.confirm.delete")}
+								</Button>
+							</div>
+						</div>
+					) : null}
+					<div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+						<input
+							ref={fileRef}
+							type="file"
+							accept=".json,application/json"
+							style={{ display: "none" }}
+							onChange={(e) => void doImport(e.target.files?.[0])}
+						/>
+						<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+							{t("manage.import")}
+						</Button>
+					</div>
+					{items.length === 0 ? <div style={{ padding: "16px 0", fontSize: 13, opacity: 0.7 }}>{t("manage.empty")}</div> : null}
 					{items.map((item) => {
 						const label = item.profileName ?? item.displayName;
 						const isCustom = item.custom === true;
@@ -231,19 +301,49 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 										{item.description || item.name}
 									</div>
 								</div>
-								<Button size="sm" variant="outline" onClick={() => { setExportTarget({ name: item.name, label: item.profileName ?? item.displayName }); setIncludeMemory(false); }}>{t("manage.export")}</Button>
-									<Button size="sm" variant="outline" onClick={() => { setMemoryTarget({ name: item.name, label: item.profileName ?? item.displayName }); setMemoryOpen(true); }}>{t("memory.title")}</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => {
+										setExportTarget({ name: item.name, label: item.profileName ?? item.displayName });
+										setIncludeMemory(false);
+									}}
+								>
+									{t("manage.export")}
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => {
+										setMemoryTarget({ name: item.name, label: item.profileName ?? item.displayName });
+										setMemoryOpen(true);
+									}}
+								>
+									{t("memory.title")}
+								</Button>
 								{isCustom ? (
-								<>
-									<Button size="sm" variant="outline" onClick={() => void startEdit(item.name)}>{t("manage.edit")}</Button>
-									<Button size="sm" variant="outline" onClick={() => setDeleteTarget({ name: item.name, label: item.profileName ?? item.displayName })}>{t("manage.delete")}</Button>
-								</>
-							) : (
-								<>
-									<Button size="sm" variant="outline" disabled>{t("manage.edit")}</Button>
-									<Button size="sm" variant="outline" disabled>{t("manage.delete")}</Button>
-								</>
-							)}
+									<>
+										<Button size="sm" variant="outline" onClick={() => void startEdit(item.name)}>
+											{t("manage.edit")}
+										</Button>
+										<Button
+											size="sm"
+											variant="outline"
+											onClick={() => setDeleteTarget({ name: item.name, label: item.profileName ?? item.displayName })}
+										>
+											{t("manage.delete")}
+										</Button>
+									</>
+								) : (
+									<>
+										<Button size="sm" variant="outline" disabled>
+											{t("manage.edit")}
+										</Button>
+										<Button size="sm" variant="outline" disabled>
+											{t("manage.delete")}
+										</Button>
+									</>
+								)}
 							</div>
 						);
 					})}
@@ -251,12 +351,18 @@ export function ManageModal({ open, onClose, onSaved, t, callRpc, items }: { ope
 			) : editing ? (
 				<div>
 					<label style={labelStyle}>{t("manage.display.label")}</label>
-					<Input value={editing.card.displayName} onChange={(e) => setEditing((s) => (s ? { ...s, card: { ...s.card, displayName: e.target.value } } : s))} />
+					<Input
+						value={editing.card.displayName}
+						onChange={(e) => setEditing((s) => (s ? { ...s, card: { ...s.card, displayName: e.target.value } } : s))}
+					/>
 					<label style={labelStyle}>{t("manage.key.label")}</label>
 					<Input value={editing.name} disabled />
 					<div style={{ fontSize: 11, opacity: 0.55, marginTop: 4 }}>{t("manage.key.hint")}</div>
 					<label style={labelStyle}>{t("manage.desc.label")}</label>
-					<Input value={editing.card.description} onChange={(e) => setEditing((s) => (s ? { ...s, card: { ...s.card, description: e.target.value } } : s))} />
+					<Input
+						value={editing.card.description}
+						onChange={(e) => setEditing((s) => (s ? { ...s, card: { ...s.card, description: e.target.value } } : s))}
+					/>
 					<label style={labelStyle}>{t("manage.prompt.label")}</label>
 					<textarea
 						value={editing.card.promptText}

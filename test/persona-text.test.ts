@@ -41,9 +41,7 @@ describe("buildPersonaText", () => {
 
 	it("is session-stable: same session, same text", () => {
 		const persona = makePersona();
-		expect(buildPersonaText(persona, 4, "session-abc")).toBe(
-			buildPersonaText(persona, 4, "session-abc"),
-		);
+		expect(buildPersonaText(persona, 4, "session-abc")).toBe(buildPersonaText(persona, 4, "session-abc"));
 	});
 
 	it("caps samples at corpus size", () => {

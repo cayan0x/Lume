@@ -96,7 +96,12 @@ describe("turn-boundary（轮边界收尾）", () => {
 	});
 
 	it("失败连击：同请求连续两轮失败 → protocol 槽顶「先定位根因」，且不重复同一调用", () => {
-		const st = makeSt({ userText: "再跑一次部署", lastFailureQuery: "再跑一次部署", failureStreak: 1, assistantText: "部署失败：permission denied" });
+		const st = makeSt({
+			userText: "再跑一次部署",
+			lastFailureQuery: "再跑一次部署",
+			failureStreak: 1,
+			assistantText: "部署失败：permission denied",
+		});
 		handleTurnEnd(makeDeps(), "sid", st, {});
 		expect(st.failureStreak).toBe(2);
 		expect(noticeText(st, "protocol")).toContain("先定位根因");

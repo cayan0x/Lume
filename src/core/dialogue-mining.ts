@@ -199,7 +199,8 @@ function condenseNarrative(text: string, cap = NARRATIVE_CAP): string {
 /** 聊天记录时间戳行：2026年08月31日 00:40（也兼容 2026-08-31 00:40）。 */
 const CHAT_TS_RE = /^\d{4}[-年]\d{1,2}[-月]\d{1,2}日?\s+\d{1,2}:\d{2}/;
 /** 非文本消息占位：[语音] 3" / [图片] 微信图片_xxx.jpg / [动画表情]。 */
-const CHAT_PLACEHOLDER_RE = /^\[(语音|图片|视频|动画表情|表情|文件|链接|转账|红包|位置|名片|小程序|引用|音乐|语音通话|视频通话|接龙|笔记|收藏)/;
+const CHAT_PLACEHOLDER_RE =
+	/^\[(语音|图片|视频|动画表情|表情|文件|链接|转账|红包|位置|名片|小程序|引用|音乐|语音通话|视频通话|接龙|笔记|收藏)/;
 /** 纯方括号短占位（QQ 表情名如 [无语]、[捂脸]）。 */
 const CHAT_EMOJI_RE = /^\[[^\]\s]{1,8}\]$/;
 /** 对象替换符（微信复制时图片/表情的残留）。 */
@@ -279,7 +280,9 @@ function cleanChatContent(lines: string[]): string {
 
 /** 聊天记录模式挖掘：目标说话人（hint 或最高频）为台词主源，其余归用户侧。 */
 export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
-	const target = hint?.trim() ? (chat.speakers.find((s) => s === hint.trim() || s.includes(hint.trim()) || hint.trim().includes(s)) ?? null) : null;
+	const target = hint?.trim()
+		? (chat.speakers.find((s) => s === hint.trim() || s.includes(hint.trim()) || hint.trim().includes(s)) ?? null)
+		: null;
 	const speaker = target ?? chat.speakers[0] ?? null;
 	const targetLines = chat.messages.filter((m) => m.speaker === speaker).map((m) => m.text);
 	const otherLines = chat.messages.filter((m) => m.speaker !== speaker).map((m) => m.text);
@@ -296,7 +299,7 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 	};
 	for (const m of chat.messages) {
 		if (m.speaker === speaker) {
-			const gap = pendingAt && m.timestamp ? (toMillis(m.timestamp)! - toMillis(pendingAt)!) : null;
+			const gap = pendingAt && m.timestamp ? toMillis(m.timestamp)! - toMillis(pendingAt)! : null;
 			// 超过 6 小时视为新话题，不能把前一天的闲聊拼成当前回复的上下文。
 			if (pendingUser.length > 0 && m.text.length <= 240 && (gap === null || (gap >= 0 && gap <= 6 * 60 * 60 * 1000))) {
 				pairs.push({ user: pendingUser.join(" ").slice(-240), assistant: m.text });
@@ -311,12 +314,15 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 
 	// 契约不能只看目标单边台词：保留每条目标消息前后的小窗口，学习触发条件、
 	// 关系距离和情绪转折。窗口只进蒸馏 prompt，不会污染最终 few-shot 语料。
-	const targetIndexes = chat.messages.map((m, i) => m.speaker === speaker ? i : -1).filter((i) => i >= 0);
+	const targetIndexes = chat.messages.map((m, i) => (m.speaker === speaker ? i : -1)).filter((i) => i >= 0);
 	const contexts: string[] = [];
 	for (const i of evenSample(targetIndexes, 16)) {
 		const start = Math.max(0, i - 3);
 		const end = Math.min(chat.messages.length, i + 2);
-		const window = chat.messages.slice(start, end).map((m) => `${m.speaker === speaker ? "目标" : "用户"}：${m.text}`).join("\n");
+		const window = chat.messages
+			.slice(start, end)
+			.map((m) => `${m.speaker === speaker ? "目标" : "用户"}：${m.text}`)
+			.join("\n");
 		contexts.push(window.slice(0, 700));
 	}
 	const targetTexts = targetLines;
@@ -351,7 +357,12 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 		return null;
 	};
 	// 用户给目标的备注（如「老公」）= 用户如何称呼目标；目标消息里的称呼词（如「老婆」）= 目标如何称呼用户
-	const userToTarget = [...new Set([...RELATION_WORDS.filter((w) => speaker !== null && speaker.includes(w)), ...userLines.map(greetingOf).filter((w): w is string => Boolean(w))])].slice(0, 6);
+	const userToTarget = [
+		...new Set([
+			...RELATION_WORDS.filter((w) => speaker !== null && speaker.includes(w)),
+			...userLines.map(greetingOf).filter((w): w is string => Boolean(w)),
+		]),
+	].slice(0, 6);
 	const targetToUser = [...new Set(targetLinesAll.map(greetingOf).filter((w): w is string => Boolean(w)))].slice(0, 6);
 	const relationship = { userToTarget, targetToUser };
 
@@ -374,11 +385,40 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 
 /** 关系称呼词：出现在对话中即揭示双方关系定位。 */
 const RELATION_WORDS = [
-	"老公", "老婆", "媳妇", "弟妹", "宝宝", "宝贝", "亲爱的",
-	"爸爸", "妈妈", "爸", "妈", "爹", "娘",
-	"哥", "姐", "弟", "妹", "哥哥", "姐姐", "弟弟", "妹妹",
-	"师傅", "师父", "老板", "同事", "闺蜜", "兄弟", "哥们", "姐妹",
-	"女神", "男神", "前男/女友", "前男友", "前女友",
+	"老公",
+	"老婆",
+	"媳妇",
+	"弟妹",
+	"宝宝",
+	"宝贝",
+	"亲爱的",
+	"爸爸",
+	"妈妈",
+	"爸",
+	"妈",
+	"爹",
+	"娘",
+	"哥",
+	"姐",
+	"弟",
+	"妹",
+	"哥哥",
+	"姐姐",
+	"弟弟",
+	"妹妹",
+	"师傅",
+	"师父",
+	"老板",
+	"同事",
+	"闺蜜",
+	"兄弟",
+	"哥们",
+	"姐妹",
+	"女神",
+	"男神",
+	"前男/女友",
+	"前男友",
+	"前女友",
 ];
 
 /** 真实事件信号：生日/纪念/年份/岁数/共同经历/对方身份事实/约定。 */
@@ -481,7 +521,10 @@ export function mineDialogue(text: string, hint?: string): DialogueMining {
 	// 归属不足（小说多声部 / 独白 / 设定文档）：全部台词交 LLM 甄别
 	return {
 		speaker: hint ?? null,
-		lines: evenSample(quoted.map((l) => l.line), MAX_MINED_LINES),
+		lines: evenSample(
+			quoted.map((l) => l.line),
+			MAX_MINED_LINES,
+		),
 		otherLines: [],
 		narrative: condenseNarrative(normalized),
 		kind: "quote",

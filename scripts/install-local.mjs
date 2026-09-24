@@ -17,10 +17,7 @@ import process from "node:process";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DRY = process.argv.includes("--dry-run");
-const ROOTS = [
-	"D:\\DSH-Data\\dsh-desktop\\harness",
-	path.join(process.env.APPDATA ?? "", "dsh-desktop", "harness"),
-];
+const ROOTS = ["D:\\DSH-Data\\dsh-desktop\\harness", path.join(process.env.APPDATA ?? "", "dsh-desktop", "harness")];
 const MARKERS = [
 	["自动改动台账", "自动）由"],
 	["契约数量必填", "required: true"],
@@ -60,7 +57,9 @@ for (const root of new Set(ROOTS.filter(Boolean))) {
 			if (existsSync(path.join(ROOT, file))) cpSync(path.join(ROOT, file), path.join(pkg, file));
 		}
 		const index = readFileSync(path.join(pkg, "lib", "index.js"), "utf8");
-		const protocol = existsSync(path.join(pkg, "lib", "host", "protocol.js")) ? readFileSync(path.join(pkg, "lib", "host", "protocol.js"), "utf8") : "";
+		const protocol = existsSync(path.join(pkg, "lib", "host", "protocol.js"))
+			? readFileSync(path.join(pkg, "lib", "host", "protocol.js"), "utf8")
+			: "";
 		const all = index + protocol;
 		console.log(`     ${MARKERS.map(([label, marker]) => `${label}=${all.includes(marker)}`).join("  ")}`);
 		patched++;
@@ -72,7 +71,9 @@ for (const root of new Set(ROOTS.filter(Boolean))) {
 	if (!existsSync(profile)) continue;
 	try {
 		const pkg = JSON.parse(readFileSync(profile, "utf8"));
-		console.log(`\n  profile 依赖：${pkg.dependencies?.["lume-dsh-plugin"] ?? "?"}  →  generationProjection=${JSON.stringify(pkg.dsh?.desktop?.generationProjection?.plugins?.["lume-dsh-plugin"]?.generationId ?? "?")}`);
+		console.log(
+			`\n  profile 依赖：${pkg.dependencies?.["lume-dsh-plugin"] ?? "?"}  →  generationProjection=${JSON.stringify(pkg.dsh?.desktop?.generationProjection?.plugins?.["lume-dsh-plugin"]?.generationId ?? "?")}`,
+		);
 	} catch {
 		/* 忽略 */
 	}

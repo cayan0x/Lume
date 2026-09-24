@@ -15,9 +15,6 @@ import type { PersonaSample } from "../core/manifest.js";
 // 容量与语料净化已移到 core/persona-limits.ts（core 不该依赖 host）；这里再导出，调用点不必全改。
 export { BUILTIN_PERSONA_NAMES, CORPUS_CAP, CORPUS_LINE_CAP, MEMORY_CAP, STYLE_CAP, sanitizeCorpus } from "../core/persona-limits.js";
 
-
-
-
 /**
  * schemastery → 存储域 schema 桥接。
  * 官方契约：domainTable 的 schema 必须暴露 `.parse(raw)`（zod 形状），open 时
@@ -27,7 +24,9 @@ export { BUILTIN_PERSONA_NAMES, CORPUS_CAP, CORPUS_LINE_CAP, MEMORY_CAP, STYLE_C
  * parse 的「返回|抛错」语义；行为由集成测试的带数据重开域用例锁死。
  */
 export function zodLike(schema: unknown): Parameters<typeof domainTable>[0] {
-	const standard = (schema as { "~standard"?: { validate(value: unknown): { value?: unknown; issues?: { message: string }[] } } })["~standard"];
+	const standard = (schema as { "~standard"?: { validate(value: unknown): { value?: unknown; issues?: { message: string }[] } } })[
+		"~standard"
+	];
 	if (typeof standard?.validate !== "function") {
 		throw new Error("schema does not implement the Standard Schema ~standard interface");
 	}
@@ -44,37 +43,38 @@ export function zodLike(schema: unknown): Parameters<typeof domainTable>[0] {
 export const LUME_IDENTITY_SPEC = defineDomain({
 	name: "lume_persona_identity",
 	version: 1,
-		tables: {
-			profile: domainTable(zodLike(z.object({ name: z.string() }))),
-		memory_facts: domainTable(zodLike(z.array(z.union([
-			z.object({ text: z.string(), at: z.number() }),
-			z.object({ text: z.string(), at: z.number(), scope: z.string(), confidence: z.number(), expiresAt: z.number() }),
-		])))),
-			style_rules: domainTable(zodLike(z.array(z.object({ rule: z.string(), at: z.number() })))),
-			/** 对话中摘录的「被用户认可」语料对（注入时并入采样池）；键 = 人设名。 */
-			corpus_pins: domainTable(zodLike(z.array(z.object({ user: z.string(), assistant: z.string(), at: z.number() })))),
-			custom_personas: domainTable(
-				zodLike(
-					z.object({
-						displayName: z.string(),
-						description: z.string(),
-						promptText: z.string(),
-						createdAt: z.number(),
-						/** 蒸馏产出的示例对话语料；可选字段，旧记录无此键照常通过 open 校验。 */
-						corpus: z.array(z.object({ user: z.string(), assistant: z.string() })),
-						distillVersion: z.number(),
-						distillSource: z.string(),
-						distillHint: z.string(),
-					}),
+	tables: {
+		profile: domainTable(zodLike(z.object({ name: z.string() }))),
+		memory_facts: domainTable(
+			zodLike(
+				z.array(
+					z.union([
+						z.object({ text: z.string(), at: z.number() }),
+						z.object({ text: z.string(), at: z.number(), scope: z.string(), confidence: z.number(), expiresAt: z.number() }),
+					]),
 				),
 			),
-		},
+		),
+		style_rules: domainTable(zodLike(z.array(z.object({ rule: z.string(), at: z.number() })))),
+		/** 对话中摘录的「被用户认可」语料对（注入时并入采样池）；键 = 人设名。 */
+		corpus_pins: domainTable(zodLike(z.array(z.object({ user: z.string(), assistant: z.string(), at: z.number() })))),
+		custom_personas: domainTable(
+			zodLike(
+				z.object({
+					displayName: z.string(),
+					description: z.string(),
+					promptText: z.string(),
+					createdAt: z.number(),
+					/** 蒸馏产出的示例对话语料；可选字段，旧记录无此键照常通过 open 校验。 */
+					corpus: z.array(z.object({ user: z.string(), assistant: z.string() })),
+					distillVersion: z.number(),
+					distillSource: z.string(),
+					distillHint: z.string(),
+				}),
+			),
+		),
+	},
 });
-
-
-
-
-
 
 export interface MemoryFact {
 	text: string;
@@ -120,10 +120,10 @@ function asArray<T>(value: unknown): T[] {
 	return Array.isArray(value) ? (value as T[]) : [];
 }
 
-
-
 function isFactList(value: unknown): value is MemoryFact[] {
-	return Array.isArray(value) && value.every((v) => typeof (v as MemoryFact)?.text === "string" && typeof (v as MemoryFact)?.at === "number");
+	return (
+		Array.isArray(value) && value.every((v) => typeof (v as MemoryFact)?.text === "string" && typeof (v as MemoryFact)?.at === "number")
+	);
 }
 
 const TEMPORARY_MEMORY_RE = /今天|今晚|明天|昨天|现在|正在|刚刚|最近|这周|本周|目前|暂时|下班|吃饭|吃过|在吃/;
@@ -192,13 +192,16 @@ export class IdentityStore {
 		if (isDuplicate(trimmed, facts)) return false;
 		const at = Date.now();
 		const temporary = TEMPORARY_MEMORY_RE.test(trimmed);
-		const next = [...facts, {
-			text: trimmed,
-			at,
-			scope: temporary ? "temporary" as const : "stable" as const,
-			confidence: 1,
-			...(temporary ? { expiresAt: at + TEMPORARY_MEMORY_TTL_MS } : {}),
-		}];
+		const next = [
+			...facts,
+			{
+				text: trimmed,
+				at,
+				scope: temporary ? ("temporary" as const) : ("stable" as const),
+				confidence: 1,
+				...(temporary ? { expiresAt: at + TEMPORARY_MEMORY_TTL_MS } : {}),
+			},
+		];
 		while (next.length > MEMORY_CAP) next.shift();
 		await this.#memoryTable.put(persona, next);
 		return true;
@@ -231,7 +234,9 @@ export class IdentityStore {
 
 	getCorpusPins(persona: string): CorpusPin[] {
 		const value = this.#pinsTable.get(persona);
-		return Array.isArray(value) ? (value as CorpusPin[]).filter((p) => typeof p?.assistant === "string" && typeof p?.user === "string") : [];
+		return Array.isArray(value)
+			? (value as CorpusPin[]).filter((p) => typeof p?.assistant === "string" && typeof p?.user === "string")
+			: [];
 	}
 
 	/** 摘录语料对：与既有内容高度相似（Jaccard）或完全重复的跳过，超限挤掉最旧。 */

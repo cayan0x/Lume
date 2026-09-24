@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { advancePhase, buildAlignmentCorrection, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolFailureNotice, classifyInteraction, isUserAuthored, taskPhaseForMode } from "../src/host/protocol.js";
+import {
+	advancePhase,
+	buildAlignmentCorrection,
+	buildCompactionNotice,
+	buildInteractionDirective,
+	buildLongSessionGuard,
+	buildSessionAnchor,
+	buildTaskPhaseDirective,
+	buildToolFailureNotice,
+	classifyInteraction,
+	isUserAuthored,
+	taskPhaseForMode,
+} from "../src/host/protocol.js";
 
 describe("interaction protocol", () => {
 	it("routes questions, research, discussion and diagnosis without executing", () => {

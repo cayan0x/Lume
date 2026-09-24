@@ -3,12 +3,7 @@ import { orderPersonaItems, resolveLabels } from "../src/client/menu.js";
 
 describe("orderPersonaItems", () => {
 	it("pins 不使用人设 (none) to the top, preserving the rest", () => {
-		const ordered = orderPersonaItems([
-			{ name: "loli" },
-			{ name: "senpai" },
-			{ name: "none" },
-			{ name: "kaguya" },
-		]);
+		const ordered = orderPersonaItems([{ name: "loli" }, { name: "senpai" }, { name: "none" }, { name: "kaguya" }]);
 		expect(ordered.map((i) => i.name)).toEqual(["none", "loli", "senpai", "kaguya"]);
 	});
 

@@ -7,7 +7,15 @@
  * 这里断言插件做的事：**按原文切条目**、**把交付物里的句子并列出来**、**查悬空章号**。
  */
 import { describe, expect, it } from "vitest";
-import { coverageRows, danglingSectionRefs, hasFigureRefs, isRequirementStatement, looksLikeReview, pickRequirementCorpus, splitRequirementItems } from "../src/core/coverage.js";
+import {
+	coverageRows,
+	danglingSectionRefs,
+	hasFigureRefs,
+	isRequirementStatement,
+	looksLikeReview,
+	pickRequirementCorpus,
+	splitRequirementItems,
+} from "../src/core/coverage.js";
 import { buildRequirementCoverageDirective } from "../src/host/methods.js";
 
 const REQ = [
@@ -101,7 +109,8 @@ describe("需求覆盖核对（机械部分）", () => {
 	});
 
 	it("语料挑选：评审粘贴不是需求原文（现场：需求锚点被轮出表外，覆盖核对把评审条目当需求逐条列）", () => {
-		const review = "二、仍然要处理 🔴 必须处理（3 条） 1. 2.1.6 方案 A 漏了 consumer 侧的 servicecode 注册 文档写的是「Dubbo 服务…」2. 2.1.4 要写明 3. 2.5 脚本拆分";
+		const review =
+			"二、仍然要处理 🔴 必须处理（3 条） 1. 2.1.6 方案 A 漏了 consumer 侧的 servicecode 注册 文档写的是「Dubbo 服务…」2. 2.1.4 要写明 3. 2.5 脚本拆分";
 		expect(looksLikeReview(review)).toBe(true);
 		expect(isRequirementStatement(review)).toBe(false);
 		expect(isRequirementStatement(REQ.replace(/\n/g, " "))).toBe(true);

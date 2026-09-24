@@ -1,0 +1,9 @@
+lib/
+node_modules/
+docs/screenshots/
+docs/preview/
+assets/
+CHANGELOG.md
+.goose/
+# prettier 会把里面的转义串改坏（试过一次：SyntaxError），所以排除
+scripts/publish.mjs

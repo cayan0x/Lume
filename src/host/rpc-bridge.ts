@@ -30,7 +30,9 @@ export interface WireEnvelope {
 	error?: { code?: unknown; message?: unknown; details?: unknown };
 }
 
-export type ParsedClientRequest = { kind: "respond"; status: number; body: string; contentType: string } | { kind: "dispatch"; rpcId: string; endpoint: string; payload: unknown };
+export type ParsedClientRequest =
+	| { kind: "respond"; status: number; body: string; contentType: string }
+	| { kind: "dispatch"; rpcId: string; endpoint: string; payload: unknown };
 
 /** 端点段白名单，与宿主 ENDPOINT_SEGMENT_PATTERN 一致。 */
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/;
@@ -64,15 +66,19 @@ export function parseClientRequest(
 	channel: string,
 	request: { method?: string; url?: string; contentType?: string | null; rawBody: string },
 ): ParsedClientRequest {
-	if ((request.method ?? "GET").toUpperCase() !== "POST") return { kind: "respond", status: 404, body: "not found", contentType: "text/plain" };
+	if ((request.method ?? "GET").toUpperCase() !== "POST")
+		return { kind: "respond", status: 404, body: "not found", contentType: "text/plain" };
 	const pathname = (request.url ?? "/").split("?")[0] ?? "/";
 	if (!pathname.startsWith(`${channel}/`)) return { kind: "respond", status: 404, body: "not found", contentType: "text/plain" };
 	const endpoint = pathname.slice(channel.length + 1);
-	if (endpoint.split("/").some((segment) => segment === "" || segment === "." || segment === ".." || !ENDPOINT_SEGMENT_PATTERN.test(segment))) {
+	if (
+		endpoint.split("/").some((segment) => segment === "" || segment === "." || segment === ".." || !ENDPOINT_SEGMENT_PATTERN.test(segment))
+	) {
 		return { kind: "respond", status: 404, body: "not found", contentType: "text/plain" };
 	}
 	const mime = (request.contentType ?? "").split(";")[0]?.trim().toLowerCase();
-	if (mime !== "application/json") return { kind: "respond", status: 415, body: "content type must be application/json", contentType: "text/plain" };
+	if (mime !== "application/json")
+		return { kind: "respond", status: 415, body: "content type must be application/json", contentType: "text/plain" };
 
 	let body: unknown;
 	try {
@@ -81,12 +87,34 @@ export function parseClientRequest(
 		return { kind: "respond", status: 400, body: "body is not JSON", contentType: "text/plain" };
 	}
 	const envelope = body as Partial<ClientRequestEnvelope> | null;
-	if (!envelope || typeof envelope !== "object" || envelope.type !== "client-request" || typeof envelope.rpcId !== "string" || typeof envelope.method !== "string") {
-		const rpcId = typeof (envelope as { rpcId?: unknown } | null)?.rpcId === "string" ? String((envelope as { rpcId: string }).rpcId) : "invalid-request";
-		return { kind: "respond", status: 200, body: connectionResponse(rpcId, { ok: false, error: { code: "gateway/bad-request", message: "invalid client-request message" } }), contentType: "application/json" };
+	if (
+		!envelope ||
+		typeof envelope !== "object" ||
+		envelope.type !== "client-request" ||
+		typeof envelope.rpcId !== "string" ||
+		typeof envelope.method !== "string"
+	) {
+		const rpcId =
+			typeof (envelope as { rpcId?: unknown } | null)?.rpcId === "string"
+				? String((envelope as { rpcId: string }).rpcId)
+				: "invalid-request";
+		return {
+			kind: "respond",
+			status: 200,
+			body: connectionResponse(rpcId, { ok: false, error: { code: "gateway/bad-request", message: "invalid client-request message" } }),
+			contentType: "application/json",
+		};
 	}
 	if (envelope.method !== endpoint) {
-		return { kind: "respond", status: 200, body: connectionResponse(envelope.rpcId, { ok: false, error: { code: "gateway/bad-request", message: `endpoint mismatch: ${envelope.method} vs ${endpoint}` } }), contentType: "application/json" };
+		return {
+			kind: "respond",
+			status: 200,
+			body: connectionResponse(envelope.rpcId, {
+				ok: false,
+				error: { code: "gateway/bad-request", message: `endpoint mismatch: ${envelope.method} vs ${endpoint}` },
+			}),
+			contentType: "application/json",
+		};
 	}
 	return { kind: "dispatch", rpcId: envelope.rpcId, endpoint, payload: envelope.payload };
 }
@@ -141,5 +169,5 @@ export function makeRpcRoute(
 			res.end(connectionResponse(parsed.rpcId, result));
 		},
 	};
-}import type { HostPayload } from "./host-context.js";
-
+}
+import type { HostPayload } from "./host-context.js";

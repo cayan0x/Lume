@@ -8,11 +8,14 @@ export type InteractionMode = "question" | "research" | "discussion" | "diagnosi
 export type TaskPhase = "answer" | "research" | "discuss" | "diagnose" | "execute" | "verify" | "deliver";
 
 const MODE_RULES: Record<InteractionMode, string> = {
-	question: "当前模式：问答。先直接回答；**只读核实该做就做**（read / grep / glob / git log 这类只读工具允许用）——答案依赖仓库事实时，不许用「我不确定」「这是新会话」作答；但不要改动文件、不要替用户做决定。",
-	research: "当前模式：查找。先收集并区分已知、未知和推断；**该查就查**（只读工具随便用），但未经明确授权不要修改外部状态（文件 / 提交 / 远端 / 数据库）。",
+	question:
+		"当前模式：问答。先直接回答；**只读核实该做就做**（read / grep / glob / git log 这类只读工具允许用）——答案依赖仓库事实时，不许用「我不确定」「这是新会话」作答；但不要改动文件、不要替用户做决定。",
+	research:
+		"当前模式：查找。先收集并区分已知、未知和推断；**该查就查**（只读工具随便用），但未经明确授权不要修改外部状态（文件 / 提交 / 远端 / 数据库）。",
 	discussion: "当前模式：讨论。先比较选项、取舍和风险；不要把探讨中的方案当成已决定的执行方案。",
 	diagnosis: "当前模式：诊断。先说明现象、证据、可能根因和验证办法；除非用户明确要求修复，不越权修复，不要越过诊断边界动手。",
-	execute: "当前模式：执行。先确认目标和完成标准，再做最小变更；交付时明确列出“已完成、已验证、未验证、残留副作用”，不要用动作完成冒充目标达成。",
+	execute:
+		"当前模式：执行。先确认目标和完成标准，再做最小变更；交付时明确列出“已完成、已验证、未验证、残留副作用”，不要用动作完成冒充目标达成。",
 };
 
 // 显式请求标记后必须紧跟一个动作动词，且限制在同一小句内（旧版用 `.*` 贪婪跨越
@@ -31,9 +34,11 @@ const MODE_RULES: Record<InteractionMode, string> = {
  * 现场样本（B2I 优惠视图与订单属性）：新增字段 + 模糊搜索 + 分页改造 + 历史数据刷 + 外部同步，
  * 全是设计型动作，但会话里没有任何设计决策。这条正则只用于「该不该顶设计三问」，不参与模式路由。
  */
-export const DESIGN_SIGNAL_RE = /新增|添加|加个|加一个|字段|属性|接口|表结构|建表|改表|页面|分页|导出|导入|批量|视图|列表|搜索|筛选|下拉|同步|对接|联调|迁移|兼容|需求|功能|模块|组件|设计/;
+export const DESIGN_SIGNAL_RE =
+	/新增|添加|加个|加一个|字段|属性|接口|表结构|建表|改表|页面|分页|导出|导入|批量|视图|列表|搜索|筛选|下拉|同步|对接|联调|迁移|兼容|需求|功能|模块|组件|设计/;
 
-const EXECUTE_EXTRA_RE = /重构|重写|梳理|清理|删掉|删除|去掉|移除|合并|合入|迁移|替换|收口|落地|接入|适配|升级|降级|补上|补齐|加上|改成|改为|换成|拆开|拆出/;
+const EXECUTE_EXTRA_RE =
+	/重构|重写|梳理|清理|删掉|删除|去掉|移除|合并|合入|迁移|替换|收口|落地|接入|适配|升级|降级|补上|补齐|加上|改成|改为|换成|拆开|拆出/;
 
 const EXECUTE_RE = new RegExp(
 	[
@@ -53,7 +58,7 @@ const RESEARCH_RE = /查一下|查找|搜索|检索|资料|文档|来源|证据|
 export function classifyInteraction(text: string | null | undefined): InteractionMode {
 	const query = String(text ?? "").trim();
 	if (!query) return "question";
-	if ((EXECUTE_RE.test(query) || EXECUTE_EXTRA_RE.test(query))) return "execute";
+	if (EXECUTE_RE.test(query) || EXECUTE_EXTRA_RE.test(query)) return "execute";
 	if (DIAGNOSIS_RE.test(query)) return "diagnosis";
 	if (DISCUSSION_RE.test(query)) return "discussion";
 	if (RESEARCH_RE.test(query)) return "research";
@@ -93,7 +98,15 @@ export function buildCasualDirective(isTask: boolean): string | null {
 }
 
 export function taskPhaseForMode(mode: InteractionMode): TaskPhase {
-	return mode === "research" ? "research" : mode === "discussion" ? "discuss" : mode === "diagnosis" ? "diagnose" : mode === "execute" ? "execute" : "answer";
+	return mode === "research"
+		? "research"
+		: mode === "discussion"
+			? "discuss"
+			: mode === "diagnosis"
+				? "diagnose"
+				: mode === "execute"
+					? "execute"
+					: "answer";
 }
 
 /**
@@ -146,7 +159,12 @@ export function buildLongSessionGuard(turnIndex: number): string | null {
 以当前用户消息和最近状态为准，历史里的旧计划、旧时间、旧事实和助手自述都只是候选信息，不能自动当成当前事实。先对齐本轮要达成的结果；需要动手时只做最小一步，并检查它是否真的生效、是否留下副作用。若当前状态与旧历史冲突，优先相信当前上下文；无法确认时先问一个最小澄清问题，不要用自信的猜测填空。`;
 }
 
-export function buildSessionAnchor(turnIndex: number, mode: InteractionMode, query: string | null, recentTurns: string[] = []): string | null {
+export function buildSessionAnchor(
+	turnIndex: number,
+	mode: InteractionMode,
+	query: string | null,
+	recentTurns: string[] = [],
+): string | null {
 	if (turnIndex < 6 || !query?.trim()) return null;
 	const compact = query.replace(/\s+/g, " ").trim().slice(0, 240);
 	const recent = recentTurns
@@ -171,7 +189,10 @@ export function buildAlignmentCorrection(kind: "user-correction" | "repeated-req
  *
  * 只在压缩后一轮内注入：更久之后摘要已成为正常上下文的一部分。
  */
-export function buildCompactionNotice(info: { turnIndex: number; shadowedItems: number; tokens: number }, currentTurn: number): string | null {
+export function buildCompactionNotice(
+	info: { turnIndex: number; shadowedItems: number; tokens: number },
+	currentTurn: number,
+): string | null {
 	if (currentTurn - info.turnIndex > 1) return null;
 	const scale =
 		info.shadowedItems > 0

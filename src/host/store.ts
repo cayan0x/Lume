@@ -62,10 +62,7 @@ export class PersonaStore {
  * 导入 storageDomain，成功后把旧文件改名 .migrated 留档。
  * 任何失败都不抛出 —— 迁移是尽力而为，主路径不受影响。
  */
-export async function migrateLegacyState(
-	store: PersonaStore,
-	legacyPath: string,
-): Promise<boolean> {
+export async function migrateLegacyState(store: PersonaStore, legacyPath: string): Promise<boolean> {
 	if (!existsSync(legacyPath)) return false;
 	let entries: [string, unknown][];
 	try {

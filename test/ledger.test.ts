@@ -69,7 +69,14 @@ describe("normalizeContract", () => {
 
 describe("renderContract", () => {
 	const contract = normalizeContract(
-		{ goal: "收口重复退款请求", scope: ["application-consumer.xml"], expectCount: 11, actualCount: 9, criteria: ["编译通过"], nonGoals: ["不动前端"] },
+		{
+			goal: "收口重复退款请求",
+			scope: ["application-consumer.xml"],
+			expectCount: 11,
+			actualCount: 9,
+			criteria: ["编译通过"],
+			nonGoals: ["不动前端"],
+		},
 		1,
 		1,
 	);
@@ -95,7 +102,14 @@ describe("renderContract", () => {
 });
 
 describe("改动台账", () => {
-	const item = (target: string, status: ChangeItem["status"], at = 1): ChangeItem => ({ target, change: `${target} 的改动`, why: "", verify: "编译", status, at });
+	const item = (target: string, status: ChangeItem["status"], at = 1): ChangeItem => ({
+		target,
+		change: `${target} 的改动`,
+		why: "",
+		verify: "编译",
+		status,
+		at,
+	});
 
 	it("计数在前、未完成项明细在后", () => {
 		const text = renderChangeLedger([item("A", "verified"), item("B", "done"), item("C", "planned")])!;

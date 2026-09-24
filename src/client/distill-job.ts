@@ -67,7 +67,8 @@ export type JobAction =
 export function applyJobStatus(job: DistillJobView | null | undefined): JobAction {
 	if (job === null || job === undefined) return { kind: "lost" };
 	if (job.status === "running") return job.stage ? { kind: "stage", stage: job.stage } : { kind: "wait" };
-	if (job.status === "done") return job.card ? { kind: "done", card: { ...job.card, memory: job.card.memory ?? undefined } } : { kind: "wait" };
+	if (job.status === "done")
+		return job.card ? { kind: "done", card: { ...job.card, memory: job.card.memory ?? undefined } } : { kind: "wait" };
 	if (job.status === "error") return { kind: "error", reason: job.error ?? "unknown" };
 	return { kind: "wait" };
 }

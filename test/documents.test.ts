@@ -1,11 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { buildDocumentDirective, detectDocumentCapabilities, hasDocumentCapability, probeDocumentCapabilities } from "../src/host/documents.js";
+import {
+	buildDocumentDirective,
+	detectDocumentCapabilities,
+	hasDocumentCapability,
+	probeDocumentCapabilities,
+} from "../src/host/documents.js";
 
 const NO_CAPS = detectDocumentCapabilities([]);
 /** 还原 dsh-office-tools 的工具面。 */
-const OFFICE_TOOLS = detectDocumentCapabilities(["word_create", "word_read", "word_update", "excel_create", "excel_read", "excel_update", "ppt_create", "ppt_read"]);
+const OFFICE_TOOLS = detectDocumentCapabilities([
+	"word_create",
+	"word_read",
+	"word_update",
+	"excel_create",
+	"excel_read",
+	"excel_update",
+	"ppt_create",
+	"ppt_read",
+]);
 /** 还原 dsh-ppt 的工具面（写、读、检查、渲染分开命名）。 */
-const PPTD_TOOLS = detectDocumentCapabilities(["ppt_list_templates", "ppt_get_template_pages", "pptd_write_file", "pptd_read_file", "pptd_check", "pptd_render"]);
+const PPTD_TOOLS = detectDocumentCapabilities([
+	"ppt_list_templates",
+	"ppt_get_template_pages",
+	"pptd_write_file",
+	"pptd_read_file",
+	"pptd_check",
+	"pptd_render",
+]);
 
 describe("detectDocumentCapabilities", () => {
 	it("按能力族前缀识别，不依赖具体插件的命名", () => {
@@ -16,7 +37,9 @@ describe("detectDocumentCapabilities", () => {
 	});
 
 	it("不把普通文件与命令工具误判成文档能力", () => {
-		expect(hasDocumentCapability(detectDocumentCapabilities(["read", "write", "edit", "bash", "pwsh", "todo_write", "web_search"]))).toBe(false);
+		expect(hasDocumentCapability(detectDocumentCapabilities(["read", "write", "edit", "bash", "pwsh", "todo_write", "web_search"]))).toBe(
+			false,
+		);
 	});
 
 	it("空名与脏值被忽略", () => {

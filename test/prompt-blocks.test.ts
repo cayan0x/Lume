@@ -19,7 +19,15 @@ const st = (over: Partial<SessionRuntime> = {}): SessionRuntime =>
 		compaction: null,
 		notices: {},
 		// 工具与证据已收进 agent 组（session-runtime 的分组约定）
-		agent: { evidence: new Map(), artifactText: "", inspectedTargets: new Set(), seenSymbols: new Set(), lastToolName: null, lastToolArgs: null, lastToolTarget: null },
+		agent: {
+			evidence: new Map(),
+			artifactText: "",
+			inspectedTargets: new Set(),
+			seenSymbols: new Set(),
+			lastToolName: null,
+			lastToolArgs: null,
+			lastToolTarget: null,
+		},
 		...over,
 	}) as SessionRuntime;
 
@@ -93,7 +101,18 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 	});
 
 	it("文档产物 + 需求原文 → 覆盖核对生成一次；产物更新后再生成一次；上限 2 次后不再生成", () => {
-		const runtime = st({ agent: { evidence: new Map(), artifactText: "x".repeat(300), inspectedTargets: new Set(), seenSymbols: new Set(), lastToolName: null, lastToolArgs: null, lastToolTarget: null, autoFacts: 0 } });
+		const runtime = st({
+			agent: {
+				evidence: new Map(),
+				artifactText: "x".repeat(300),
+				inspectedTargets: new Set(),
+				seenSymbols: new Set(),
+				lastToolName: null,
+				lastToolArgs: null,
+				lastToolTarget: null,
+				autoFacts: 0,
+			},
+		});
 		const first = carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });
 		expect(texts(first).join("\n")).toContain("需求覆盖核对");
 		carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });
@@ -125,7 +144,10 @@ describe("host/prompt-blocks：项目知识在任何轮次都要可见（0.8.0�
 		const facts = [{ kind: "convention" as const, text: "方法名必须与 WTPF_ESB_SERVICE_DEF.LOCAL_METHOD_NAME 一致", at: Date.now() }];
 		const runtime = st();
 		const blocks = carrierBlocks(
-			deps({ renderProjectFacts: (list: { text: string }[]) => (list.length ? `〔项目知识｜本目录，跨会话累积〕\n- ${list[0]!.text}` : null), factsOf: () => facts }),
+			deps({
+				renderProjectFacts: (list: { text: string }[]) => (list.length ? `〔项目知识｜本目录，跨会话累积〕\n- ${list[0]!.text}` : null),
+				factsOf: () => facts,
+			}),
 			{ sid: "s", context: {}, st: runtime, query: "你知道优惠视图需求吗", mode: "question" },
 		);
 		expect(texts(blocks).join("\n")).toContain("LOCAL_METHOD_NAME");
@@ -155,7 +177,8 @@ describe("host/prompt-blocks：冷启动注入「上次会话记忆」（0.8.0�
 		const blocks = carrierBlocks(
 			deps({
 				isColdStart: () => true,
-				renderTaskMemory: (value: { title: string } | null) => (value ? "〔上次会话记忆｜" + value.title + "〕\n目标：给优惠列表加权限人字段\n要继续就说「继续 " + value.title + "」" : null),
+				renderTaskMemory: (value: { title: string } | null) =>
+					value ? "〔上次会话记忆｜" + value.title + "〕\n目标：给优惠列表加权限人字段\n要继续就说「继续 " + value.title + "」" : null,
 			}),
 			{ sid: "s", context: {}, st: runtime, query: "继续做优惠视图", mode: "execute" },
 		);
@@ -166,7 +189,13 @@ describe("host/prompt-blocks：冷启动注入「上次会话记忆」（0.8.0�
 
 	it("不是冷启动 → 不注入（会话有自己的契约与台账，避免噪音）", () => {
 		const runtime = st({ taskMemories: [memory] });
-		const blocks = carrierBlocks(deps({ isColdStart: () => false }), { sid: "s", context: {}, st: runtime, query: "接着改", mode: "execute" });
+		const blocks = carrierBlocks(deps({ isColdStart: () => false }), {
+			sid: "s",
+			context: {},
+			st: runtime,
+			query: "接着改",
+			mode: "execute",
+		});
 		expect(texts(blocks).join("\n")).not.toContain("上次会话记忆");
 	});
 });

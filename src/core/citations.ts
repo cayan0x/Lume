@@ -28,7 +28,9 @@ export type EvidenceIndex = Map<string, EvidenceWindow[]>;
 
 /** 归一化路径：`b2i\a\B\Foo.java` 与 `Foo.java` 视为同一个文件。 */
 export function pathKey(file: unknown): string {
-	const raw = String(file ?? "").trim().replace(/\\/g, "/");
+	const raw = String(file ?? "")
+		.trim()
+		.replace(/\\/g, "/");
 	const base = raw.split("/").filter(Boolean).pop() ?? "";
 	return base.toLowerCase();
 }
@@ -98,7 +100,6 @@ export interface Citation {
 	line: number;
 }
 
-
 /** 把引用里的文件名解析到索引里的 key：先精确 basename，再容忍 `Foo.java` ↔ `Foo` 这类简写。 */
 function resolveKey(index: EvidenceIndex, file: string): string | null {
 	const key = pathKey(file);
@@ -158,7 +159,9 @@ export function covers(index: EvidenceIndex, key: string, line: number): boolean
 /** 渲染某文件读到过的范围（给人看的一句事实，不是训话）。 */
 export function formatWindows(index: EvidenceIndex, key: string, limit = 6): string {
 	const windows = index.get(key) ?? [];
-	const shown = windows.slice(-limit).map((window) => (window.to >= FULLY_READ ? "整文件" : window.from === window.to ? `${window.from}` : `${window.from}-${window.to}`));
+	const shown = windows
+		.slice(-limit)
+		.map((window) => (window.to >= FULLY_READ ? "整文件" : window.from === window.to ? `${window.from}` : `${window.from}-${window.to}`));
 	return shown.join("、");
 }
 
@@ -172,7 +175,20 @@ export function formatWindows(index: EvidenceIndex, key: string, limit = 6): str
 // 机械判不了"看过但仍判断错"（那要靠并列事实让人判），但能挡住"没看就断言"。
 
 /** 太泛的符号不算（出现在任何句子里都不构成"关于代码的断言"）。 */
-const SYMBOL_STOP = new Set(["ok", "true", "false", "null", "undefined", "number", "string", "boolean", "result", "status", "message", "error"]);
+const SYMBOL_STOP = new Set([
+	"ok",
+	"true",
+	"false",
+	"null",
+	"undefined",
+	"number",
+	"string",
+	"boolean",
+	"result",
+	"status",
+	"message",
+	"error",
+]);
 
 /** 代码符号：下划线命名、驼峰命名，或反引号包裹的名字。 */
 export function symbolsIn(text: unknown): string[] {

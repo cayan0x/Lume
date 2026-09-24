@@ -46,7 +46,8 @@ const FAMILY_LABEL: Record<keyof DocumentCapabilities, string> = {
 /** 明确的办公文件后缀：出现即视为文档任务，误判率最低。 */
 const DOC_FILE_RE = /\.(?:docx?|xlsx?|pptx?|pdf)\b/i;
 /** 办公套件 / 格式名：用户点名了产出格式（含不带点的 docx / xlsx / pptx）。 */
-const DOC_SUITE_RE = /\bword\b|\bexcel\b|\bppt\b|\bpptx\b|\bpdf\b|\bdocx\b|\bxlsx\b|电子表格|工作簿|幻灯片|演示文稿|spreadsheet|presentation/i;
+const DOC_SUITE_RE =
+	/\bword\b|\bexcel\b|\bppt\b|\bpptx\b|\bpdf\b|\bdocx\b|\bxlsx\b|电子表格|工作簿|幻灯片|演示文稿|spreadsheet|presentation/i;
 /** 产生或改动文件的动作。 */
 const DOC_ACTION_RE = /写|撰写|生成|制作|做一?[份个张]|创建|新建|导出|输出|保存为|另存为|整理成|汇总成|排版|转换|转成|转格式|填表|填写/;
 /** 以文件形态交付的产物名。 */
@@ -129,5 +130,5 @@ export function buildDocumentDirective(input: { query: string | null | undefined
 	if (!hasDocumentCapability(input.capabilities)) return officeIntent ? buildBoundary() : null;
 	const artifactIntent = officeIntent || (DOC_ACTION_RE.test(text) && DOC_ARTIFACT_RE.test(text));
 	return artifactIntent ? buildRouting(input.capabilities) : null;
-}import type { HostPayload } from "./host-context.js";
-
+}
+import type { HostPayload } from "./host-context.js";

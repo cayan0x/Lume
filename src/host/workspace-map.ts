@@ -27,9 +27,13 @@ export function sessionDirSlug(sid: string, dsHome: string): string | null {
 			try {
 				// 会话目录名形如 session-<sid>（有的宿主前缀 session-，有的直接是 id）
 				if (readdirSync(join(root, slug)).some((entry) => entry === `session-${sid}` || entry === sid)) return slug;
-			} catch { /* 不是目录就跳过 */ }
+			} catch {
+				/* 不是目录就跳过 */
+			}
 		}
-	} catch { /* 目录不存在 */ }
+	} catch {
+		/* 目录不存在 */
+	}
 	return null;
 }
 
@@ -45,7 +49,9 @@ export function readWorkspaceMap(dsHome: string): Record<string, string> {
 			for (const [slug, cwd] of Object.entries(raw as Record<string, unknown>)) if (typeof cwd === "string" && cwd) out[slug] = cwd;
 			return out;
 		}
-	} catch { /* 首次运行没有这个文件 */ }
+	} catch {
+		/* 首次运行没有这个文件 */
+	}
 	return {};
 }
 
@@ -58,7 +64,9 @@ export function rememberWorkspace(dsHome: string, slug: string | null, cwd: stri
 	try {
 		if (!existsSync(join(dsHome, "harness"))) return;
 		writeFileSync(mapPath(dsHome), JSON.stringify(map, null, 2));
-	} catch { /* 写失败不影响功能 */ }
+	} catch {
+		/* 写失败不影响功能 */
+	}
 }
 
 /** 用 slug 反查 cwd（第一轮装配用）。 */

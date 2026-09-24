@@ -105,7 +105,10 @@ const FACT_LABEL: Record<ProjectFactKind, string> = {
 };
 
 function clip(value: unknown, cap: number): string {
-	return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, cap);
+	return String(value ?? "")
+		.trim()
+		.replace(/\s+/g, " ")
+		.slice(0, cap);
 }
 
 function clipList(value: unknown, cap = CONTRACT_LIST_CAP): string[] {
@@ -180,7 +183,11 @@ export function normalizeHypothesis(input: Record<string, unknown>, at: number):
 	};
 }
 
-export function normalizeProjectFact(input: Record<string, unknown>, at: number, options: { taskTitle?: string | null; requirementHints?: readonly { name: string; keywords: readonly string[] }[] } = {}): ProjectFact | null {
+export function normalizeProjectFact(
+	input: Record<string, unknown>,
+	at: number,
+	options: { taskTitle?: string | null; requirementHints?: readonly { name: string; keywords: readonly string[] }[] } = {},
+): ProjectFact | null {
 	const text = clip(input.text, FACT_TEXT_CAP);
 	if (!text) return null;
 	const kind = input.kind;
@@ -226,7 +233,11 @@ export function trimFacts(facts: ProjectFact[], cap = PROJECT_FACT_CAP): Project
 export function renderContract(contract: TaskContract | null, delivery = false): string | null {
 	if (!contract || !contract.goal) return null;
 	const lines: string[] = [];
-	lines.push(delivery ? "〔契约对账〕交付前逐项对账（以下是开工时写下的原始判据，不是你现在的记忆版本）：" : `〔任务契约｜第 ${contract.turn} 轮写入〕`);
+	lines.push(
+		delivery
+			? "〔契约对账〕交付前逐项对账（以下是开工时写下的原始判据，不是你现在的记忆版本）："
+			: `〔任务契约｜第 ${contract.turn} 轮写入〕`,
+	);
 	lines.push(`目标：${contract.goal}`);
 	if (contract.scope.length > 0) lines.push(`范围：${contract.scope.join("；")}`);
 	if (true) {
@@ -251,7 +262,8 @@ export function renderChangeLedger(items: ChangeItem[], limit = 12): string | nu
 	const open = items.filter((item) => item.status !== "verified" && item.status !== "skipped");
 	const shown = (open.length > 0 ? open : items).slice(-limit);
 	const lines = shown.map((item) => {
-		const mark = item.status === "verified" ? "[已验证]" : item.status === "done" ? "[已改未验]" : item.status === "skipped" ? "[跳过]" : "[计划]";
+		const mark =
+			item.status === "verified" ? "[已验证]" : item.status === "done" ? "[已改未验]" : item.status === "skipped" ? "[跳过]" : "[计划]";
 		const verify = item.verify ? `（验：${item.verify}）` : "";
 		return `- ${mark} ${item.target} — ${item.change}${verify}`;
 	});
@@ -263,7 +275,14 @@ export function renderChangeLedger(items: ChangeItem[], limit = 12): string | nu
 export function renderHypotheses(list: Hypothesis[], limit = 8): string | null {
 	if (list.length === 0) return null;
 	const lines = list.slice(-limit).map((item) => {
-		const mark = item.status === "excluded" ? "[已排除]" : item.status === "confirmed" ? "[已证实]" : item.status === "testing" ? "[验证中]" : "[待验证]";
+		const mark =
+			item.status === "excluded"
+				? "[已排除]"
+				: item.status === "confirmed"
+					? "[已证实]"
+					: item.status === "testing"
+						? "[验证中]"
+						: "[待验证]";
 		const evidence = item.evidence ? `（证据：${item.evidence}）` : "";
 		return `- ${mark} ${item.text}${evidence}`;
 	});
@@ -295,7 +314,10 @@ export function renderProjectFacts(facts: ProjectFact[], limit = 14, currentTask
 		if (group.length === 0) continue;
 		lines.push(`${FACT_LABEL[kind]}：`);
 		// 编号（#n）+ 短 id：用户可点名纠正（“#7 过时了”），模型可引用；id 跨裁剪稳定。
-		for (const entry of group) lines.push(`- #${entry.n}${entry.item.id ? `·${entry.item.id.slice(0, 4)}` : ""} ${entry.item.text}${entry.item.scope === "task" ? "（本需求）" : ""}${ageLabel(entry.item.at)}`);
+		for (const entry of group)
+			lines.push(
+				`- #${entry.n}${entry.item.id ? `·${entry.item.id.slice(0, 4)}` : ""} ${entry.item.text}${entry.item.scope === "task" ? "（本需求）" : ""}${ageLabel(entry.item.at)}`,
+			);
 	}
 	return `〔项目知识｜本目录，跨会话累积〕\n${lines.join("\n")}`;
 }

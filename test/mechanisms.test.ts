@@ -36,17 +36,20 @@ describe("机制覆盖：对齐纠偏 notice:align", () => {
 	});
 });
 describe("机制覆盖：客户端产物 client-no-duplicate-decl / client-bundle-parses", () => {
-	it.skipIf(!existsSync("lib/client.js"))("构建出的 lib/client.js 能被解析，且没有重复的顶层声明（现场：TEXT_CAP 重复声明让 Harness 起不来）", () => {
-		const code = readFileSync("lib/client.js", "utf8");
-		expect(() => new vm.Script(code)).not.toThrow(); // client-bundle-parses
-		const seen = new Map();
-		const dups = [];
-		for (const line of code.split("\n")) {
-			const hit = line.match(/^(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/); // client-no-duplicate-decl
-			if (!hit) continue;
-			if (seen.has(hit[1])) dups.push(hit[1]);
-			else seen.set(hit[1], true);
-		}
-		expect(dups).toEqual([]);
-	});
+	it.skipIf(!existsSync("lib/client.js"))(
+		"构建出的 lib/client.js 能被解析，且没有重复的顶层声明（现场：TEXT_CAP 重复声明让 Harness 起不来）",
+		() => {
+			const code = readFileSync("lib/client.js", "utf8");
+			expect(() => new vm.Script(code)).not.toThrow(); // client-bundle-parses
+			const seen = new Map();
+			const dups = [];
+			for (const line of code.split("\n")) {
+				const hit = line.match(/^(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/); // client-no-duplicate-decl
+				if (!hit) continue;
+				if (seen.has(hit[1])) dups.push(hit[1]);
+				else seen.set(hit[1], true);
+			}
+			expect(dups).toEqual([]);
+		},
+	);
 });

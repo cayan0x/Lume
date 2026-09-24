@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_TEXT_CAP, POLL_INTERVAL_MS, STAGE_ORDER, TEXT_CAP, applyJobStatus, capForSource, validateSource } from "../src/client/distill-job.js";
+import {
+	CHAT_TEXT_CAP,
+	POLL_INTERVAL_MS,
+	STAGE_ORDER,
+	TEXT_CAP,
+	applyJobStatus,
+	capForSource,
+	validateSource,
+} from "../src/client/distill-job.js";
 import type { DistilledCard, DistillJobView } from "../src/client/distill-job.js";
 
 const card = (over: Partial<DistilledCard> = {}): DistilledCard => ({

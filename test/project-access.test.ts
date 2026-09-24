@@ -26,7 +26,9 @@ function makeAccess(opts: { store?: unknown } = {}) {
 					getDesign: () => [],
 					getHypotheses: () => [],
 				};
-	const projectTask = vi.fn((_sid: string, _label: string, run: (s: unknown) => unknown) => { run(store); });
+	const projectTask = vi.fn((_sid: string, _label: string, run: (s: unknown) => unknown) => {
+		run(store);
+	});
 	const access = createProjectAccess({
 		ctx: { logger: { warn: vi.fn() } } as never,
 		config: {} as never,

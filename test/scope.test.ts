@@ -18,7 +18,10 @@ describe("core/scope：需求级 vs 仓库级", () => {
 	});
 
 	it("提到本需求特有词 → task（并记住归属哪个需求）", () => {
-		expect(classifyScope("优惠视图的列名要用 PERMISSION_NAME", "B2I 优惠视图新增字段")).toEqual({ scope: "task", task: "B2I 优惠视图新增字段" });
+		expect(classifyScope("优惠视图的列名要用 PERMISSION_NAME", "B2I 优惠视图新增字段")).toEqual({
+			scope: "task",
+			task: "B2I 优惠视图新增字段",
+		});
 	});
 
 	it("通用仓库知识 → repo（构建/测试/环境坑对同仓库所有需求都成立）", () => {

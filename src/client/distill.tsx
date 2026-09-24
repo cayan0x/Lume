@@ -22,9 +22,28 @@ type Phase = "input" | "running" | "preview" | "saved";
 
 /** 聊天记录素材的宽容上限：原始文本含双人对话+时间戳，噪音过半。 */
 
-const miniBtn: React.CSSProperties = { background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary, #999)", padding: "2px 4px" };
+const miniBtn: React.CSSProperties = {
+	background: "none",
+	border: "none",
+	cursor: "pointer",
+	fontSize: 11,
+	color: "var(--color-text-secondary, #999)",
+	padding: "2px 4px",
+};
 
-export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boolean; onClose: () => void; onSaved: () => void; t: Translate; callRpc: CallRpc }) {
+export function DistillModal({
+	open,
+	onClose,
+	onSaved,
+	t,
+	callRpc,
+}: {
+	open: boolean;
+	onClose: () => void;
+	onSaved: () => void;
+	t: Translate;
+	callRpc: CallRpc;
+}) {
 	const [phase, setPhase] = useState<Phase>("input");
 	const [text, setText] = useState("");
 	const [hint, setHint] = useState("");
@@ -33,7 +52,14 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	/** 用户补充的对方信息（性别/年龄段），可选；蒸馏时作为事实锚点传给宿主。 */
 	const [jobId, setJobId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [card, setCard] = useState<DistilledCard>({ key: "", displayName: "", description: "", promptText: "", corpus: [], memory: undefined });
+	const [card, setCard] = useState<DistilledCard>({
+		key: "",
+		displayName: "",
+		description: "",
+		promptText: "",
+		corpus: [],
+		memory: undefined,
+	});
 	const [savedName, setSavedName] = useState("");
 	const [stage, setStage] = useState<DistillStage | null>(null);
 	const [showComplete, setShowComplete] = useState(false);
@@ -118,22 +144,22 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 		};
 	}, [phase, jobId, callRpc, t]);
 
-		// 蒸馏完成横幅 3 秒后自动消失
-		useEffect(() => {
-			if (!showComplete) return;
-			const timer = setTimeout(() => setShowComplete(false), 3000);
-			return () => clearTimeout(timer);
-		}, [showComplete]);
+	// 蒸馏完成横幅 3 秒后自动消失
+	useEffect(() => {
+		if (!showComplete) return;
+		const timer = setTimeout(() => setShowComplete(false), 3000);
+		return () => clearTimeout(timer);
+	}, [showComplete]);
 
-		const start = async () => {
-			setError(null);
-			setStage(null);
-			setShowComplete(false);
-			if (!text.trim()) return;
-			if (text.length > cap) {
-				setError(t("distill.too.long", { cap }));
-				return;
-			}
+	const start = async () => {
+		setError(null);
+		setStage(null);
+		setShowComplete(false);
+		if (!text.trim()) return;
+		if (text.length > cap) {
+			setError(t("distill.too.long", { cap }));
+			return;
+		}
 		try {
 			const res = await callRpc("distillStart", { text, hint: hint.trim() || undefined });
 			if (res?.ok && typeof (res.value as { jobId?: unknown })?.jobId === "string") {
@@ -170,7 +196,17 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 	const save = async () => {
 		setError(null);
 		try {
-			const res = await callRpc("saveCustomPersona", { name: card.key, displayName: card.displayName, description: card.description, promptText: card.promptText, corpus: card.corpus, distillVersion: card.distillVersion, distillSource: text, distillHint: hint || undefined, ...(card.memory?.length ? { memory: card.memory } : {}) });
+			const res = await callRpc("saveCustomPersona", {
+				name: card.key,
+				displayName: card.displayName,
+				description: card.description,
+				promptText: card.promptText,
+				corpus: card.corpus,
+				distillVersion: card.distillVersion,
+				distillSource: text,
+				distillHint: hint || undefined,
+				...(card.memory?.length ? { memory: card.memory } : {}),
+			});
 			if (res?.ok) {
 				setSavedName(card.displayName);
 				setPhase("saved");
@@ -197,35 +233,68 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 			footer={
 				phase === "input" ? (
 					<>
-						<Button variant="ghost" onClick={onClose}>{t("distill.cancel")}</Button>
-						<Button variant="primary" disabled={!text.trim() || text.length > cap} onClick={() => void start()}>{t("distill.start")}</Button>
+						<Button variant="ghost" onClick={onClose}>
+							{t("distill.cancel")}
+						</Button>
+						<Button variant="primary" disabled={!text.trim() || text.length > cap} onClick={() => void start()}>
+							{t("distill.start")}
+						</Button>
 					</>
 				) : phase === "saved" ? (
-					<Button variant="primary" onClick={onClose}>OK</Button>
+					<Button variant="primary" onClick={onClose}>
+						OK
+					</Button>
 				) : undefined
 			}
 		>
 			{locked ? (
 				<div>
-					<div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, borderBottom: "1px solid var(--color-border, #333)" }}>
+					<div
+						style={{
+							display: "flex",
+							alignItems: "center",
+							gap: 10,
+							paddingBottom: 12,
+							borderBottom: "1px solid var(--color-border, #333)",
+						}}
+					>
 						<span style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{title}</span>
 						<button
 							type="button"
 							aria-label={t("distill.close.aria")}
 							onClick={() => setConfirmClose(true)}
-							style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--color-text-secondary, #999)", padding: "2px 6px" }}
+							style={{
+								background: "none",
+								border: "none",
+								cursor: "pointer",
+								fontSize: 18,
+								color: "var(--color-text-secondary, #999)",
+								padding: "2px 6px",
+							}}
 						>
 							✕
 						</button>
 					</div>
 					{confirmClose ? (
-						<div style={{ margin: "14px 0", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--color-warning, #e6a23c)", background: "rgba(230,162,60,0.08)" }}>
+						<div
+							style={{
+								margin: "14px 0",
+								padding: "10px 12px",
+								borderRadius: 8,
+								border: "1px solid var(--color-warning, #e6a23c)",
+								background: "rgba(230,162,60,0.08)",
+							}}
+						>
 							<div style={{ fontSize: 12.5, marginBottom: 10, color: "var(--color-text, #ddd)" }}>
 								{running ? t("distill.close.confirm") : t("distill.close.confirm.preview")}
 							</div>
 							<div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-								<Button size="sm" variant="ghost" onClick={() => setConfirmClose(false)}>{t("distill.close.keep")}</Button>
-								<Button size="sm" variant="primary" onClick={() => (running ? void cancelRunning() : onClose())}>{running ? t("distill.close.stop") : t("distill.close.discard")}</Button>
+								<Button size="sm" variant="ghost" onClick={() => setConfirmClose(false)}>
+									{t("distill.close.keep")}
+								</Button>
+								<Button size="sm" variant="primary" onClick={() => (running ? void cancelRunning() : onClose())}>
+									{running ? t("distill.close.stop") : t("distill.close.discard")}
+								</Button>
 							</div>
 						</div>
 					) : null}
@@ -278,9 +347,7 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 									);
 								})}
 							</div>
-							<div style={{ fontSize: 13, opacity: 0.8 }}>
-								{stage ? t(`distill.stage.${stage}`) : t("distill.running")}
-							</div>
+							<div style={{ fontSize: 13, opacity: 0.8 }}>{stage ? t(`distill.stage.${stage}`) : t("distill.running")}</div>
 						</div>
 					) : (
 						<div>
@@ -315,7 +382,9 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 								style={{ ...inputStyle, resize: "vertical" }}
 							/>
 							<label style={labelStyle}>{t("distill.corpus.label", { count: card.corpus.length })}</label>
-							<div style={{ maxHeight: 120, overflow: "auto", fontSize: 12, opacity: 0.8, display: "flex", flexDirection: "column", gap: 4 }}>
+							<div
+								style={{ maxHeight: 120, overflow: "auto", fontSize: 12, opacity: 0.8, display: "flex", flexDirection: "column", gap: 4 }}
+							>
 								{card.corpus.map((sample, i) => (
 									<div key={i}>
 										<div>{`用户: ${sample.user || "…"}`}</div>
@@ -326,10 +395,28 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							{card.memory && card.memory.length > 0 ? (
 								<>
 									<label style={labelStyle}>{t("distill.memory.label", { count: card.memory.length })}</label>
-									<div style={{ maxHeight: 180, overflow: "auto", fontSize: 12, opacity: 0.9, display: "flex", flexDirection: "column", gap: 6 }}>
+									<div
+										style={{
+											maxHeight: 180,
+											overflow: "auto",
+											fontSize: 12,
+											opacity: 0.9,
+											display: "flex",
+											flexDirection: "column",
+											gap: 6,
+										}}
+									>
 										{card.memory.map((m, i) =>
 											editingIdx === i ? (
-												<div key={i} style={{ padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.45)" }}>
+												<div
+													key={i}
+													style={{
+														padding: "6px 8px",
+														borderRadius: 6,
+														background: "rgba(124,140,248,0.1)",
+														border: "1px solid rgba(124,140,248,0.45)",
+													}}
+												>
 													<textarea
 														value={editingText}
 														onChange={(e) => setEditingText(e.target.value)}
@@ -337,12 +424,17 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 														style={{ ...inputStyle, fontSize: 12, resize: "vertical" }}
 													/>
 													<div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 4 }}>
-														<button type="button" onClick={() => setEditingIdx(-1)} style={miniBtn}>{t("manage.cancel")}</button>
+														<button type="button" onClick={() => setEditingIdx(-1)} style={miniBtn}>
+															{t("manage.cancel")}
+														</button>
 														<button
 															type="button"
 															disabled={!editingText.trim()}
 															onClick={() => {
-																setCard((c) => ({ ...c, memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: editingText.trim() } : mm)) }));
+																setCard((c) => ({
+																	...c,
+																	memory: c.memory!.map((mm, j) => (j === i ? { ...mm, text: editingText.trim() } : mm)),
+																}));
 																setEditingIdx(-1);
 															}}
 															style={{ ...miniBtn, color: "var(--color-accent, #7c8cf8)" }}
@@ -352,10 +444,36 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 													</div>
 												</div>
 											) : (
-												<div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(124,140,248,0.1)", border: "1px solid rgba(124,140,248,0.25)" }}>
+												<div
+													key={i}
+													style={{
+														display: "flex",
+														alignItems: "center",
+														gap: 6,
+														padding: "6px 8px",
+														borderRadius: 6,
+														background: "rgba(124,140,248,0.1)",
+														border: "1px solid rgba(124,140,248,0.25)",
+													}}
+												>
 													<span style={{ flex: 1 }}>🎞️ {m.text}</span>
-													<button type="button" onClick={() => { setEditingIdx(i); setEditingText(m.text); }} style={miniBtn}>{t("manage.edit")}</button>
-													<button type="button" onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))} style={{ ...miniBtn, color: "#ff6b6b" }}>{t("manage.delete")}</button>
+													<button
+														type="button"
+														onClick={() => {
+															setEditingIdx(i);
+															setEditingText(m.text);
+														}}
+														style={miniBtn}
+													>
+														{t("manage.edit")}
+													</button>
+													<button
+														type="button"
+														onClick={() => setCard((c) => ({ ...c, memory: c.memory!.filter((_, j) => j !== i) }))}
+														style={{ ...miniBtn, color: "#ff6b6b" }}
+													>
+														{t("manage.delete")}
+													</button>
 												</div>
 											),
 										)}
@@ -363,8 +481,12 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 								</>
 							) : null}
 							<div style={{ display: "flex", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--color-border, #333)" }}>
-								<Button variant="ghost" onClick={() => setPhase("input")}>{t("distill.redistill")}</Button>
-								<Button variant="primary" onClick={() => void save()}>{t("distill.save")}</Button>
+								<Button variant="ghost" onClick={() => setPhase("input")}>
+									{t("distill.redistill")}
+								</Button>
+								<Button variant="primary" onClick={() => void save()}>
+									{t("distill.save")}
+								</Button>
 							</div>
 						</div>
 					)}
@@ -382,8 +504,17 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 					<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
 						<span style={{ fontSize: 11, opacity: 0.6 }}>{t("distill.counter", { count: text.length, cap })}</span>
 						<>
-							<input ref={fileRef} type="file" accept=".txt,.md,text/plain" style={{ display: "none" }} aria-label={t("distill.file.aria")} onChange={(e) => void importFile(e.target.files?.[0])} />
-							<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>{t("distill.file")}</Button>
+							<input
+								ref={fileRef}
+								type="file"
+								accept=".txt,.md,text/plain"
+								style={{ display: "none" }}
+								aria-label={t("distill.file.aria")}
+								onChange={(e) => void importFile(e.target.files?.[0])}
+							/>
+							<Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+								{t("distill.file")}
+							</Button>
 						</>
 					</div>
 					{chatSpeakers && chatSpeakers.length > 0 ? (
@@ -416,15 +547,11 @@ export function DistillModal({ open, onClose, onSaved, t, callRpc }: { open: boo
 							<Input value={hint} onChange={(e) => setHint(e.target.value)} placeholder={t("distill.hint.placeholder")} />
 						</>
 					)}
-					</div>
-				) : (
-					<div style={{ padding: "24px 0", textAlign: "center", fontSize: 13 }}>
-						{t("distill.saved", { persona: savedName })}
-					</div>
-				)}
-			{error ? (
-				<div style={{ marginTop: 10, fontSize: 12, color: "var(--color-danger, #e56)" }}>{error}</div>
-			) : null}
+				</div>
+			) : (
+				<div style={{ padding: "24px 0", textAlign: "center", fontSize: 13 }}>{t("distill.saved", { persona: savedName })}</div>
+			)}
+			{error ? <div style={{ marginTop: 10, fontSize: 12, color: "var(--color-danger, #e56)" }}>{error}</div> : null}
 		</Modal>
 	);
 }

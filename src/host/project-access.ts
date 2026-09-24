@@ -48,8 +48,6 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		return st.projectKey ?? key;
 	}
 
-
-
 	/** 命令摘要：验证证据要写进台账，太长的命令只留前 120 字。 */
 	function commandSummary(raw: string | null): string {
 		if (!raw) return "(未记录命令行)";
@@ -75,12 +73,13 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		const key = projectKeyFor(sid, source);
 		if (!key) return;
 		const pending = st.pendingFacts.splice(0, st.pendingFacts.length);
-		void deps.stores.projectReady
-		.then(async (store) => {
+		void deps.stores.projectReady.then(async (store) => {
 			if (!store) return;
 			let saved = 0;
 			for (const fact of pending) {
-				const ok = await store.addFact(key, fact, (candidate, existing) => existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7));
+				const ok = await store.addFact(key, fact, (candidate, existing) =>
+					existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7),
+				);
 				if (ok) saved++;
 			}
 			deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
@@ -102,7 +101,12 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		if (!realVerify && !readbackTarget) return;
 		if (signals.failure || signals.unknown) {
 			if (realVerify) {
-				if (!noticeText(st, "trigger")) forceNotice(st, "trigger", `〔验证失败〕刚才那条验证没过（${commandSummary(st.agent.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`);
+				if (!noticeText(st, "trigger"))
+					forceNotice(
+						st,
+						"trigger",
+						`〔验证失败〕刚才那条验证没过（${commandSummary(st.agent.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`,
+					);
 				deps.ctx.logger?.warn?.(`lume: [${sid}] 真验证失败：${commandSummary(st.agent.lastToolArgs)}`);
 			}
 			return;
@@ -110,12 +114,15 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		const changed = changesOf(sid);
 		const targets = realVerify ? undefined : [readbackTarget!];
 		if (!realVerify && !changed.some((item) => item.target === readbackTarget)) return;
-		const firstLine = resultText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
+		const firstLine =
+			resultText
+				.split(/\r?\n/)
+				.map((line) => line.trim())
+				.filter(Boolean)[0] ?? "";
 		const evidence = realVerify
 			? `自动：${commandSummary(st.agent.lastToolArgs)} → ${firstLine.slice(0, 80)}`
 			: `自动：回读 ${readbackTarget} → ${firstLine.slice(0, 60)}`;
-		void deps.stores.projectReady
-		.then(async (store) => {
+		void deps.stores.projectReady.then(async (store) => {
 			const count = (await store?.verifyChanges(sid, { before: Date.now(), evidence, targets })) ?? 0;
 			if (count > 0) deps.ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账 ${count} 条 → verified（${evidence.slice(0, 60)}）`);
 		});
@@ -139,7 +146,6 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		return store && projectKey ? store.getFacts(projectKey) : [];
 	}
 
-	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
 	/** 本会话的设计决策（设计 pass 产出）。 */
 	/** 本会话的需求锚点（用户原话，逐字）。 */
 	function requirementsOf(sid: string) {
@@ -168,8 +174,6 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 			return null;
 		}
 	}
-
-
 
 	// ── 人设五段式注入 + 切换播报 ──
 	/**

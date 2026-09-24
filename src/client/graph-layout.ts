@@ -96,7 +96,9 @@ export function relTime(ts: number, now: number = Date.now()): string {
 }
 
 export function rgba(hex: string, alpha: number): string {
-	const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+	const r = parseInt(hex.slice(1, 3), 16),
+		g = parseInt(hex.slice(3, 5), 16),
+		b = parseInt(hex.slice(5, 7), 16);
 	return `rgba(${r},${g},${b},${alpha})`;
 }
 
@@ -141,9 +143,13 @@ const MARGIN = 90;
  * 建图：节点随机落在中心区域，两两相似度 ≥0.12 连边（核心记忆与所有节点弱连）。
  * rand 注入是为了可复现（测试喂固定序列）。
  */
-export function buildGraph(items: MemoryItem[], opts: { w: number; h: number; rand?: () => number }): { nodes: MemNode[]; edges: MemEdge[] } {
+export function buildGraph(
+	items: MemoryItem[],
+	opts: { w: number; h: number; rand?: () => number },
+): { nodes: MemNode[]; edges: MemEdge[] } {
 	const rand = opts.rand ?? Math.random;
-	const W = opts.w, H = opts.h;
+	const W = opts.w,
+		H = opts.h;
 	const nodes: MemNode[] = items.map((m, id) => {
 		const x = W / 2 + (rand() - 0.5) * W * 0.22;
 		const y = H / 2 + (rand() - 0.5) * H * 0.22;
@@ -177,20 +183,24 @@ export function buildGraph(items: MemoryItem[], opts: { w: number; h: number; ra
 
 /** 一步力导向迭代：斥力 + 弹簧 + 向心力 + 阻尼 + 边界钳制（纯数学，就地改节点）。 */
 export function forceStep(nodes: MemNode[], edges: MemEdge[], w: number, h: number, rand: () => number = Math.random): void {
-	const cx = w / 2, cy = h / 2;
+	const cx = w / 2,
+		cy = h / 2;
 	for (let i = 0; i < nodes.length; i++) {
 		const a = nodes[i]!;
 		if (a.pinned) continue;
 		for (let j = i + 1; j < nodes.length; j++) {
 			const b = nodes[j]!;
 			if (b.pinned) continue;
-			let dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+			let dx = a.x - b.x,
+				dy = a.y - b.y,
+				d2 = dx * dx + dy * dy;
 			if (d2 < 1) {
 				dx = rand() - 0.5;
 				dy = rand() - 0.5;
 				d2 = 1;
 			}
-			const d = Math.sqrt(d2), f = (REPULSE_K * REPULSE_K) / d;
+			const d = Math.sqrt(d2),
+				f = (REPULSE_K * REPULSE_K) / d;
 			a.vx += (dx / d) * f;
 			a.vy += (dy / d) * f;
 			b.vx -= (dx / d) * f;
@@ -198,8 +208,10 @@ export function forceStep(nodes: MemNode[], edges: MemEdge[], w: number, h: numb
 		}
 	}
 	for (const e of edges) {
-		const a = nodes[e.source]!, b = nodes[e.target]!;
-		const dx = b.x - a.x, dy = b.y - a.y;
+		const a = nodes[e.source]!,
+			b = nodes[e.target]!;
+		const dx = b.x - a.x,
+			dy = b.y - a.y;
 		const d = Math.sqrt(dx * dx + dy * dy) || 1;
 		const f = (d - LINK_DIST) * LINK_K * e.weight;
 		if (!a.pinned) {

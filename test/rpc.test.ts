@@ -165,7 +165,12 @@ describe("createLumeRpcHandler", () => {
 	it("saveCustomPersona persists the distilled card and protects builtins", async () => {
 		const { identity, handle } = makeHarness();
 		expect(
-			await handle("saveCustomPersona", { name: "distilled", displayName: "蒸馏姐", promptText: "p", corpus: [{ user: "u", assistant: "a" }] }),
+			await handle("saveCustomPersona", {
+				name: "distilled",
+				displayName: "蒸馏姐",
+				promptText: "p",
+				corpus: [{ user: "u", assistant: "a" }],
+			}),
 		).toEqual({ ok: true });
 		expect(identity!.getCustomPersona("distilled")?.corpus).toEqual([{ user: "u", assistant: "a" }]);
 		// 内置名与非法键都在 identity 层拒绝，映射为 forbidden
@@ -201,7 +206,13 @@ describe("createLumeRpcHandler", () => {
 		const res = await handle("getCustomPersona", { personaName: "distilled" });
 		expect(res).toEqual({
 			ok: true,
-			value: { displayName: "晚晴姐姐", description: "测试", promptText: "契约正文", createdAt: 42, corpus: [{ user: "u", assistant: "a" }] },
+			value: {
+				displayName: "晚晴姐姐",
+				description: "测试",
+				promptText: "契约正文",
+				createdAt: 42,
+				corpus: [{ user: "u", assistant: "a" }],
+			},
 		});
 		expect(await handle("getCustomPersona", { personaName: "senpai" })).toMatchObject({ ok: false, error: { code: "unknown-persona" } });
 		expect(await handle("getCustomPersona", {})).toMatchObject({ ok: false, error: { code: "bad-request" } });

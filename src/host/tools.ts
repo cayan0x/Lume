@@ -224,7 +224,10 @@ export function registerLumeTools(deps: ToolDeps): void {
 						if (!hit) throw new Error(`lume_change: no ledger entry for ${target}`);
 						return { ok: true };
 					}
-					const item = deps.normalizeChange({ target, change: args.change, why: args.why, verify: args.verify, status: allowed }, Date.now());
+					const item = deps.normalizeChange(
+						{ target, change: args.change, why: args.why, verify: args.verify, status: allowed },
+						Date.now(),
+					);
 					if (!item) throw new Error("lume_change requires target and change");
 					await deps.projectStore().upsertChange(sid, item);
 					return { ok: true };
@@ -268,21 +271,28 @@ export function registerLumeTools(deps: ToolDeps): void {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_project_note requires an active session");
-					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now(), { taskTitle: deps.runtime.get(sid).sessionTitle, requirementHints: deps.requirementHintsOf(deps.runtime.get(sid).cwd) });
+					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now(), {
+						taskTitle: deps.runtime.get(sid).sessionTitle,
+						requirementHints: deps.requirementHintsOf(deps.runtime.get(sid).cwd),
+					});
 					if (!fact) throw new Error("lume_project_note requires text");
-				if (deps.looksSensitive(fact.text))
-					throw new Error("lume_project_note 拒绝含密钥/连接串/凭证的内容：项目知识是**明文跨会话**存储；请改记「存在某类配置，细节见 <文件:行>」");
+					if (deps.looksSensitive(fact.text))
+						throw new Error(
+							"lume_project_note 拒绝含密钥/连接串/凭证的内容：项目知识是**明文跨会话**存储；请改记「存在某类配置，细节见 <文件:行>」",
+						);
 					const projectKey = deps.projectKeyFor(sid, { agent: exec?.agent });
-						if (!projectKey) {
-							// 拿不到工作目录时**暂存**而不是丢弃——现场代价：模型主动记的 3 条硬知识全丢了。
-							// 仍然不写跨会话表：写一次就会把不同项目的知识串进同一个键（现场事故：facts 的键曾是 "unknown"）。
-							const rt = deps.runtime.get(sid);
-							rt.pendingFacts.push(fact);
-							if (rt.pendingFacts.length > 8) rt.pendingFacts.shift();
-							deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识已暂存（工作目录未知，共 ${rt.pendingFacts.length} 条），拿到 cwd 后补落盘`);
-							return { ok: true };
-						}
-						await deps.projectStore().addFact(projectKey, fact, (candidate, existing) => existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7));
+					if (!projectKey) {
+						// 拿不到工作目录时**暂存**而不是丢弃——现场代价：模型主动记的 3 条硬知识全丢了。
+						// 仍然不写跨会话表：写一次就会把不同项目的知识串进同一个键（现场事故：facts 的键曾是 "unknown"）。
+						const rt = deps.runtime.get(sid);
+						rt.pendingFacts.push(fact);
+						if (rt.pendingFacts.length > 8) rt.pendingFacts.shift();
+						deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识已暂存（工作目录未知，共 ${rt.pendingFacts.length} 条），拿到 cwd 后补落盘`);
+						return { ok: true };
+					}
+					await deps
+						.projectStore()
+						.addFact(projectKey, fact, (candidate, existing) => existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7));
 					return { ok: true };
 				},
 			}),
@@ -290,8 +300,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 		deps.ctx.tools.register(
 			defineTool({
 				name: "lume_project_forget",
-				description:
-					"删掉一条已过时/记错的项目知识（注入块里的 #编号 或短 id）。旧结论被推翻时用它，别让错误知识继续跨会话传播。",
+				description: "删掉一条已过时/记错的项目知识（注入块里的 #编号 或短 id）。旧结论被推翻时用它，别让错误知识继续跨会话传播。",
 				parameters: {
 					id: { type: "string", required: true, description: "要删的条目引用（#7 或 7 或短 id，见项目知识块里的 #编号·短id）" },
 				},
@@ -310,28 +319,31 @@ export function registerLumeTools(deps: ToolDeps): void {
 				},
 			}),
 		);
-	deps.ctx.tools.register(
-		defineTool({
-			name: "lume_design",
-			description:
-				"记一条设计决策（功能型任务的设计 pass）：决策点 → 选择 → 被放弃的方案与理由 → 影响面。新增字段/接口/页面这类需求，动手前先写；写下后会跨轮回显，交付时按它对账。",
-			parameters: {
-				point: { type: "string", required: true, description: "决策点：例如「权限人字段存在哪」" },
-				choice: { type: "string", required: true, description: "定下来的做法（一句话）" },
-				rejected: { type: "string", description: "被放弃的方案与理由（没有它就是没做取舍）" },
-				impact: { type: "string", description: "影响面：会经过哪些既有路径（其它 tab/导出/导入/报表/外部同步）" },
-			},
-			output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已记录设计决策" }] },
-			execute: async (args: Record<string, unknown>, exec: HostPayload) => {
-				if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
-				const sid = String(exec?.agent?.session?.id ?? "");
-				if (!sid) throw new Error("lume_design requires an active session");
-				const item = deps.normalizeDesign({ point: args.point, choice: args.choice, rejected: args.rejected, impact: args.impact }, Date.now());
-				if (!item) throw new Error("lume_design requires point and choice");
-				await deps.projectStore().upsertDesign(sid, item);
-				return { ok: true };
-			},
-		}),
-	);
+		deps.ctx.tools.register(
+			defineTool({
+				name: "lume_design",
+				description:
+					"记一条设计决策（功能型任务的设计 pass）：决策点 → 选择 → 被放弃的方案与理由 → 影响面。新增字段/接口/页面这类需求，动手前先写；写下后会跨轮回显，交付时按它对账。",
+				parameters: {
+					point: { type: "string", required: true, description: "决策点：例如「权限人字段存在哪」" },
+					choice: { type: "string", required: true, description: "定下来的做法（一句话）" },
+					rejected: { type: "string", description: "被放弃的方案与理由（没有它就是没做取舍）" },
+					impact: { type: "string", description: "影响面：会经过哪些既有路径（其它 tab/导出/导入/报表/外部同步）" },
+				},
+				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已记录设计决策" }] },
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
+					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
+					const sid = String(exec?.agent?.session?.id ?? "");
+					if (!sid) throw new Error("lume_design requires an active session");
+					const item = deps.normalizeDesign(
+						{ point: args.point, choice: args.choice, rejected: args.rejected, impact: args.impact },
+						Date.now(),
+					);
+					if (!item) throw new Error("lume_design requires point and choice");
+					await deps.projectStore().upsertDesign(sid, item);
+					return { ok: true };
+				},
+			}),
+		);
 	}, "lume: carrier tools");
 }

@@ -63,7 +63,8 @@ export function splitRequirementItems(text: unknown): RequirementItem[] {
 }
 
 /** 交付物里提到该条需求的句子（命中判据：与原文共享**未被泛化词污染的三元组**，中文无需分词）。 */
-const GENERIC_GRAM_RE = /[的了和与或、，。；：:?？!！"'"'（）()\s]|需求|本次|新增|调整|支持|可以|需要|具体|提供|之后|例如|当前|展示|进行|内容|要求|相关|直接|默认/;
+const GENERIC_GRAM_RE =
+	/[的了和与或、，。；：:?？!！"'"'（）()\s]|需求|本次|新增|调整|支持|可以|需要|具体|提供|之后|例如|当前|展示|进行|内容|要求|相关|直接|默认/;
 
 export function ngrams(text: string, n: number): string[] {
 	const out: string[] = [];

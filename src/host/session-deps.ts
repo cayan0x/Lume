@@ -35,7 +35,6 @@ import type { ReflectionStore } from "./reflection.js";
 import type { SessionRuntime, SessionRuntimeStore } from "./session-runtime.js";
 import type { TriggerThresholds } from "./triggers.js";
 
-
 /**
  * 依赖按**域**分成七组（架构整理 ①：依赖边界类型化）。
  *
@@ -167,4 +166,5 @@ export interface SessionAgentDeps {
 }
 
 /** 事件处理器与 disposed 处理器共用的全部依赖（既有的 sessionEventDeps 对象仍然扁平注入）。 */
-export interface SessionEventDeps extends SessionEnvDeps, SessionNoticeDeps, SessionCarrierDeps, SessionSignalDeps, SessionPromptDeps, SessionToolDeps, SessionAgentDeps {}
+export interface SessionEventDeps
+	extends SessionEnvDeps, SessionNoticeDeps, SessionCarrierDeps, SessionSignalDeps, SessionPromptDeps, SessionToolDeps, SessionAgentDeps {}

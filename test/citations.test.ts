@@ -7,9 +7,22 @@
  * turn 18 之前它读到过这个文件的范围是 470-609 / 432-486 / 412-433，**159 这次没打开过**。
  */
 import { describe, expect, it } from "vitest";
-import { covers, extractCitations, formatWindows, newEvidenceIndex, recordReadArgs, recordResultText, recordSymbols, shouldCheckCitations, symbolsIn, unsupportedClaims, unsupportedCitations } from "../src/core/citations.js";
+import {
+	covers,
+	extractCitations,
+	formatWindows,
+	newEvidenceIndex,
+	recordReadArgs,
+	recordResultText,
+	recordSymbols,
+	shouldCheckCitations,
+	symbolsIn,
+	unsupportedClaims,
+	unsupportedCitations,
+} from "../src/core/citations.js";
 
-const FILE = "b2i\\wtpf-goods\\wtpf-goods-service\\src\\main\\java\\com\\ctzj\\wtpf\\goods\\service\\impl\\WtpfGoodsPrepertyDefServiceImpl.java";
+const FILE =
+	"b2i\\wtpf-goods\\wtpf-goods-service\\src\\main\\java\\com\\ctzj\\wtpf\\goods\\service\\impl\\WtpfGoodsPrepertyDefServiceImpl.java";
 const KEY = "wtpfgoodsprepertydefserviceimpl.java";
 
 describe("证据索引：read 窗口与 grep 命中", () => {
@@ -47,7 +60,7 @@ describe("引用抽取与核对（现场数据）", () => {
 	});
 
 	it("本轮读过的那行 → 不报（turn 19 的正确结论不会被冤枉）", () => {
-		const answer = "例外是 status 不对：导入路径在 `WtpfGoodsPrepertyDefServiceImpl:534` 就是 setStatus(tmp.get(\"优惠状态\"))。";
+		const answer = '例外是 status 不对：导入路径在 `WtpfGoodsPrepertyDefServiceImpl:534` 就是 setStatus(tmp.get("优惠状态"))。';
 		expect(unsupportedCitations(index, answer)).toEqual([]);
 	});
 

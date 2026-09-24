@@ -1,0 +1,22 @@
+{
+  "useTabs": true,
+  "tabWidth": 2,
+  "semi": true,
+  "printWidth": 140,
+  "trailingComma": "all",
+  "endOfLine": "lf",
+  "overrides": [
+    {
+      "files": [
+        "*.md",
+        "*.yml",
+        "*.yaml",
+        "*.json"
+      ],
+      "options": {
+        "useTabs": false,
+        "tabWidth": 2
+      }
+    }
+  ]
+}

@@ -135,7 +135,12 @@ describe("设计层：设计三问 + 设计决策载具（0.7.5）", () => {
 		harness.fire(SID, "user/message", userMessage("优惠视图新增权限人字段"));
 		await harness.callTool(
 			"lume_design",
-			{ point: "权限人字段存哪", choice: "反查 create_id/modify_id，不落库", rejected: "落库冗余（要迁移、且与主数据可能不一致）", impact: "列表/导出/搜索" },
+			{
+				point: "权限人字段存哪",
+				choice: "反查 create_id/modify_id，不落库",
+				rejected: "落库冗余（要迁移、且与主数据可能不一致）",
+				impact: "列表/导出/搜索",
+			},
 			SID,
 			CWD,
 		);
@@ -332,8 +337,43 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 
 	it("需求覆盖核对：写出文档产物后，逐条回显需求原文并并列交付物里的句子（替代自证式「N 条全有落点」）", async () => {
 		const harness = await bootLume();
-		harness.fire(SID, "user/message", userMessage(["三、B2I优惠视图新增字段", "1、新增权限人字段", "（1）列表页在业务类型后新增权限人字段，权限人按姓名+手机后4位展示（如图一）", "（3）批量导出新增权限人字段", "4、历史数据的权限人和业务类型都需开发做批量数据导入---具体数据待运营梳理后提供"].join("\n")));
-		harness.fire(SID, "tool/call", { name: "write", args: { path: "doc/开发文档.md", content: ["# B2I 优惠视图新增字段 · 开发文档", "## 0. 需求条目对照", "| 1(1) 列表页新增权限人字段，按姓名+手机后4位展示 | 2.1.1、2.1.5 |", "| 1(3) 批量导出新增权限人字段 | 2.1.7 |", "| 4 历史数据的权限人和业务类型批量导入 | 2.5、2.6 |", "## 1. 现状", "权限人目前没有字段：BaseDo 只有 createId/createDate；列表查询的 resultMap 没映射 create_id。", "## 2. 方案", "### 2.1 权限人字段（新增列）", "### 2.5 存量数据（走 SQL 脚本）", "运营只出优惠编码 + 业务类型", "权限人不从 Excel 读，由后端写入", "### 2.6 需求内部矛盾（必须需求方确认）", "- 4：历史数据的权限人…待运营梳理后提供", "## 3. 回归面", "页面新增/修改、批量导入、批量导出、列表搜索都要回归。"].join("\n") } });
+		harness.fire(
+			SID,
+			"user/message",
+			userMessage(
+				[
+					"三、B2I优惠视图新增字段",
+					"1、新增权限人字段",
+					"（1）列表页在业务类型后新增权限人字段，权限人按姓名+手机后4位展示（如图一）",
+					"（3）批量导出新增权限人字段",
+					"4、历史数据的权限人和业务类型都需开发做批量数据导入---具体数据待运营梳理后提供",
+				].join("\n"),
+			),
+		);
+		harness.fire(SID, "tool/call", {
+			name: "write",
+			args: {
+				path: "doc/开发文档.md",
+				content: [
+					"# B2I 优惠视图新增字段 · 开发文档",
+					"## 0. 需求条目对照",
+					"| 1(1) 列表页新增权限人字段，按姓名+手机后4位展示 | 2.1.1、2.1.5 |",
+					"| 1(3) 批量导出新增权限人字段 | 2.1.7 |",
+					"| 4 历史数据的权限人和业务类型批量导入 | 2.5、2.6 |",
+					"## 1. 现状",
+					"权限人目前没有字段：BaseDo 只有 createId/createDate；列表查询的 resultMap 没映射 create_id。",
+					"## 2. 方案",
+					"### 2.1 权限人字段（新增列）",
+					"### 2.5 存量数据（走 SQL 脚本）",
+					"运营只出优惠编码 + 业务类型",
+					"权限人不从 Excel 读，由后端写入",
+					"### 2.6 需求内部矛盾（必须需求方确认）",
+					"- 4：历史数据的权限人…待运营梳理后提供",
+					"## 3. 回归面",
+					"页面新增/修改、批量导入、批量导出、列表搜索都要回归。",
+				].join("\n"),
+			},
+		});
 		harness.fire(SID, "tool/result", toolResult("written"));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		const text = harness.runtimeText(SID, "thinking");
@@ -365,7 +405,18 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 
 	it("提问核对：一轮抛出 3 条以上「待你定」→ 顶一句（现场：4 条里 3 条是自己造的疑问）", async () => {
 		const harness = await bootLume();
-		harness.fire(SID, "assistant/message", assistantMessage(["**还没定的三个**", "1. `status` 的双口径：Excel 信值还是按时间算？", "2. 权限人下拉候选从哪来", "3. 分页接口有没有返回 total"].join("\n")));
+		harness.fire(
+			SID,
+			"assistant/message",
+			assistantMessage(
+				[
+					"**还没定的三个**",
+					"1. `status` 的双口径：Excel 信值还是按时间算？",
+					"2. 权限人下拉候选从哪来",
+					"3. 分页接口有没有返回 total",
+				].join("\n"),
+			),
+		);
 		const text = harness.runtimeText(SID, "thinking");
 		expect(text).toContain("提问核对");
 		expect(text).toContain("3 条");
@@ -373,7 +424,11 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 
 	it("提问核对（单条版）：只有一条待确认、但没有行号证据 → 也顶（现场 turn 22 的 status 口径）", async () => {
 		const harness = await bootLume();
-		harness.fire(SID, "assistant/message", assistantMessage("文档里要标一条待定：status 口径。我先按「跟 Excel 的值走」写，标成待确认。你不认的话我改成按生失效时间重算。"));
+		harness.fire(
+			SID,
+			"assistant/message",
+			assistantMessage("文档里要标一条待定：status 口径。我先按「跟 Excel 的值走」写，标成待确认。你不认的话我改成按生失效时间重算。"),
+		);
 		const text = harness.runtimeText(SID, "thinking");
 		expect(text).toContain("提问核对");
 		expect(text).toContain("status 口径");
@@ -387,13 +442,20 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 
 	it("提问核对：正常回答（没有待定清单）→ 不顶", async () => {
 		const harness = await bootLume();
-		harness.fire(SID, "assistant/message", assistantMessage("方案已经定了：前端把 currentPage 夹到 Math.ceil(dataTotal / pageSize) 就行。"));
+		harness.fire(
+			SID,
+			"assistant/message",
+			assistantMessage("方案已经定了：前端把 currentPage 夹到 Math.ceil(dataTotal / pageSize) 就行。"),
+		);
 		expect(harness.runtimeText(SID, "thinking")).not.toContain("提问核对");
 	});
 
 	it("自动台账条目带内容摘要（不再是「由 edit 修改」这种零信息文案）", async () => {
 		const harness = await bootLume();
-		harness.fire(SID, "tool/call", { name: "edit", args: { file_path: "src/a.ts", old_string: "x", new_string: "const a = 1;\nconst b = 2;" } });
+		harness.fire(SID, "tool/call", {
+			name: "edit",
+			args: { file_path: "src/a.ts", old_string: "x", new_string: "const a = 1;\nconst b = 2;" },
+		});
 		harness.fire(SID, "tool/result", toolResult("edited"));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		const rows = harness.table("ledger").get(SID) as Array<{ target: string; change: string }>;

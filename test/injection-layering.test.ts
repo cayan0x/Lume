@@ -168,7 +168,11 @@ describe("任务载具：内容位置与分层不变量", () => {
 		expect(h.toolNames()).toContain("lume_change");
 
 		const baseline = [h.systemText(sid, "thinking"), h.systemText(sid, "persona")];
-		await h.callTool("lume_contract", { goal: "把注入分层修好", scope: "src/index.ts", expectCount: 2, criteria: "测试全绿\n命中率 >95%" }, sid);
+		await h.callTool(
+			"lume_contract",
+			{ goal: "把注入分层修好", scope: "src/index.ts", expectCount: 2, criteria: "测试全绿\n命中率 >95%" },
+			sid,
+		);
 		await h.callTool("lume_change", { target: "src/index.ts", change: "拆四段", verify: "npm test", status: "done" }, sid);
 		await h.callTool("lume_project_note", { kind: "build", text: "本仓库用 npm run build 产出 lib/" }, sid);
 

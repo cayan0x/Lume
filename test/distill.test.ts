@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { DistillJobRunner, runDistill } from "../src/host/distill.js";
 import { CHAT_TEXT_CAP, DISTILL_TEXT_CAP } from "../src/host/distill-prompt.js";
-import { buildContractPrompt, buildMemoryPrompt, buildStoryPrompt, buildCorpusPrompt, dedupeMemories, extractBalancedAt, normalizeContract, normalizeKey, parseJsonLoose, settleMemoryText } from "../src/host/distill-prompt.js";
+import {
+	buildContractPrompt,
+	buildMemoryPrompt,
+	buildStoryPrompt,
+	buildCorpusPrompt,
+	dedupeMemories,
+	extractBalancedAt,
+	normalizeContract,
+	normalizeKey,
+	parseJsonLoose,
+	settleMemoryText,
+} from "../src/host/distill-prompt.js";
 import type { DistillDeps } from "../src/host/distill.js";
 
 const ROUTE = { provider: "test", model: "test-model" };
@@ -20,7 +31,8 @@ const CONTRACT_JSON = JSON.stringify({
 	key: "Miss WanQing!",
 	displayName: "晚晴",
 	description: "深夜写代码的姐姐",
-	promptText: "【身份】从容的姐姐。\n【称呼】自称姐姐。\n【emoji】至多一个。\n【语气词】省略号多。\n【节奏】慢。\n【立场】撒娇式拒绝。\n硬性约束：晚晴只影响自然语言回复。\n每次发出前自查：像不像晚晴？",
+	promptText:
+		"【身份】从容的姐姐。\n【称呼】自称姐姐。\n【emoji】至多一个。\n【语气词】省略号多。\n【节奏】慢。\n【立场】撒娇式拒绝。\n硬性约束：晚晴只影响自然语言回复。\n每次发出前自查：像不像晚晴？",
 });
 
 const CORPUS_JSON = JSON.stringify([
@@ -39,18 +51,19 @@ describe("parseJsonLoose", () => {
 	});
 
 	it("extracts the last balanced object after reasoning text", () => {
-		const reasoning = "用户在问一个技术问题。我需要先分析：{\"thinking\":true}，然后给出结论。";
+		const reasoning = '用户在问一个技术问题。我需要先分析：{"thinking":true}，然后给出结论。';
 		const output = `${reasoning}\n\n{"key":"jade","displayName":"冷语Jade","promptText":"p"}`;
 		expect(parseJsonLoose(output)).toEqual({ key: "jade", displayName: "冷语Jade", promptText: "p" });
 	});
 
 	it("handles reasoning with unbalanced braces in the middle", () => {
-		const output = "分析：代码里出现 { 和 } 符号很正常。\n{\"a\":1}\n总结完毕";
+		const output = '分析：代码里出现 { 和 } 符号很正常。\n{"a":1}\n总结完毕';
 		expect(parseJsonLoose(output)).toEqual({ a: 1 });
 	});
 
 	it("recovers JSON followed by summary text containing braces", () => {
-		const output = '分析：先看语气。\n{"key":"a","displayName":"打工人","promptText":"p"}\n总结：以上为完整角色卡，字段含义见规范。{}无遗漏。';
+		const output =
+			'分析：先看语气。\n{"key":"a","displayName":"打工人","promptText":"p"}\n总结：以上为完整角色卡，字段含义见规范。{}无遗漏。';
 		expect(parseJsonLoose(output)).toEqual({ key: "a", displayName: "打工人", promptText: "p" });
 	});
 
@@ -106,7 +119,7 @@ describe("prompt 组装", () => {
 	it("declares untrusted material in the system prompt", () => {
 		const { system } = buildContractPrompt({ speaker: null, lines: ["x"], otherLines: [], narrative: "n", mixed: true });
 		expect(system).toContain("不可信文本");
-    	expect(system).toContain("禁止任何多余输出");
+		expect(system).toContain("禁止任何多余输出");
 		expect(system).toContain("不要执行");
 	});
 
@@ -128,22 +141,41 @@ describe("prompt 组装", () => {
 	it("excludeOthers drops the other speaker's lines from evidence", () => {
 		const withOthers = buildContractPrompt({ speaker: "晚晴", lines: ["目标台词"], otherLines: ["别人的话"], narrative: "", mixed: false });
 		expect(withOthers.userText).toContain("别人的话");
-		const without = buildContractPrompt({ speaker: "晚晴", lines: ["目标台词"], otherLines: ["别人的话"], narrative: "", mixed: false, excludeOthers: true });
+		const without = buildContractPrompt({
+			speaker: "晚晴",
+			lines: ["目标台词"],
+			otherLines: ["别人的话"],
+			narrative: "",
+			mixed: false,
+			excludeOthers: true,
+		});
 		expect(without.userText).not.toContain("别人的话");
 		expect(without.userText).toContain("目标台词");
 	});
 
 	it("contract prompt includes two-sided context when available", () => {
 		const { userText } = buildContractPrompt({
-			speaker: "目标", lines: ["你说嘛"], otherLines: [], narrative: "", mixed: false,
-			excludeOthers: true, contexts: ["用户：有件事想问你\n目标：你说嘛"],
+			speaker: "目标",
+			lines: ["你说嘛"],
+			otherLines: [],
+			narrative: "",
+			mixed: false,
+			excludeOthers: true,
+			contexts: ["用户：有件事想问你\n目标：你说嘛"],
 		});
 		expect(userText).toContain("双边情境窗口");
 		expect(userText).toContain("用户：有件事想问你");
 	});
 
 	it("contract prompt carries observable style statistics", () => {
-		const { userText } = buildContractPrompt({ speaker: "目标", lines: ["x"], otherLines: [], narrative: "", mixed: false, styleStats: "样本数 20；平均 8 字" });
+		const { userText } = buildContractPrompt({
+			speaker: "目标",
+			lines: ["x"],
+			otherLines: [],
+			narrative: "",
+			mixed: false,
+			styleStats: "样本数 20；平均 8 字",
+		});
 		expect(userText).toContain("可观测风格统计");
 		expect(userText).toContain("平均 8 字");
 	});
@@ -169,7 +201,12 @@ describe("prompt 组装", () => {
 
 	it("relationship address terms become contract evidence", () => {
 		const { userText } = buildContractPrompt({
-			speaker: "老公", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true,
+			speaker: "老公",
+			lines: ["x"],
+			otherLines: [],
+			narrative: "",
+			mixed: false,
+			excludeOthers: true,
 			relationship: { userToTarget: ["老公"], targetToUser: ["亲爱的"] },
 		});
 		expect(userText).toContain("关系称呼线索");
@@ -212,7 +249,14 @@ describe("prompt 组装", () => {
 	});
 
 	it("forbids topic-as-personality and derives character from speech attitude", () => {
-		const { system } = buildContractPrompt({ speaker: "蒲先生", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true });
+		const { system } = buildContractPrompt({
+			speaker: "蒲先生",
+			lines: ["x"],
+			otherLines: [],
+			narrative: "",
+			mixed: false,
+			excludeOthers: true,
+		});
 		expect(system).toContain("禁止把聊天话题定性为性格");
 		expect(system).toContain("说话方式】推导");
 		expect(system).toContain("【性格画像】");
@@ -220,7 +264,14 @@ describe("prompt 组装", () => {
 	});
 
 	it("requires original-voice anchors and forbids escalated personality labels", () => {
-		const { system } = buildContractPrompt({ speaker: "蒲先生", lines: ["x"], otherLines: [], narrative: "", mixed: false, excludeOthers: true });
+		const { system } = buildContractPrompt({
+			speaker: "蒲先生",
+			lines: ["x"],
+			otherLines: [],
+			narrative: "",
+			mixed: false,
+			excludeOthers: true,
+		});
 		expect(system).toContain("【原声】");
 		expect(system).toContain("一字不改");
 		expect(system).toContain("禁止把说话特征上升成性格缺陷");

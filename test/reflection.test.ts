@@ -16,7 +16,9 @@ describe("parseReflectionScore", () => {
 	it("parses bare and fenced JSON with clamped scores", () => {
 		const entry = parseReflectionScore('{"context":2,"planning":5,"verification":-3,"review":1,"note":"基本达标"}');
 		expect(entry).toMatchObject({ context: 2, planning: 2, verification: 0, review: 1, note: "基本达标" });
-		expect(parseReflectionScore('```json\n{"context":1,"planning":1,"verification":1,"review":1,"note":"ok"}\n```')).toMatchObject({ context: 1 });
+		expect(parseReflectionScore('```json\n{"context":1,"planning":1,"verification":1,"review":1,"note":"ok"}\n```')).toMatchObject({
+			context: 1,
+		});
 	});
 
 	it("rejects garbage and missing fields", () => {
@@ -39,9 +41,15 @@ describe("REFLECTION_SYSTEM", () => {
 describe("getFeedback cache", () => {
 	class FakeTable {
 		data = new Map<string, unknown>();
-		get(key: string) { return this.data.get(key); }
-		keys() { return this.data.keys(); }
-		async put(key: string, value: unknown) { this.data.set(key, value); }
+		get(key: string) {
+			return this.data.get(key);
+		}
+		keys() {
+			return this.data.keys();
+		}
+		async put(key: string, value: unknown) {
+			this.data.set(key, value);
+		}
 		async delete() {}
 	}
 

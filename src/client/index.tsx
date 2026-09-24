@@ -109,7 +109,7 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 	const ordered = orderPersonaItems(items);
 	const labels = resolveLabels(ordered, (it) => it.profileName ?? it.displayName, t("menu.custom.suffix"));
 	const labelOf = (it: PersonaItem | undefined): string =>
-		it ? labels.get(it.name) ?? it.profileName ?? it.displayName : t("trigger.fallback");
+		it ? (labels.get(it.name) ?? it.profileName ?? it.displayName) : t("trigger.fallback");
 	const currentLabel = labelOf(ordered.find((it) => it.name === current) ?? items.find((it) => it.name === current));
 	const entries = loading
 		? [{ type: "label" as const, id: "lume-loading", text: t("status.loading") }]
@@ -120,9 +120,7 @@ function PersonaSelect({ available, load, select, callRpc, t }: PersonaControlle
 					label: (
 						<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
 							<span>{labelOf(item)}</span>
-							{item.description ? (
-								<span style={{ fontSize: 10, opacity: 0.6 }}>{item.description}</span>
-							) : null}
+							{item.description ? <span style={{ fontSize: 10, opacity: 0.6 }}>{item.description}</span> : null}
 						</span>
 					),
 				}));
@@ -211,69 +209,62 @@ function apply(ctx: LumeClientCtx) {
 	ctx.inject(["slots", "connection"], (scope: HostPayload) => {
 		const conn = scope.connection;
 
-		scope.slots.inject(
-			"conversation.input.left",
-			() =>
-				scope.slots.register(
-					{
-						name: "conversation.input.left",
-						id: "lume-persona",
-						order: 10,
-						locale: NS,
-						inject: (sessionId: string | null | undefined) => {
-							const available = sessionId != null;
+		scope.slots.inject("conversation.input.left", () =>
+			scope.slots.register(
+				{
+					name: "conversation.input.left",
+					id: "lume-persona",
+					order: 10,
+					locale: NS,
+					inject: (sessionId: string | null | undefined) => {
+						const available = sessionId != null;
 
-							/** 加载人设列表 + 当前会话的显式人设选择 */
-							async function load() {
-								let list: PersonaItem[] = [];
-								let current: string | null = null;
-								try {
-									const result = await conn.rpc.call("/lume", "list", {}, void 0);
-									if (result?.ok && Array.isArray(result.value)) list = result.value;
-								} catch {
-									/* 忽略：菜单展示空态 */
-								}
-								try {
-									const r = await conn.rpc.call("/lume", "getSessionPersona", { sessionId }, void 0);
-									// value 为 null 表示未显式选择（默认不使用人设），触发占位文案
-									if (r?.ok && (typeof r.value === "string" || r.value === null)) current = r.value;
-								} catch {
-									/* 忽略 */
-								}
-								return { list, current };
+						/** 加载人设列表 + 当前会话的显式人设选择 */
+						async function load() {
+							let list: PersonaItem[] = [];
+							let current: string | null = null;
+							try {
+								const result = await conn.rpc.call("/lume", "list", {}, void 0);
+								if (result?.ok && Array.isArray(result.value)) list = result.value;
+							} catch {
+								/* 忽略：菜单展示空态 */
 							}
-
-							/** 选择人设 */
-							async function select(personaName: string) {
-								if (sessionId == null) return false;
-								try {
-									const result = await conn.rpc.call(
-										"/lume",
-										"select",
-										{ sessionId, personaName },
-										void 0,
-									);
-									return result?.ok === true;
-								} catch {
-									return false;
-								}
+							try {
+								const r = await conn.rpc.call("/lume", "getSessionPersona", { sessionId }, void 0);
+								// value 为 null 表示未显式选择（默认不使用人设），触发占位文案
+								if (r?.ok && (typeof r.value === "string" || r.value === null)) current = r.value;
+							} catch {
+								/* 忽略 */
 							}
+							return { list, current };
+						}
 
-							/** 通用 /lume RPC（蒸馏弹窗用） */
-							function callRpc(endpoint: string, payload: unknown) {
-								return conn.rpc.call("/lume", endpoint, payload, void 0);
+						/** 选择人设 */
+						async function select(personaName: string) {
+							if (sessionId == null) return false;
+							try {
+								const result = await conn.rpc.call("/lume", "select", { sessionId, personaName }, void 0);
+								return result?.ok === true;
+							} catch {
+								return false;
 							}
+						}
 
-								return { available, load, select, callRpc };
-							},
-						},
-						(props: Parameters<typeof PersonaSelect>[0]) => (
-							<LumeErrorBoundary>
-								<PersonaSelect {...props} />
-							</LumeErrorBoundary>
-						),
-					),
-			);
+						/** 通用 /lume RPC（蒸馏弹窗用） */
+						function callRpc(endpoint: string, payload: unknown) {
+							return conn.rpc.call("/lume", endpoint, payload, void 0);
+						}
+
+						return { available, load, select, callRpc };
+					},
+				},
+				(props: Parameters<typeof PersonaSelect>[0]) => (
+					<LumeErrorBoundary>
+						<PersonaSelect {...props} />
+					</LumeErrorBoundary>
+				),
+			),
+		);
 	});
 }
 

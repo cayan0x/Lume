@@ -23,15 +23,31 @@ import { join } from "node:path";
 const EXTRA_MECHANISMS = [
 	{ id: "knowledge-first-turn", what: "装配前补 cwd（会话目录名映射）", impl: "src/host/wiring.ts", keyword: "ensureSessionWorkspace" },
 	{ id: "project-knowledge-block", what: "项目知识注入块", impl: "src/host/prompt-blocks.ts", keyword: "renderProjectFacts" },
-	{ id: "session-memory", what: "会话记忆（每轮导出 + 冷启动注入 + 上下文预警）", impl: "src/core/task-memory.ts", keyword: "buildTaskMemory" },
+	{
+		id: "session-memory",
+		what: "会话记忆（每轮导出 + 冷启动注入 + 上下文预警）",
+		impl: "src/core/task-memory.ts",
+		keyword: "buildTaskMemory",
+	},
 	{ id: "knowledge-backfill", what: "历史会话补蒸馏", impl: "src/host/backfill.ts", keyword: "startBackfill" },
-	{ id: "client-bundle-parses", what: "客户端产物可解析 + 无重复顶层声明", impl: "scripts/release-check.mjs", keyword: "client-no-duplicate-decl" },
+	{
+		id: "client-bundle-parses",
+		what: "客户端产物可解析 + 无重复顶层声明",
+		impl: "scripts/release-check.mjs",
+		keyword: "client-no-duplicate-decl",
+	},
 	{ id: "knowledge-scope", what: "知识作用域（repo/task 归属）", impl: "src/core/scope.ts", keyword: "classifyScope" },
 	{ id: "memory-id", what: "内容寻址记忆 id + 去重 + 遗忘工具", impl: "src/core/memory-id.ts", keyword: "memoryId" },
 	{ id: "host-event-shapes", what: "宿主事件形状适配（真机 fixtures）", impl: "src/host/host-events.ts", keyword: "parseToolCall" },
 ];
 
-const read = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
+const read = (p) => {
+	try {
+		return readFileSync(p, "utf8");
+	} catch {
+		return "";
+	}
+};
 const listTests = (dir = "test") => {
 	const out = [];
 	for (const entry of readdirSync(dir)) {
@@ -49,24 +65,30 @@ const mechanisms = [];
 const notices = read("src/host/notices.ts");
 const capsBlock = notices.match(/NOTICE_CAPS[^{]*\{([\s\S]*?)\n\};/);
 if (capsBlock) {
-	for (const hit of capsBlock[1].matchAll(/^\s*([a-zA-Z-]+):/gm)) mechanisms.push({ id: `notice:${hit[1]}`, what: "提示槽", impl: "src/host/notices.ts", keyword: hit[1] });
+	for (const hit of capsBlock[1].matchAll(/^\s*([a-zA-Z-]+):/gm))
+		mechanisms.push({ id: `notice:${hit[1]}`, what: "提示槽", impl: "src/host/notices.ts", keyword: hit[1] });
 }
 // ② 触发器
 const triggers = read("src/host/triggers.ts");
 const union = triggers.match(/TriggerId\s*=([\s\S]*?);/);
 if (union) {
-	for (const hit of union[1].matchAll(/"([a-z-]+)"/g)) mechanisms.push({ id: `trigger:${hit[1]}`, what: "行为触发器", impl: "src/host/triggers.ts", keyword: hit[1] });
+	for (const hit of union[1].matchAll(/"([a-z-]+)"/g))
+		mechanisms.push({ id: `trigger:${hit[1]}`, what: "行为触发器", impl: "src/host/triggers.ts", keyword: hit[1] });
 }
 // ③ 工具
 const tools = read("src/host/tools.ts");
-for (const hit of tools.matchAll(/name:\s*"(lume_[a-z_]+)"/g)) mechanisms.push({ id: `tool:${hit[1]}`, what: "模型可调用工具", impl: "src/host/tools.ts", keyword: hit[1] });
+for (const hit of tools.matchAll(/name:\s*"(lume_[a-z_]+)"/g))
+	mechanisms.push({ id: `tool:${hit[1]}`, what: "模型可调用工具", impl: "src/host/tools.ts", keyword: hit[1] });
 // ④ 人工登记
 for (const extra of EXTRA_MECHANISMS) mechanisms.push({ ...extra, id: `extra:${extra.id}` });
 
 const missing = [];
 const covered = [];
 for (const m of mechanisms) {
-	if (!m.impl || !read(m.impl).includes(m.keyword)) { missing.push({ ...m, reason: `实现位置对不上：${m.impl} 里没有「${m.keyword}」` }); continue; }
+	if (!m.impl || !read(m.impl).includes(m.keyword)) {
+		missing.push({ ...m, reason: `实现位置对不上：${m.impl} 里没有「${m.keyword}」` });
+		continue;
+	}
 	const hit = testFiles.find((t) => t.text.includes(m.keyword) && t.text.includes("expect("));
 	if (hit) covered.push({ ...m, test: hit.file });
 	else missing.push({ ...m, reason: "没有任何测试文件「提到它且含 expect(」——等于没被跑出过行为" });

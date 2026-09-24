@@ -18,9 +18,24 @@ export const LUME_REFLECTION_SPEC = defineDomain({
 		logs: domainTable(
 			zodLike(
 				z.union([
-					z.object({ at: z.number(), context: z.number(), planning: z.number(), verification: z.number(), review: z.number(), diagnosis: z.number(), note: z.string() }),
+					z.object({
+						at: z.number(),
+						context: z.number(),
+						planning: z.number(),
+						verification: z.number(),
+						review: z.number(),
+						diagnosis: z.number(),
+						note: z.string(),
+					}),
 					// v0.7.0 之前的四维日志
-					z.object({ at: z.number(), context: z.number(), planning: z.number(), verification: z.number(), review: z.number(), note: z.string() }),
+					z.object({
+						at: z.number(),
+						context: z.number(),
+						planning: z.number(),
+						verification: z.number(),
+						review: z.number(),
+						note: z.string(),
+					}),
 					// v0.4.0 之前的存量日志；仅用于打开域并在启动时迁移。
 					z.object({ at: z.number(), p0: z.number(), p1: z.number(), p2: z.number(), p3: z.number(), note: z.string() }),
 				]),
@@ -90,7 +105,11 @@ export class ReflectionStore {
 	}
 
 	#computeFeedback(): string | null {
-		const entries = [...this.#table.keys()].map((key) => this.#table.get(key) as ReflectionEntry).filter((e) => typeof e?.context === "number").sort((a, b) => b.at - a.at).slice(0, 5);
+		const entries = [...this.#table.keys()]
+			.map((key) => this.#table.get(key) as ReflectionEntry)
+			.filter((e) => typeof e?.context === "number")
+			.sort((a, b) => b.at - a.at)
+			.slice(0, 5);
 		if (entries.length < 3) return null;
 		const dims = ["context", "planning", "verification", "review", "diagnosis"] as const;
 		// 逐维在「评过这一维」的条目上取平均：老日志没有 diagnosis（-1），不参与该维统计，
@@ -138,7 +157,11 @@ export function buildReflectionPrompt(turns: string[]): { system: string; userTe
 }
 
 export function parseReflectionScore(output: string): ReflectionEntry | null {
-	const trimmed = output.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+	const trimmed = output
+		.trim()
+		.replace(/^```(?:json)?/i, "")
+		.replace(/```$/, "")
+		.trim();
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(trimmed);

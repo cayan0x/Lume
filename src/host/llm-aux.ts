@@ -25,7 +25,13 @@ export function createAuxLlm(deps: AuxLlmDeps) {
 	 * 推理型模型可能把 JSON 拆在 reasoning 块尾部，只取 text 会拿到半成品。
 	 * 蒸馏类调用传完整控制参数：reasoningEffort=low（复述风模型常吃 4000+ token 复述指令，低推理显著缩短）、
 	 * temperature=0（稳定）。模型不支持低推理时会抛 UNSUPPORTED_REASONING_EFFORT，捕获降级重试（去掉 effort 重发）。 */
-	async function callLlm(route: { provider: string; model: string } | null, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<string | null> {
+	async function callLlm(
+		route: { provider: string; model: string } | null,
+		system: string,
+		userText: string,
+		maxTokens: number,
+		signal?: AbortSignal,
+	): Promise<string | null> {
 		if (!route) return null;
 		const llm = deps.ctx.get("llm");
 		if (!llm) return null;
@@ -38,16 +44,34 @@ export function createAuxLlm(deps: AuxLlmDeps) {
 			];
 			const assembler = new BlockAssembler();
 			try {
-				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, reasoningEffort: ReasoningEffortId("low"), temperature: 0, ...(signal ? { signal } : {}) })) {
+				for await (const chunk of llm.stream({
+					provider: route.provider,
+					model: route.model,
+					messages,
+					system,
+					maxTokens,
+					reasoningEffort: ReasoningEffortId("low"),
+					temperature: 0,
+					...(signal ? { signal } : {}),
+				})) {
 					assembler.push(chunk);
 				}
 				// 错误经流内 finish chunk 传输（不 throw）——检查 finish.kind === "error"
 				if (assembler.finish.kind === "error") {
 					const code = (assembler.finish as { failure?: { code?: string } }).failure?.code;
-					if (code !== "UNSUPPORTED_REASONING_EFFORT") throw new Error(String((assembler.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
+					if (code !== "UNSUPPORTED_REASONING_EFFORT")
+						throw new Error(String((assembler.finish as { failure?: { message?: string } }).failure?.message ?? "unnamed stream error"));
 					// 不支持 effort：降级无 effort 重发
 					const assembler2 = new BlockAssembler();
-					for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
+					for await (const chunk of llm.stream({
+						provider: route.provider,
+						model: route.model,
+						messages,
+						system,
+						maxTokens,
+						temperature: 0,
+						...(signal ? { signal } : {}),
+					})) {
 						assembler2.push(chunk);
 					}
 					if (assembler2.finish.kind === "error") {
@@ -67,7 +91,15 @@ export function createAuxLlm(deps: AuxLlmDeps) {
 				// throw 形态的错误：非 UNSUPPORTED 直接抛；是则降级重试
 				if ((error as { code?: string })?.code !== "UNSUPPORTED_REASONING_EFFORT") throw error;
 				const assembler2 = new BlockAssembler();
-				for await (const chunk of llm.stream({ provider: route.provider, model: route.model, messages, system, maxTokens, temperature: 0, ...(signal ? { signal } : {}) })) {
+				for await (const chunk of llm.stream({
+					provider: route.provider,
+					model: route.model,
+					messages,
+					system,
+					maxTokens,
+					temperature: 0,
+					...(signal ? { signal } : {}),
+				})) {
 					assembler2.push(chunk);
 				}
 				if (assembler2.finish.kind === "error") {
@@ -94,9 +126,17 @@ export function createAuxLlm(deps: AuxLlmDeps) {
 			try {
 				const existing = readFileSync(deps.llmDumpPath, "utf8");
 				const dumps = existing ? JSON.parse(existing) : [];
-				dumps.push({ ts: Date.now(), route: `${route.provider}/${route.model}`, maxTokens, finish: assembler.finish, blocks: allBlocks.map((t) => t.slice(0, 6000)) });
+				dumps.push({
+					ts: Date.now(),
+					route: `${route.provider}/${route.model}`,
+					maxTokens,
+					finish: assembler.finish,
+					blocks: allBlocks.map((t) => t.slice(0, 6000)),
+				});
 				writeFileSync(deps.llmDumpPath, JSON.stringify(dumps, null, 2), "utf8");
-			} catch { /* 诊断失败不阻断 */ }
+			} catch {
+				/* 诊断失败不阻断 */
+			}
 			return allBlocks.join(" ").trim();
 		} catch (error) {
 			if (signal?.aborted) throw error; // 用户取消：向上抛，任务状态走 cancelled
@@ -104,7 +144,6 @@ export function createAuxLlm(deps: AuxLlmDeps) {
 			return null;
 		}
 	}
-
 
 	return { callLlm };
 }

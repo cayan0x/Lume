@@ -11,9 +11,7 @@
 
 /** 剥去 fenced 代码块与行内代码——代码内容不属于「说话方式」。 */
 export function stripCode(text: string): string {
-	return text
-		.replace(/```[\s\S]*?```/g, " ")
-		.replace(/`[^`\n]*`/g, " ");
+	return text.replace(/```[\s\S]*?```/g, " ").replace(/`[^`\n]*`/g, " ");
 }
 
 export interface LeakReport {
@@ -35,7 +33,11 @@ export const DEFAULT_LEAK_THRESHOLD: LeakThreshold = { distinctWords: 2, singleW
  * 判定回复是否泄漏旧人设的声音。
  * 规则：命中 ≥ distinctWords 个不同签名词，或任一签名词出现 ≥ singleWordCount 次。
  */
-export function detectLeak(replyText: string, signatureWords: readonly string[], threshold: LeakThreshold = DEFAULT_LEAK_THRESHOLD): LeakReport {
+export function detectLeak(
+	replyText: string,
+	signatureWords: readonly string[],
+	threshold: LeakThreshold = DEFAULT_LEAK_THRESHOLD,
+): LeakReport {
 	const clean = stripCode(replyText);
 	const hits: Array<{ word: string; count: number }> = [];
 	for (const word of signatureWords) {

@@ -10,11 +10,63 @@
  */
 import { appendLumeLog } from "./diag.js";
 import { clearNotice, forceNotice, noticeOpen, noticeText, setNotice } from "./notices.js";
-import { normalizeChange, normalizeContract, normalizeDesign, normalizeHypothesis, normalizeProjectFact, projectKeyOf, renderChangeLedger, renderContract, renderDesign, renderHypotheses, renderProjectFacts, renderRequirements } from "../core/ledger.js";
-import { DESIGN_SIGNAL_RE, advancePhase, buildAlignmentCorrection, buildCasualDirective, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, isUserAuthored } from "./protocol.js";
-import { buildCarrierGapNotice, buildCitationDirective, buildClaimDirective, buildContractMethodDirective, buildDesignMethodDirective, buildDocumentMethodDirective, buildDriftDirective, buildImpactDirective, buildQuestionAuditDirective, buildRequirementCoverageDirective, buildRequirementMethodDirective, buildStructureHint, buildUnverifiedDeliveryNotice } from "./methods.js";
-import { formatWindows, recordReadArgs, recordResultText, recordSymbols, unsupportedCitations, unsupportedClaims } from "../core/citations.js";
-import { auditOpenQuestions, classifyTool, readResultSignals, summarizeToolChange, toolArtifactText, unrequestedChangeWords } from "../core/signals.js";
+import {
+	normalizeChange,
+	normalizeContract,
+	normalizeDesign,
+	normalizeHypothesis,
+	normalizeProjectFact,
+	projectKeyOf,
+	renderChangeLedger,
+	renderContract,
+	renderDesign,
+	renderHypotheses,
+	renderProjectFacts,
+	renderRequirements,
+} from "../core/ledger.js";
+import {
+	DESIGN_SIGNAL_RE,
+	advancePhase,
+	buildAlignmentCorrection,
+	buildCasualDirective,
+	buildCompactionNotice,
+	buildInteractionDirective,
+	buildLongSessionGuard,
+	buildSessionAnchor,
+	buildTaskPhaseDirective,
+	isUserAuthored,
+} from "./protocol.js";
+import {
+	buildCarrierGapNotice,
+	buildCitationDirective,
+	buildClaimDirective,
+	buildContractMethodDirective,
+	buildDesignMethodDirective,
+	buildDocumentMethodDirective,
+	buildDriftDirective,
+	buildImpactDirective,
+	buildQuestionAuditDirective,
+	buildRequirementCoverageDirective,
+	buildRequirementMethodDirective,
+	buildStructureHint,
+	buildUnverifiedDeliveryNotice,
+} from "./methods.js";
+import {
+	formatWindows,
+	recordReadArgs,
+	recordResultText,
+	recordSymbols,
+	unsupportedCitations,
+	unsupportedClaims,
+} from "../core/citations.js";
+import {
+	auditOpenQuestions,
+	classifyTool,
+	readResultSignals,
+	summarizeToolChange,
+	toolArtifactText,
+	unrequestedChangeWords,
+} from "../core/signals.js";
 import { messageText, visibleText } from "../core/text.js";
 import { extractKnowledgeCandidates, looksSensitive } from "../core/knowledge.js";
 import { buildContextPressureDirective, contextPressure, renderTaskMemory, isColdStart } from "../core/task-memory.js";
@@ -58,7 +110,22 @@ export interface WiringInput {
 		reflectionReady: Promise<ReflectionStore | null>;
 	};
 	/** 载具/项目知识的读写入口（单一真值来源，见 project-access.ts）。 */
-	access: Pick<ProjectAccess, "contractOf" | "changesOf" | "designOf" | "requirementsOf" | "hypothesesOf" | "factsOf" | "projectKeyFor" | "flushPendingFacts" | "settleVerification" | "saveSessionMemory" | "taskMemoriesOf" | "needsDesignPass" | "structureToolName">;
+	access: Pick<
+		ProjectAccess,
+		| "contractOf"
+		| "changesOf"
+		| "designOf"
+		| "requirementsOf"
+		| "hypothesesOf"
+		| "factsOf"
+		| "projectKeyFor"
+		| "flushPendingFacts"
+		| "settleVerification"
+		| "saveSessionMemory"
+		| "taskMemoriesOf"
+		| "needsDesignPass"
+		| "structureToolName"
+	>;
 	/** fire-and-forget 持久化（失败留痕；来自 bootstrap，不属于 ProjectAccess）。 */
 	projectTask: (sid: string, label: string, run: (store: ProjectStore) => unknown) => void;
 	/** 模型路由共享单元（会话事件里会更新 .current）。 */
@@ -241,7 +308,6 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
 	};
 }
 
-
 /**
  * 启动时的**会话补蒸馏**：把最近 7 天的会话（含已经撑满、聊不动的那些）榨成跨会话知识。
  *
@@ -281,7 +347,9 @@ export function ensureSessionWorkspace(sid: string, st: SessionRuntime): void {
 	if (loggedWorkspaceOutcomes.get(sid) !== key) {
 		if (loggedWorkspaceOutcomes.size > 300) loggedWorkspaceOutcomes.clear(); // 只服务于「看得见」，别长成内存泄漏
 		loggedWorkspaceOutcomes.set(sid, key);
-		appendLumeLog(`[${sid}] 装配前补 cwd：dsHome=${home ?? "null"} slug=${slug ?? "null"} 映射=${cached ?? "null"} st.cwd=${st.cwd ?? "null"}（${outcome}）`);
+		appendLumeLog(
+			`[${sid}] 装配前补 cwd：dsHome=${home ?? "null"} slug=${slug ?? "null"} 映射=${cached ?? "null"} st.cwd=${st.cwd ?? "null"}（${outcome}）`,
+		);
 	}
 	if (st.cwd || !cached) return;
 	st.cwd = cached;
@@ -305,13 +373,16 @@ export function startSessionBackfill(input: {
 	const dsHome = input.dsHome && input.dsHome.length > 0 ? input.dsHome : resolveDsHome();
 	if (!dsHome) {
 		input.log("lume: 会话补蒸馏跳过（未定位到会话目录：DSH_HOME 未设置，且 %APPDATA%\\dsh-desktop 下没有 harness/sessions）");
-		return () => { /* 无目录：什么都不做 */ };
+		return () => {
+			/* 无目录：什么都不做 */
+		};
 	}
 	input.log(`lume: 会话补蒸馏开始（会话目录：${dsHome}）`);
 	return startBackfill(
 		{
 			dsHome,
-			extract: (text, source, userText) => extractKnowledgeCandidates(text, { source, userText }).map((c) => ({ kind: c.kind as string, text: c.text })),
+			extract: (text, source, userText) =>
+				extractKnowledgeCandidates(text, { source, userText }).map((c) => ({ kind: c.kind as string, text: c.text })),
 			messageText,
 			visibleText,
 			workspaceOf: (text) => workspaceFromSnapshotText(text),

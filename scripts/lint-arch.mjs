@@ -19,7 +19,8 @@
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 
-const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : [`${dir}/${e.name}`]));
+const walk = (dir) =>
+	readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : [`${dir}/${e.name}`]));
 const files = walk("src").filter((f) => /\.tsx?$/.test(f));
 const errors = [];
 const hints = [];
@@ -41,12 +42,20 @@ for (const raw of files) {
 		// 规则 1 + 2：import 目标分层与扩展名
 		for (const m of line.matchAll(/from\s+"(\.[^"]+)"/g)) {
 			const target = m[1];
-			const t = target.includes("/core/") || target.startsWith("./core") ? "core" : target.includes("/host/") || target.startsWith("./host") ? "host" : target.includes("/client/") || target.startsWith("./client") ? "client" : "";
+			const t =
+				target.includes("/core/") || target.startsWith("./core")
+					? "core"
+					: target.includes("/host/") || target.startsWith("./host")
+						? "host"
+						: target.includes("/client/") || target.startsWith("./client")
+							? "client"
+							: "";
 			if (layer === "core" && (t === "host" || t === "client")) errors.push(`${at} 分层：core 不得依赖 ${t}（${target}）`);
 			if (layer === "host" && t === "client") errors.push(`${at} 分层：host 不得依赖 client（${target}）`);
 			// client 是独立 bundle：可以引用 host 的**类型**（编译期擦除），但不许引用运行时值（会把 host 拖进客户端包）
 			const typeOnly = /^\s*import\s+type\b/.test(line) || /^\s*import\s*\{[^}]*\btype\b/.test(line);
-			if (layer === "client" && t === "host" && !typeOnly) errors.push(`${at} 分层：client 不得依赖 host 的运行时值（${target}）；只允许 import type`);
+			if (layer === "client" && t === "host" && !typeOnly)
+				errors.push(`${at} 分层：client 不得依赖 host 的运行时值（${target}）；只允许 import type`);
 			if (!/\.(js|json|css)$/.test(target)) errors.push(`${at} ESM：相对 import 必须带 .js（${target}）`);
 		}
 
@@ -57,7 +66,8 @@ for (const raw of files) {
 		if (/@ts-ignore/.test(line)) errors.push(`${at} 抑制：请用 @ts-expect-error 并写清为什么`);
 
 		// 规则 6：类型边界
-		if (!anyAllowed && /:\s*any\b/.test(line) && !/HostPayload/.test(line)) errors.push(`${at} 类型边界：裸 any 只允许出现在 index.ts 装配点或 host-context.ts；这里请用真类型或 HostPayload`);
+		if (!anyAllowed && /:\s*any\b/.test(line) && !/HostPayload/.test(line))
+			errors.push(`${at} 类型边界：裸 any 只允许出现在 index.ts 装配点或 host-context.ts；这里请用真类型或 HostPayload`);
 	});
 
 	// 规则 4：静默失败（窗口 40 行，块可能很长）
@@ -105,18 +115,36 @@ for (const raw of files) {
 			const line = lines[i];
 			if (!inside) {
 				const m = line.match(/interface\s+(\w*Deps\w*)[^\{]*\{/);
-				if (m) { inside = true; current = m[1]; depth = 1; }
+				if (m) {
+					inside = true;
+					current = m[1];
+					depth = 1;
+				}
 				continue;
 			}
 			depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
-			if (depth <= 0) { inside = false; continue; }
+			if (depth <= 0) {
+				inside = false;
+				continue;
+			}
 			const member = line.match(/^\s{1,4}([A-Za-z_$][\w$]*)\s*[?:(]/);
 			if (!member) continue;
 			declared++;
 			if (usage.has(member[1])) continue;
 			if (/lint-arch:\s*allow-unused/.test(lines[i - 1] ?? "") || /lint-arch:\s*allow-unused/.test(line)) continue;
 			unused++;
-			errors.push(file + ":" + (i + 1) + "  " + current + "." + member[1] + " 声明了依赖却没有任何 deps." + member[1] + " 调用（接线了但没被用上＝死代码）");
+			errors.push(
+				file +
+					":" +
+					(i + 1) +
+					"  " +
+					current +
+					"." +
+					member[1] +
+					" 声明了依赖却没有任何 deps." +
+					member[1] +
+					" 调用（接线了但没被用上＝死代码）",
+			);
 		}
 	}
 	hints.push("依赖声明检查：共 " + declared + " 个声明，未使用 " + unused + " 个");

@@ -39,7 +39,11 @@ export interface TaskMemoryInput {
 }
 
 const CAP = { requirement: 3, decided: 5, changed: 6, open: 4, deadends: 3, locate: 5 };
-const text = (value: unknown, max = 120): string => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const text = (value: unknown, max = 120): string =>
+	String(value ?? "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, max);
 
 /** 台账条目的状态标记：未验证的要显眼——那是接手时最该先做的事。 */
 const STATUS_MARK: Record<string, string> = { verified: "[已验证]", done: "[已改未验]", planned: "[计划]", skipped: "[跳过]" };
@@ -49,18 +53,35 @@ const STATUS_MARK: Record<string, string> = { verified: "[已验证]", done: "[�
  */
 export function buildTaskMemory(input: TaskMemoryInput): TaskMemory | null {
 	const goal = text(input.goal, 200);
-	const requirement = (input.requirement ?? []).map((item) => text(item.text, 200)).filter(Boolean).slice(0, CAP.requirement);
-	const decided = (input.design ?? []).map((item) => text(`${item.point} → ${item.choice}`, 160)).filter(Boolean).slice(-CAP.decided);
+	const requirement = (input.requirement ?? [])
+		.map((item) => text(item.text, 200))
+		.filter(Boolean)
+		.slice(0, CAP.requirement);
+	const decided = (input.design ?? [])
+		.map((item) => text(`${item.point} → ${item.choice}`, 160))
+		.filter(Boolean)
+		.slice(-CAP.decided);
 	const changed = (input.changes ?? [])
 		.slice(-CAP.changed)
 		.map((item) => `${STATUS_MARK[item.status] ?? ""}${text(item.target, 70)}：${text(item.change, 80)}`.trim())
 		.filter(Boolean);
 	const open = [
-		...(input.hypotheses ?? []).filter((item) => item.status === "open" || item.status === "unconfirmed").map((item) => text(item.text, 140)),
-	].filter(Boolean).slice(0, CAP.open);
-	const deadends = (input.deadends ?? []).map((item) => text(item.text, 140)).filter(Boolean).slice(0, CAP.deadends);
-	const locate = (input.locate ?? []).map((item) => text(item, 100)).filter(Boolean).slice(-CAP.locate);
-	if (!goal && requirement.length === 0 && decided.length === 0 && changed.length === 0 && open.length === 0 && deadends.length === 0) return null;
+		...(input.hypotheses ?? [])
+			.filter((item) => item.status === "open" || item.status === "unconfirmed")
+			.map((item) => text(item.text, 140)),
+	]
+		.filter(Boolean)
+		.slice(0, CAP.open);
+	const deadends = (input.deadends ?? [])
+		.map((item) => text(item.text, 140))
+		.filter(Boolean)
+		.slice(0, CAP.deadends);
+	const locate = (input.locate ?? [])
+		.map((item) => text(item, 100))
+		.filter(Boolean)
+		.slice(-CAP.locate);
+	if (!goal && requirement.length === 0 && decided.length === 0 && changed.length === 0 && open.length === 0 && deadends.length === 0)
+		return null;
 	return {
 		sid: input.sid,
 		title: text(input.title, 60) || "（未命名会话）",
@@ -78,8 +99,15 @@ export function buildTaskMemory(input: TaskMemoryInput): TaskMemory | null {
 
 /** 记忆是不是"值得写/值得注入"：至少有两类内容，避免只有一句目标的空壳记忆。 */
 export function memoryWeight(memory: TaskMemory): number {
-	return [memory.goal, memory.requirement.length, memory.decided.length, memory.changed.length, memory.open.length, memory.deadends.length, memory.locate.length]
-		.filter((value) => (typeof value === "number" ? value > 0 : Boolean(value))).length;
+	return [
+		memory.goal,
+		memory.requirement.length,
+		memory.decided.length,
+		memory.changed.length,
+		memory.open.length,
+		memory.deadends.length,
+		memory.locate.length,
+	].filter((value) => (typeof value === "number" ? value > 0 : Boolean(value))).length;
 }
 
 const ageLabel = (at: number, now: number): string => {
@@ -96,7 +124,10 @@ const ageLabel = (at: number, now: number): string => {
  * `recent` 是同一工作目录下的其它会话标题——用户可以直接说「继续 X」，
  * 不必自己回忆"上次那个窗口叫什么"。
  */
-export function renderTaskMemory(memory: TaskMemory | null, options: { now?: number; recent?: { title: string; at: number }[] } = {}): string | null {
+export function renderTaskMemory(
+	memory: TaskMemory | null,
+	options: { now?: number; recent?: { title: string; at: number }[] } = {},
+): string | null {
 	if (!memory || memoryWeight(memory) < 2) return null;
 	const now = options.now ?? Date.now();
 	const lines: string[] = [`〔上次会话记忆｜${memory.title}（${ageLabel(memory.at, now)}，第 ${memory.turn} 轮）〕`];
@@ -116,13 +147,17 @@ export function renderTaskMemory(memory: TaskMemory | null, options: { now?: num
 /** markdown 版本：落到工作区给人看（等价于"手写会话记忆"的自动版）。 */
 export function renderTaskMemoryMarkdown(memory: TaskMemory, options: { now?: number } = {}): string {
 	const now = options.now ?? Date.now();
-	const section = (title: string, items: string[]): string => (items.length === 0 ? "" : `\n## ${title}\n\n${items.map((item) => `- ${item}`).join("\n")}\n`);
+	const section = (title: string, items: string[]): string =>
+		items.length === 0 ? "" : `\n## ${title}\n\n${items.map((item) => `- ${item}`).join("\n")}\n`;
 	return [
 		`# 会话记忆 · ${memory.title}`,
 		"",
 		`> 自动生成（Lume）· 更新于 ${new Date(memory.at).toISOString()}（${ageLabel(memory.at, now)}）· 第 ${memory.turn} 轮 · session \`${memory.sid}\``,
 		memory.goal ? `\n## 目标\n\n${memory.goal}\n` : "",
-		section("需求原话（逐字）", memory.requirement.map((item) => `「${item}」`)),
+		section(
+			"需求原话（逐字）",
+			memory.requirement.map((item) => `「${item}」`),
+		),
 		section("已拍板", memory.decided),
 		section("改动（未验证的优先补验证）", memory.changed),
 		section("未决", memory.open),

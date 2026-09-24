@@ -70,7 +70,7 @@ const FILE_INVARIANTS = [
 		id: "claim-gate",
 		files: ["lib/core/citations.js", "lib/host/methods.js"],
 		what: "断言-证据对齐（否定断言要么给行号、要么本会话见过）",
-		incident: "2026-09-23 文档：\"resultMap 里 create_id/modify_id 都没映射\" 其实是错的（已映射），而它支撑了\"必须另开一列\"这个决策",
+		incident: '2026-09-23 文档："resultMap 里 create_id/modify_id 都没映射" 其实是错的（已映射），而它支撑了"必须另开一列"这个决策',
 		check: (text) => text.includes("unsupportedClaims") && text.includes("recordSymbols") && text.includes("断言核对"),
 	},
 	{
@@ -85,7 +85,8 @@ const FILE_INVARIANTS = [
 		id: "auto-change-ledger",
 		what: "mutate 类工具调用会自动写入改动台账（不依赖模型自觉）",
 		incident: "0.7.0 实测：lume_change 零调用、ledger 表 0 行——载具写了却永远空着",
-		check: (text) => text.includes("upsertChange(sid, { target") && /summarizeToolChange|（自动）/.test(text),
+		// 空白宽容：源码格式化（prettier）不该让门禁变红，行为由 apply-carriers 测试兜底
+		check: (text) => /upsertChange\(sid,\s*\{\s*target/.test(text) && /summarizeToolChange|（自动）/.test(text),
 	},
 	{
 		files: ["lib/host/tools.js"],
@@ -98,8 +99,12 @@ const FILE_INVARIANTS = [
 		file: "lib/core/coverage.js",
 		id: "requirement-coverage",
 		what: "需求覆盖核对存在：按**用户原文**切条目，并把需求原句与交付物里的句子并列（替代模型自证式「N 条全有落点」）",
-		incident: "2026-09-23 现场：交付文档自称「8 条全有落点、已验证」，那张对照表却是模型自己切自己填的；实际藏着三类硬伤——与需求原文矛盾（历史权限人）、论据错（resultMap）、落点错（whereSql），最后靠人让 goose 复核才发现",
-		check: (text) => text.includes("export function splitRequirementItems") && text.includes("export function coverageRows") && text.includes("export function danglingSectionRefs"),
+		incident:
+			"2026-09-23 现场：交付文档自称「8 条全有落点、已验证」，那张对照表却是模型自己切自己填的；实际藏着三类硬伤——与需求原文矛盾（历史权限人）、论据错（resultMap）、落点错（whereSql），最后靠人让 goose 复核才发现",
+		check: (text) =>
+			text.includes("export function splitRequirementItems") &&
+			text.includes("export function coverageRows") &&
+			text.includes("export function danglingSectionRefs"),
 	},
 	{
 		file: "lib/core/citations.js",
@@ -192,47 +197,66 @@ const FILE_INVARIANTS = [
 		incident: "现场实测：方法块/提醒不点名工具时，模型不会调用（lume_change 零调用）",
 		check: (text) => text.includes("lume_change") && text.includes("lume_project_note"),
 	},
-		// 知识作用域：需求特有的结论不该污染别的需求（知识按工作目录共享，会串味）。
-		{
-			id: "knowledge-scope",
-			files: ["lib/core/scope.js", "lib/core/ledger.js", "lib/host/session-events.js"],
-			what: "作用域：repo（同仓库通用）/ task（该需求特有）；注入时按当前需求过滤",
-			incident: "2026-09-24：需求级结论（如某需求的列名约定）出现在别的需求注入里，占额度还误导",
-			check: (text) => text.includes("classifyScope") && text.includes("visibleForTask") && text.includes("taskTitle"),
-		},
-		// 记忆 ID：去重从模糊文本比对升级为内容寻址（同主题 → 同 id → 精确合并/覆盖），并给每条显示编号。
-		{
-			id: "memory-id",
-			files: ["lib/core/memory-id.js", "lib/core/ledger.js", "lib/host/project.js"],
-			what: "内容寻址记忆：topicKey → fnv1a32 id；同 id 精确合并，更具体才覆盖；注入显示 #n·id",
-			incident: "2026-09-24：只靠 Jaccard 去重时，同义不同词会写两条；且先到先得会把后来更完整的表述丢掉",
-			check: (text) => text.includes("memoryId") && text.includes("isMoreSpecific") && text.includes("deleteFactById"),
-		},
-		// 会话记忆：上下文不能当记忆载体 —— 撑满时宿主压缩会失败，必须能把进度搬到新会话（现场：context overflow）。
-		{
-			id: "task-memory",
-			files: ["lib/core/task-memory.js", "lib/host/project.js", "lib/host/session-events.js"],
-			what: "会话记忆：每轮导出 + 冷启动注入 + 上下文压力预警",
-			incident: "2026-09-24 现场：会话撑满后压缩失败，新开窗口认不出旧会话的进度（用户只能自己手写会话记忆.md）",
-			check: (text) => text.includes("renderTaskMemory") && text.includes("contextPressure") && text.includes("task_memory"),
-		},
-		// 会话补蒸馏：已经撑满的会话也能补出知识（记录在硬盘上，压缩失败不等于内容丢失）。
-		// 反例价值：上下文溢出 → 宿主 compaction 失败 → 会话再产不出事件，期间没沉淀的知识会永久丢。
-		{
-			id: "session-backfill",
-			file: "lib/host/backfill.js",
-			what: "补蒸馏：扫最近 7 天会话文件（含已撑满的），机械提炼后写进跨会话知识",
-			incident: "2026-09-24 现场：compaction/end 报 context overflow，会话聊不动；该会话 1711 个事件里的知识只能靠离线补",
-			check: (text) => text.includes("recentSessionFiles") && text.includes("startBackfill") && text.includes("session.v3.jsonl.zstd"),
-		},
-
+	// 知识作用域：需求特有的结论不该污染别的需求（知识按工作目录共享，会串味）。
+	{
+		id: "knowledge-scope",
+		files: ["lib/core/scope.js", "lib/core/ledger.js", "lib/host/session-events.js"],
+		what: "作用域：repo（同仓库通用）/ task（该需求特有）；注入时按当前需求过滤",
+		incident: "2026-09-24：需求级结论（如某需求的列名约定）出现在别的需求注入里，占额度还误导",
+		check: (text) => text.includes("classifyScope") && text.includes("visibleForTask") && text.includes("taskTitle"),
+	},
+	// 记忆 ID：去重从模糊文本比对升级为内容寻址（同主题 → 同 id → 精确合并/覆盖），并给每条显示编号。
+	{
+		id: "memory-id",
+		files: ["lib/core/memory-id.js", "lib/core/ledger.js", "lib/host/project.js"],
+		what: "内容寻址记忆：topicKey → fnv1a32 id；同 id 精确合并，更具体才覆盖；注入显示 #n·id",
+		incident: "2026-09-24：只靠 Jaccard 去重时，同义不同词会写两条；且先到先得会把后来更完整的表述丢掉",
+		check: (text) => text.includes("memoryId") && text.includes("isMoreSpecific") && text.includes("deleteFactById"),
+	},
+	// 会话记忆：上下文不能当记忆载体 —— 撑满时宿主压缩会失败，必须能把进度搬到新会话（现场：context overflow）。
+	{
+		id: "task-memory",
+		files: ["lib/core/task-memory.js", "lib/host/project.js", "lib/host/session-events.js"],
+		what: "会话记忆：每轮导出 + 冷启动注入 + 上下文压力预警",
+		incident: "2026-09-24 现场：会话撑满后压缩失败，新开窗口认不出旧会话的进度（用户只能自己手写会话记忆.md）",
+		check: (text) => text.includes("renderTaskMemory") && text.includes("contextPressure") && text.includes("task_memory"),
+	},
+	// 会话补蒸馏：已经撑满的会话也能补出知识（记录在硬盘上，压缩失败不等于内容丢失）。
+	// 反例价值：上下文溢出 → 宿主 compaction 失败 → 会话再产不出事件，期间没沉淀的知识会永久丢。
+	{
+		id: "session-backfill",
+		file: "lib/host/backfill.js",
+		what: "补蒸馏：扫最近 7 天会话文件（含已撑满的），机械提炼后写进跨会话知识",
+		incident: "2026-09-24 现场：compaction/end 报 context overflow，会话聊不动；该会话 1711 个事件里的知识只能靠离线补",
+		check: (text) => text.includes("recentSessionFiles") && text.includes("startBackfill") && text.includes("session.v3.jsonl.zstd"),
+	},
 ];
 
+const SCRIPT_PARSE_INVARIANTS = [
+	{
+		id: "scripts-parse",
+		what: "所有发布/校验脚本必须能通过语法检查",
+		incident: "2026-09-24：scripts/publish.mjs 被写坏成一行（字面 \\n\\t）却没人发现——门禁只跑 release-check，从不检查别的脚本",
+		check: () => {
+			const bad = [];
+			for (const f of readdirSync("scripts")) {
+				if (!f.endsWith(".mjs")) continue;
+				try {
+					execFileSync("node", ["--check", join("scripts", f)], { stdio: "pipe" });
+				} catch {
+					bad.push(f);
+				}
+			}
+			return bad.length === 0 ? { ok: true, detail: "全部可解析" } : { ok: false, detail: "语法错误：" + bad.join(", ") };
+		},
+	},
+];
 const BUNDLE_INVARIANTS = [
 	{
 		id: "client-bundle-parses",
 		what: "客户端 bundle 语法可解析（一个重复声明就会让整包加载失败）",
-		incident: "0.7.4 现场：distill.tsx 残留的 const TEXT_CAP 与 distill-job.ts 的同名声明被摊平到同一作用域 → 渲染进程 Uncaught SyntaxError → 插件整包加载失败、Harness 起不来（服务端其实是好的，所以报错说不清是哪个插件）",
+		incident:
+			"0.7.4 现场：distill.tsx 残留的 const TEXT_CAP 与 distill-job.ts 的同名声明被摊平到同一作用域 → 渲染进程 Uncaught SyntaxError → 插件整包加载失败、Harness 起不来（服务端其实是好的，所以报错说不清是哪个插件）",
 		check: (text) => {
 			try {
 				new vm.Script(text);
@@ -323,12 +347,32 @@ async function collectTarget(publishedVersion) {
 		const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
 		const files = new Map();
 		files.set("package/package.json", Buffer.from(JSON.stringify(pkg)));
-                // 本地目标的文件清单 = 基础清单 + FILE_INVARIANTS 声明的文件。
-                // 为什么要合并：清单原来手写，断言里新增一个文件（如 lib/core/citations.js）却忘了加清单时，
-                // text() 会读到空串 → 检查**静默失败**（本次踩到：citation-gate / question-discipline 假红）。
-                const baseFiles = ["lib/index.js", "lib/client.js", "lib/host/rpc-bridge.js", "lib/core/ledger.js", "lib/core/signals.js", "lib/host/protocol.js", "lib/host/triggers.js", "lib/host/methods.js", "lib/host/project.js", "lib/host/session-runtime.js", "lib/host/tools.js", "lib/host/session-events.js", "lib/host/prompt-blocks.js", "lib/host/notices.js", "lib/host/host-events.js", "lib/core/coverage.js", "lib/core/citations.js", "lib/core/persona-limits.js", "lib/host/thinking.js"];
-                const declaredFiles = (typeof FILE_INVARIANTS === "undefined" ? [] : FILE_INVARIANTS).flatMap((item) => item.files ?? [item.file]);
-                for (const relative of [...new Set([...baseFiles, ...declaredFiles])]) {
+		// 本地目标的文件清单 = 基础清单 + FILE_INVARIANTS 声明的文件。
+		// 为什么要合并：清单原来手写，断言里新增一个文件（如 lib/core/citations.js）却忘了加清单时，
+		// text() 会读到空串 → 检查**静默失败**（本次踩到：citation-gate / question-discipline 假红）。
+		const baseFiles = [
+			"lib/index.js",
+			"lib/client.js",
+			"lib/host/rpc-bridge.js",
+			"lib/core/ledger.js",
+			"lib/core/signals.js",
+			"lib/host/protocol.js",
+			"lib/host/triggers.js",
+			"lib/host/methods.js",
+			"lib/host/project.js",
+			"lib/host/session-runtime.js",
+			"lib/host/tools.js",
+			"lib/host/session-events.js",
+			"lib/host/prompt-blocks.js",
+			"lib/host/notices.js",
+			"lib/host/host-events.js",
+			"lib/core/coverage.js",
+			"lib/core/citations.js",
+			"lib/core/persona-limits.js",
+			"lib/host/thinking.js",
+		];
+		const declaredFiles = (typeof FILE_INVARIANTS === "undefined" ? [] : FILE_INVARIANTS).flatMap((item) => item.files ?? [item.file]);
+		for (const relative of [...new Set([...baseFiles, ...declaredFiles])]) {
 			const full = path.join(ROOT, relative);
 			files.set(`package/${relative}`, existsSync(full) ? readFileSync(full) : Buffer.from(""));
 		}
@@ -338,7 +382,11 @@ async function collectTarget(publishedVersion) {
 	const meta = pack.versions[publishedVersion];
 	if (!meta) throw new Error(`registry 上没有 ${publishedVersion}`);
 	const tarball = await get(meta.dist.tarball);
-	return { label: `registry 上的 ${publishedVersion}（${new Date(pack.time[publishedVersion]).toLocaleString("sv-SE")}）`, files: readTar(zlib.gunzipSync(tarball.body)), version: publishedVersion };
+	return {
+		label: `registry 上的 ${publishedVersion}（${new Date(pack.time[publishedVersion]).toLocaleString("sv-SE")}）`,
+		files: readTar(zlib.gunzipSync(tarball.body)),
+		version: publishedVersion,
+	};
 }
 
 function text(files, name) {
@@ -392,7 +440,14 @@ async function main() {
 	};
 	run(HOST_INVARIANTS, indexJs);
 	// rpc-bridge 的检查并入宿主产物检查
-	for (const item of [{ id: "error-details", what: "错误信封补 details（客户端要求是对象，缺失会抛 invalid server-response failure）", incident: "0.7.3 前所有 RPC 错误路径都会让客户端调用炸掉", check: (t) => t.includes("details") }]) {
+	for (const item of [...SCRIPT_PARSE_INVARIANTS, 
+		{
+			id: "error-details",
+			what: "错误信封补 details（客户端要求是对象，缺失会抛 invalid server-response failure）",
+			incident: "0.7.3 前所有 RPC 错误路径都会让客户端调用炸掉",
+			check: (t) => t.includes("details"),
+		},
+	]) {
 		const ok = Boolean(item.check(bridgeJs));
 		rows.push({ id: item.id, ok, what: item.what, incident: item.incident });
 		if (!ok) failures.push(item);
@@ -417,7 +472,10 @@ async function main() {
 		rows.push({
 			id: "layering",
 			ok: layering.ok,
-			what: "分层规则：core 不依赖 host/client，host 不依赖 client（违反：" + [...layering.coreViolations, ...layering.hostViolations].join("、") + "）",
+			what:
+				"分层规则：core 不依赖 host/client，host 不依赖 client（违反：" +
+				[...layering.coreViolations, ...layering.hostViolations].join("、") +
+				"）",
 			incident: "2026-09-23 架构检查发现的唯一破例 core/card.ts → host/identity.ts：反向依赖会让纯逻辑层无法独立测试",
 		});
 		if (!layering.ok) failures.push({ id: "layering" });
@@ -426,7 +484,12 @@ async function main() {
 	run(PACKAGE_INVARIANTS, packageJson);
 
 	if (expectVersion && packageJson.version !== expectVersion) {
-		rows.push({ id: "version-match", ok: false, what: `package.json 版本等于期望值 ${expectVersion}`, incident: "版本与 tag 不一致会造成发布错版本", });
+		rows.push({
+			id: "version-match",
+			ok: false,
+			what: `package.json 版本等于期望值 ${expectVersion}`,
+			incident: "版本与 tag 不一致会造成发布错版本",
+		});
 		failures.push({ id: "version-match" });
 	} else if (expectVersion) {
 		rows.push({ id: "version-match", ok: true, what: `package.json 版本等于期望值 ${expectVersion}`, incident: "" });
@@ -437,7 +500,12 @@ async function main() {
 	{
 		const probe = text(target.files, "lib/host/thinking.js");
 		const digest = createHash("sha256").update(probe).digest("hex").slice(0, 12);
-		rows.push({ id: "protocol-text-fingerprint", ok: true, what: `协议正文指纹 ${digest}（改动会作废整段前缀缓存 ~190K tokens，请攒批）`, incident: "" });
+		rows.push({
+			id: "protocol-text-fingerprint",
+			ok: true,
+			what: `协议正文指纹 ${digest}（改动会作废整段前缀缓存 ~190K tokens，请攒批）`,
+			incident: "",
+		});
 	}
 
 	for (const row of rows) {

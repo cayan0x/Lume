@@ -54,7 +54,9 @@ export function parseManifest(raw: string): PersonaManifestEntry[] {
 			displayName: typeof entry.displayName === "string" ? entry.displayName : entry.name,
 			description: typeof entry.description === "string" ? entry.description : "",
 			defaultName: typeof entry.defaultName === "string" && entry.defaultName ? entry.defaultName : undefined,
-			signatureWords: Array.isArray(entry.signatureWords) ? entry.signatureWords.filter((w): w is string => typeof w === "string" && w.length > 0) : undefined,
+			signatureWords: Array.isArray(entry.signatureWords)
+				? entry.signatureWords.filter((w): w is string => typeof w === "string" && w.length > 0)
+				: undefined,
 			promptFile: typeof entry.promptFile === "string" ? entry.promptFile : `${entry.name}.txt`,
 			corpusFile: typeof entry.corpusFile === "string" ? entry.corpusFile : `${entry.name}-corpus.jsonl`,
 		});

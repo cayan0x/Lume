@@ -1,7 +1,7 @@
 {
-	"turn": 24,
-	"step": 4,
-	"callId": "call_00_t0H8oobeMFEeAIYHwVEk2415",
-	"name": "edit",
-	"arguments": "{\"file_path\":\"D:\\\\Projects\\\\zjhc\\\\b2i-all\\\\doc\\\\B2I优惠视图新增字段\\\\开发文档.md\",\"new_string\":\"> 需求「四、有组织营销订单新增属性」（企微属性同步）的方案见第 5 节。\",\"old_string\":\"> 需求「四、有组织营销订单新增属性」（企微属性同步）方案未定，本文档不含，见第 5 节。\"}"
+  "turn": 24,
+  "step": 4,
+  "callId": "call_00_t0H8oobeMFEeAIYHwVEk2415",
+  "name": "edit",
+  "arguments": "{\"file_path\":\"D:\\\\Projects\\\\zjhc\\\\b2i-all\\\\doc\\\\B2I优惠视图新增字段\\\\开发文档.md\",\"new_string\":\"> 需求「四、有组织营销订单新增属性」（企微属性同步）的方案见第 5 节。\",\"old_string\":\"> 需求「四、有组织营销订单新增属性」（企微属性同步）方案未定，本文档不含，见第 5 节。\"}"
 }

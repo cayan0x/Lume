@@ -1,25 +1,25 @@
 {
-	"turn": 2,
-	"step": 1,
-	"message": {
-		"source": {
-			"kind": "tool",
-			"callId": "call_00_zUFIOwR82QUvLYEIpYOq7183"
-		},
-		"content": [
-			{
-				"type": "tool-result",
-				"toolCallId": "call_00_zUFIOwR82QUvLYEIpYOq7183",
-				"content": [
-					{
-						"type": "text",
-						"text": "\r\nMode   Name                    \r\n----   ----                    \r\nd--h-- .git                    \r\nd----- .vscode                 \r\nd----- b2i                     \r\nd----- b2i-doc                 \r\nd----- b2i-each-project        \r\nd----- b2i-front               \r\nd----- doc                     \r\nd----- doc_backup_20260922_1605\r\nd----- dq-skills               \r\n-a---- .gitignore              \r\n\r\n\r\n"
-					}
-				],
-				"isError": false
-			}
-		],
-		"role": "user",
-		"id": "eacc060b-1f3a-49e2-ba98-80279242af74"
-	}
+  "turn": 2,
+  "step": 1,
+  "message": {
+    "source": {
+      "kind": "tool",
+      "callId": "call_00_zUFIOwR82QUvLYEIpYOq7183"
+    },
+    "content": [
+      {
+        "type": "tool-result",
+        "toolCallId": "call_00_zUFIOwR82QUvLYEIpYOq7183",
+        "content": [
+          {
+            "type": "text",
+            "text": "\r\nMode   Name                    \r\n----   ----                    \r\nd--h-- .git                    \r\nd----- .vscode                 \r\nd----- b2i                     \r\nd----- b2i-doc                 \r\nd----- b2i-each-project        \r\nd----- b2i-front               \r\nd----- doc                     \r\nd----- doc_backup_20260922_1605\r\nd----- dq-skills               \r\n-a---- .gitignore              \r\n\r\n\r\n"
+          }
+        ],
+        "isError": false
+      }
+    ],
+    "role": "user",
+    "id": "eacc060b-1f3a-49e2-ba98-80279242af74"
+  }
 }

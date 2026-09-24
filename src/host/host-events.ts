@@ -34,7 +34,11 @@ export function toolNameOf(data: unknown): string {
 }
 
 export function toolArgsOf(data: unknown): Record<string, unknown> | null {
-	const raw = (data as Record<string, unknown> | null | undefined)?.args ?? (data as Record<string, unknown> | null | undefined)?.input ?? (data as Record<string, unknown> | null | undefined)?.parameters ?? (data as Record<string, unknown> | null | undefined)?.arguments;
+	const raw =
+		(data as Record<string, unknown> | null | undefined)?.args ??
+		(data as Record<string, unknown> | null | undefined)?.input ??
+		(data as Record<string, unknown> | null | undefined)?.parameters ??
+		(data as Record<string, unknown> | null | undefined)?.arguments;
 	if (raw === null || raw === undefined) return null;
 	if (typeof raw === "string") {
 		const trimmed = raw.trim();

@@ -13,12 +13,31 @@ import { ProjectStore } from "../src/host/project.js";
 import { FakePersonaTable } from "./fake-table.js";
 
 function makeStore() {
-	const tables = { contract: new FakePersonaTable(), ledger: new FakePersonaTable(), hypotheses: new FakePersonaTable(), facts: new FakePersonaTable(), design: new FakePersonaTable(), requirements: new FakePersonaTable() };
+	const tables = {
+		contract: new FakePersonaTable(),
+		ledger: new FakePersonaTable(),
+		hypotheses: new FakePersonaTable(),
+		facts: new FakePersonaTable(),
+		design: new FakePersonaTable(),
+		requirements: new FakePersonaTable(),
+	};
 	return { store: new ProjectStore(tables as never), tables };
 }
 
 const contract = (over: Record<string, unknown> = {}) =>
-	normalizeContract({ goal: "收口重复退款", scope: ["application-consumer.xml"], expectCount: 11, criteria: ["编译通过"], nonGoals: ["不动前端"], open: ["是否含历史数据"], ...over }, 1000, 1);
+	normalizeContract(
+		{
+			goal: "收口重复退款",
+			scope: ["application-consumer.xml"],
+			expectCount: 11,
+			criteria: ["编译通过"],
+			nonGoals: ["不动前端"],
+			open: ["是否含历史数据"],
+			...over,
+		},
+		1000,
+		1,
+	);
 
 describe("契约", () => {
 	it("写入并读回（未估/未回填以 null 呈现）", async () => {

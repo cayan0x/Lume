@@ -8,11 +8,7 @@ import { sampleForSession } from "./sampling.js";
 import type { Persona } from "./manifest.js";
 
 /** 组装一段人设注入文本；sessionId 只用作采样种子，保证会话内稳定。 */
-export function buildPersonaText(
-	persona: Persona | undefined,
-	sampleCount: number,
-	sessionId: string,
-): string {
+export function buildPersonaText(persona: Persona | undefined, sampleCount: number, sessionId: string): string {
 	if (!persona) return "";
 	const promptText = persona.promptText.trim();
 	const samples = sampleForSession(persona.corpus, sampleCount, sessionId, persona.name);
@@ -27,6 +23,7 @@ export function buildPersonaText(
 		.filter(Boolean)
 		.join("\n\n");
 	const parts = [promptText];
-	if (corpusLines) parts.push(`参考对话示例：\n（只模仿说话方式，不要把示例中的时间、地点、正在做什么或其他事实当成当前事实）\n${corpusLines}`);
+	if (corpusLines)
+		parts.push(`参考对话示例：\n（只模仿说话方式，不要把示例中的时间、地点、正在做什么或其他事实当成当前事实）\n${corpusLines}`);
 	return parts.filter(Boolean).join("\n\n");
 }

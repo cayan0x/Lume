@@ -130,7 +130,11 @@ export interface TriggerFire {
  * 工具事件触发的判定。一次只返回**一个**（按紧急度排序）：同时堆三条提醒会互相稀释。
  * 调用方负责「每类每轮最多一次」的冷却。
  */
-export function evaluateToolTrigger(counters: TriggerCounters, ctx: ToolTriggerContext, thresholds: TriggerThresholds = DEFAULT_TRIGGER_THRESHOLDS): TriggerFire | null {
+export function evaluateToolTrigger(
+	counters: TriggerCounters,
+	ctx: ToolTriggerContext,
+	thresholds: TriggerThresholds = DEFAULT_TRIGGER_THRESHOLDS,
+): TriggerFire | null {
 	const dead = deadPathKind(counters.verifyEnvHits, counters.verifyFailStreak);
 	if (dead !== null && counters.verifyFailStreak >= thresholds.deadPathFails) {
 		const n = counters.verifyFailStreak;
@@ -138,7 +142,7 @@ export function evaluateToolTrigger(counters: TriggerCounters, ctx: ToolTriggerC
 		if (dead === "env") {
 			return {
 				id: "dead-path",
-					text: `〔验证降级〕同一环境已连续 ${n} 次验证失败，其中 ${m} 次是环境或依赖不可用（不是代码问题）。停止重复同一条命令，换降级阶梯：① 能用的编译器/测试 → ② 语法检查（parser / typecheck）→ ③ 静态交叉引用（谁调用它、它调用谁、配置与 SQL 绑定）→ ④ 手工走读并列出风险点。同时用 lume_project_note（kind=deadend）把这条环境死路记进项目知识——下次会话不必重踩。交付时明确写「本环境无法完成构建验证」。`,
+				text: `〔验证降级〕同一环境已连续 ${n} 次验证失败，其中 ${m} 次是环境或依赖不可用（不是代码问题）。停止重复同一条命令，换降级阶梯：① 能用的编译器/测试 → ② 语法检查（parser / typecheck）→ ③ 静态交叉引用（谁调用它、它调用谁、配置与 SQL 绑定）→ ④ 手工走读并列出风险点。同时用 lume_project_note（kind=deadend）把这条环境死路记进项目知识——下次会话不必重踩。交付时明确写「本环境无法完成构建验证」。`,
 			};
 		}
 		return {
@@ -149,7 +153,7 @@ export function evaluateToolTrigger(counters: TriggerCounters, ctx: ToolTriggerC
 	if (counters.mutateStreak >= thresholds.changeStreak || ctx.unverifiedChanges >= thresholds.changeStreak) {
 		return {
 			id: "verify-as-you-go",
-					text: `〔增量验证〕已连续 ${counters.mutateStreak} 次改动、台账里还有 ${ctx.unverifiedChanges} 项未验证。改一处验一处：现在先跑一次最小验证（编译 / 语法检查 / 回读改动区域），确认前一批改动真的生效；验完用 lume_change 把对应条目推进到 verified（只传 target + status 即可）。一大批改完再验，失败时无法定位是哪一处的问题。`,
+			text: `〔增量验证〕已连续 ${counters.mutateStreak} 次改动、台账里还有 ${ctx.unverifiedChanges} 项未验证。改一处验一处：现在先跑一次最小验证（编译 / 语法检查 / 回读改动区域），确认前一批改动真的生效；验完用 lume_change 把对应条目推进到 verified（只传 target + status 即可）。一大批改完再验，失败时无法定位是哪一处的问题。`,
 		};
 	}
 	if (!ctx.hasContract && ctx.isTask && counters.mutations > 0) {
@@ -192,7 +196,10 @@ export interface TurnTriggerContext {
 }
 
 /** 轮边界触发的判定：契约对账（防判据漂移）与项目知识采集。 */
-export function evaluateTurnTrigger(ctx: TurnTriggerContext, thresholds: TriggerThresholds = DEFAULT_TRIGGER_THRESHOLDS): TriggerFire | null {
+export function evaluateTurnTrigger(
+	ctx: TurnTriggerContext,
+	thresholds: TriggerThresholds = DEFAULT_TRIGGER_THRESHOLDS,
+): TriggerFire | null {
 	if (ctx.hasContract) {
 		const afterCompaction = ctx.compactionTurn !== null && ctx.turnIndex - ctx.compactionTurn <= 1;
 		const periodic = ctx.turnIndex >= 3 && (ctx.lastDriftTurn === null || ctx.turnIndex - ctx.lastDriftTurn >= 3);

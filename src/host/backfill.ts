@@ -35,7 +35,9 @@ export function resolveDsHome(env: NodeJS.ProcessEnv = process.env): string | nu
 	for (const candidate of candidates) {
 		try {
 			if (existsSync(join(candidate, "harness", "sessions"))) return candidate;
-		} catch { /* 探测失败就试下一个 */ }
+		} catch {
+			/* 探测失败就试下一个 */
+		}
 	}
 	return null;
 }
@@ -53,7 +55,11 @@ export interface BackfillDeps {
 	/** 项目键 = 工作目录哈希。 */
 	projectKeyOf: (cwd: unknown) => string | null;
 	/** 归一化 + 落盘（内部自带相似度去重与上限）。 */
-		normalizeFact: (input: Record<string, unknown>, at: number, options?: { taskTitle?: string | null; requirementHints?: readonly { name: string; keywords: readonly string[] }[] }) => ProjectFact | null;
+	normalizeFact: (
+		input: Record<string, unknown>,
+		at: number,
+		options?: { taskTitle?: string | null; requirementHints?: readonly { name: string; keywords: readonly string[] }[] },
+	) => ProjectFact | null;
 	addFact: (projectKey: string, fact: ProjectFact) => Promise<boolean>;
 	looksSensitive: (text: string) => boolean;
 	/** 需求线索（<cwd>/doc/<需求名>/ + 文档里的标识符）：作用域按它归属 */
@@ -81,12 +87,20 @@ function readSessionEvents(file: string): Record<string, unknown>[] {
 	frames.push(buf.subarray(cur));
 	let text = "";
 	for (const frame of frames) {
-		try { text += zstdDecompressSync(frame).toString("utf8"); } catch { /* 尾部半帧忽略 */ }
+		try {
+			text += zstdDecompressSync(frame).toString("utf8");
+		} catch {
+			/* 尾部半帧忽略 */
+		}
 	}
 	const out: Record<string, unknown>[] = [];
 	for (const line of text.split("\n")) {
 		if (!line) continue;
-		try { out.push(JSON.parse(line) as Record<string, unknown>); } catch { /* 跳过坏行 */ }
+		try {
+			out.push(JSON.parse(line) as Record<string, unknown>);
+		} catch {
+			/* 跳过坏行 */
+		}
 	}
 	return out;
 }
@@ -97,16 +111,26 @@ export function recentSessionFiles(dsHome: string, days = DEFAULT_DAYS): { file:
 	const out: { file: string; mtime: number }[] = [];
 	const cutoff = Date.now() - days * 86_400_000;
 	let workspaces: string[] = [];
-	try { workspaces = readdirSync(root); } catch { return out; }
+	try {
+		workspaces = readdirSync(root);
+	} catch {
+		return out;
+	}
 	for (const ws of workspaces) {
 		let sessions: string[] = [];
-		try { sessions = readdirSync(join(root, ws)); } catch { continue; }
+		try {
+			sessions = readdirSync(join(root, ws));
+		} catch {
+			continue;
+		}
 		for (const sid of sessions) {
 			const file = join(root, ws, sid, SESSION_FILE);
 			try {
 				const stat = statSync(file);
 				if (stat.isFile() && stat.mtimeMs >= cutoff) out.push({ file, mtime: stat.mtimeMs });
-			} catch { /* 没有该文件 */ }
+			} catch {
+				/* 没有该文件 */
+			}
 		}
 	}
 	return out.sort((a, b) => a.mtime - b.mtime);
@@ -121,7 +145,10 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 	const maxSessions = options.maxSessions ?? 60;
 	const chunkMs = options.chunkMs ?? 150;
 	const files = recentSessionFiles(deps.dsHome, options.days ?? DEFAULT_DAYS);
-	if (files.length === 0) return () => { /* 无可补 */ };
+	if (files.length === 0)
+		return () => {
+			/* 无可补 */
+		};
 	let index = 0;
 	let stopped = false;
 	let totalAdded = 0;
@@ -136,13 +163,13 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 		}
 		try {
 			const events = readSessionEvents(item.file);
-					// 会话标题：作用域判定要用（需求级知识只给同一需求看）
-					let sessionTitle = "";
-					for (const scan of events) {
-						if (scan.type !== "session/title") continue;
-						sessionTitle = String((scan.data as { title?: unknown } | undefined)?.title ?? "").slice(0, 60);
-						if (sessionTitle) break;
-					}
+			// 会话标题：作用域判定要用（需求级知识只给同一需求看）
+			let sessionTitle = "";
+			for (const scan of events) {
+				if (scan.type !== "session/title") continue;
+				sessionTitle = String((scan.data as { title?: unknown } | undefined)?.title ?? "").slice(0, 60);
+				if (sessionTitle) break;
+			}
 			let cwd: string | null = null;
 			for (const event of events) {
 				if (event.type !== "user/message") continue;
@@ -156,7 +183,8 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 				for (const event of events) {
 					if (added >= perSession) break;
 					let candidates: { kind: string; text: string }[] = [];
-					if (event.type === "tool/result") candidates = deps.extract(deps.messageText((event.data as { message?: unknown })?.message), "tool");
+					if (event.type === "tool/result")
+						candidates = deps.extract(deps.messageText((event.data as { message?: unknown })?.message), "tool");
 					else if (event.type === "assistant/message") {
 						const visible = deps.visibleText((event.data as { message?: unknown })?.message);
 						if (visible) candidates = deps.extract(visible, "assistant");
@@ -168,7 +196,10 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 						if (added >= perSession) break;
 						if (deps.looksSensitive(candidate.text)) continue;
 						if (seen.some((prior) => prior === candidate.text)) continue;
-						const fact = deps.normalizeFact({ kind: candidate.kind, text: candidate.text }, Number(event.time) || Date.now(), { taskTitle: sessionTitle, requirementHints: deps.requirementHintsOf(cwd) });
+						const fact = deps.normalizeFact({ kind: candidate.kind, text: candidate.text }, Number(event.time) || Date.now(), {
+							taskTitle: sessionTitle,
+							requirementHints: deps.requirementHintsOf(cwd),
+						});
 						if (!fact) continue;
 						seen.push(candidate.text);
 						if (await deps.addFact(key, fact)) added++;
@@ -184,5 +215,8 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 		else deps.log(`lume: 会话补蒸馏收尾：共扫描 ${index} 个会话，新增 ${totalAdded} 条`);
 	};
 	timer = setTimeout(() => void step(), chunkMs);
-	return () => { stopped = true; if (timer) clearTimeout(timer); };
+	return () => {
+		stopped = true;
+		if (timer) clearTimeout(timer);
+	};
 }

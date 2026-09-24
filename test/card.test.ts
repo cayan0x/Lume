@@ -30,17 +30,28 @@ describe("serializeCard / parseCard round-trip", () => {
 	});
 
 	it("sanitizes corpus via parse (bad entries dropped)", () => {
-		const card = { ...VALID, persona: { ...VALID.persona, corpus: [{ user: "x" }, { assistant: "y" }, { user: "u", assistant: "a" }] as any } };
+		const card = {
+			...VALID,
+			persona: { ...VALID.persona, corpus: [{ user: "x" }, { assistant: "y" }, { user: "u", assistant: "a" }] as any },
+		};
 		const parsed = parseCard(serializeCard(card as any));
 		expect(parsed.ok).toBe(true);
-		if (parsed.ok) expect(parsed.value.persona.corpus).toEqual([
-			{ user: "", assistant: "y" },
-			{ user: "u", assistant: "a" },
-		]);
+		if (parsed.ok)
+			expect(parsed.value.persona.corpus).toEqual([
+				{ user: "", assistant: "y" },
+				{ user: "u", assistant: "a" },
+			]);
 	});
 
 	it("caps memory and style at parse and normalize", () => {
-		const many = { ...VALID, persona: { ...VALID.persona, memory: Array.from({ length: 40 }, (_, i) => ({ text: `m${i}`, at: i })), styleRules: Array.from({ length: 30 }, (_, i) => ({ rule: `r${i}`, at: i })) } };
+		const many = {
+			...VALID,
+			persona: {
+				...VALID.persona,
+				memory: Array.from({ length: 40 }, (_, i) => ({ text: `m${i}`, at: i })),
+				styleRules: Array.from({ length: 30 }, (_, i) => ({ rule: `r${i}`, at: i })),
+			},
+		};
 		const parsed = parseCard(serializeCard(many));
 		expect(parsed.ok).toBe(true);
 		if (parsed.ok) {
@@ -60,15 +71,24 @@ describe("parseCard error paths", () => {
 	});
 
 	it("rejects wrong version", () => {
-		expect(parseCard(`{"format":"${CARD_FORMAT}","version":99,"persona":{}}`)).toEqual({ ok: false, error: expect.stringContaining("版本") });
+		expect(parseCard(`{"format":"${CARD_FORMAT}","version":99,"persona":{}}`)).toEqual({
+			ok: false,
+			error: expect.stringContaining("版本"),
+		});
 	});
 
 	it("rejects missing persona", () => {
-		expect(parseCard(`{"format":"${CARD_FORMAT}","version":${CARD_VERSION}}`)).toEqual({ ok: false, error: expect.stringContaining("persona") });
+		expect(parseCard(`{"format":"${CARD_FORMAT}","version":${CARD_VERSION}}`)).toEqual({
+			ok: false,
+			error: expect.stringContaining("persona"),
+		});
 	});
 
 	it("rejects empty name", () => {
-		expect(parseCard(serializeCard({ ...VALID, persona: { ...VALID.persona, name: "" } }))).toEqual({ ok: false, error: expect.stringContaining("name") });
+		expect(parseCard(serializeCard({ ...VALID, persona: { ...VALID.persona, name: "" } }))).toEqual({
+			ok: false,
+			error: expect.stringContaining("name"),
+		});
 	});
 });
 

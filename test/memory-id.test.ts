@@ -35,13 +35,20 @@ describe("core/memory-id：主题键与内容寻址 id", () => {
 	});
 
 	it("更精确的版本才覆盖旧的（先到先得会让后来更完整的表述被丢掉）", () => {
-		expect(isMoreSpecific("列名必须用 PERMISSION_NAME，跟代码 permissionName 与 mapper permission_name 三处一致", "列名必须用 PERMISSION_NAME")).toBe(true);
-		expect(isMoreSpecific("列名必须用 PERMISSION_NAME", "列名必须用 PERMISSION_NAME，跟代码 permissionName 与 mapper permission_name 三处一致")).toBe(false);
+		expect(
+			isMoreSpecific("列名必须用 PERMISSION_NAME，跟代码 permissionName 与 mapper permission_name 三处一致", "列名必须用 PERMISSION_NAME"),
+		).toBe(true);
+		expect(
+			isMoreSpecific("列名必须用 PERMISSION_NAME", "列名必须用 PERMISSION_NAME，跟代码 permissionName 与 mapper permission_name 三处一致"),
+		).toBe(false);
 		expect(isMoreSpecific("BUS_TYPE 列表要加三项", "列名必须用 PERMISSION_NAME")).toBe(false);
 	});
 
 	it("withIds 给老数据补 id（幂等），numberFacts 给出稳定编号", () => {
-		const facts = withIds([{ kind: "convention", text: "列名必须用 PERMISSION_NAME" }, { kind: "build", text: "构建用 mvn -DskipTests package" }]);
+		const facts = withIds([
+			{ kind: "convention", text: "列名必须用 PERMISSION_NAME" },
+			{ kind: "build", text: "构建用 mvn -DskipTests package" },
+		]);
 		expect(facts.every((fact) => fact.id.length === 8)).toBe(true);
 		expect(withIds(facts)).toEqual(facts);
 		expect(numberFacts(facts).map((entry) => entry.n)).toEqual([1, 2]);

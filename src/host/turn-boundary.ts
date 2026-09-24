@@ -7,6 +7,7 @@
  * 搬出来之后这个函数可以单独读、单独测（喂一个 SessionRuntime 替身即可），而不是在 490 行里翻。
  */
 import type { HostPayload } from "./host-context.js";
+import { claimsVerification, looksLikeFailure } from "../core/signals.js";
 import type { SessionRuntime } from "./session-runtime.js";
 import type { SessionEventDeps } from "./session-deps.js";
 
@@ -53,30 +54,46 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 		}
 	}
 	// 低成本会话内纠偏：只处理明确的错误/失败信号，且要求连续轮次用户请求相同。
-	const failed = /失败|报错|错误|exception|traceback|cannot|unable|permission denied|timed out|找不到|不存在/i.test(st.assistantText);
+	const failed = looksLikeFailure(st.assistantText);
 	const queryKey = st.userText.trim().replace(/\s+/g, " ").slice(0, 240);
 	if (failed && queryKey && queryKey === st.lastFailureQuery) st.failureStreak++;
-	else if (failed && queryKey) { st.lastFailureQuery = queryKey; st.failureStreak = 1; }
-	else if (!failed) { st.failureStreak = 0; st.lastFailureQuery = null; deps.forceNotice(st, "protocol", null); }
-	if (st.failureStreak >= 2) deps.forceNotice(st, "protocol", "检测到相同请求连续失败：先定位根因并记录已排除假设，再选择不同方案；不要重复同一调用。");
-	const claimsVerification = /验证|测试|构建|检查|确认生效|实际结果|已通过|未验证|无法验证/i.test(st.assistantText);
+	else if (failed && queryKey) {
+		st.lastFailureQuery = queryKey;
+		st.failureStreak = 1;
+	} else if (!failed) {
+		st.failureStreak = 0;
+		st.lastFailureQuery = null;
+		deps.forceNotice(st, "protocol", null);
+	}
+	if (st.failureStreak >= 2)
+		deps.forceNotice(st, "protocol", "检测到相同请求连续失败：先定位根因并记录已排除假设，再选择不同方案；不要重复同一调用。");
+	const claimsVerificationNow = claimsVerification(st.assistantText);
 	// 交付对账（C4）：台账里还有"已改未验"就**列出具体条目**——泛泛提醒"要有验证证据"
 	// 实测没用，摆出未验证的具体项才有可执行性。
-	const deliveryNotice = st.interactionMode === "execute" || st.triggerCounters.mutations > 0 ? deps.buildUnverifiedDeliveryNotice(deps.changesOf(sid)) : null;
+	const deliveryNotice =
+		st.interactionMode === "execute" || st.triggerCounters.mutations > 0 ? deps.buildUnverifiedDeliveryNotice(deps.changesOf(sid)) : null;
 	// 载具缺口：动了代码但契约/设计都空 → 交付时如实说（触发器喊过没用，只能靠事实）
 	const carrierGap = deps.noticeOpen(st, "carrierGap")
-		? deps.buildCarrierGapNotice({ mutations: st.triggerCounters.mutations, hasContract: deps.contractOf(sid) !== null, hasDesign: deps.designOf(sid).length > 0 })
+		? deps.buildCarrierGapNotice({
+				mutations: st.triggerCounters.mutations,
+				hasContract: deps.contractOf(sid) !== null,
+				hasDesign: deps.designOf(sid).length > 0,
+			})
 		: null;
 	deps.setNotice(st, "carrierGap", carrierGap);
 	deps.forceNotice(
 		st,
 		"postTurn",
 		[deliveryNotice, carrierGap].filter(Boolean).join("\n\n") ||
-			(st.interactionMode === "execute" && st.assistantText && !claimsVerification
+			(st.interactionMode === "execute" && st.assistantText && !claimsVerificationNow
 				? "〔上轮交付复核〕上一轮执行回复没有给出可见的验证证据。本轮若继续处理同一任务，先确认上轮变更是否真实生效，再继续扩大范围。"
 				: null),
 	);
-	if (st.interactionMode === "execute") st.taskPhase = deps.advancePhase(st.taskPhase, st.toolFailures > 0 || st.toolUnknown > 0 ? "diagnose" : claimsVerification ? "deliver" : "verify");
+	if (st.interactionMode === "execute")
+		st.taskPhase = deps.advancePhase(
+			st.taskPhase,
+			st.toolFailures > 0 || st.toolUnknown > 0 ? "diagnose" : claimsVerificationNow ? "deliver" : "verify",
+		);
 	// 即时对齐只影响当前轮；下一轮重新根据用户消息判断，避免纠偏条款滞留。
 	deps.clearNotice(st, "align");
 	// 风格泄漏检测挂在 turn/end（该事件已被窗口机制验证可靠；assistant/message
@@ -88,10 +105,12 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 		if (report.leaked && !inWindow) {
 			st.switchTurn = st.turnIndex;
 			st.leakEscalated = true;
-			deps.ctx.logger?.warn?.(`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`);
+			deps.ctx.logger?.warn?.(
+				`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`,
+			);
 		} else if (!report.leaked) {
 			st.leakEscalated = false;
 		}
 	}
-	deps.scheduleExtraction(sid, st);
+	deps.scheduleExtraction(sid, st);
 }

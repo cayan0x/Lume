@@ -52,7 +52,8 @@ describe("宿主事件适配层（真机样本）", () => {
 	});
 
 	it("长路径保留尾部（文件名不能丢——现场台账里出现过「…\\Wtpf」）", () => {
-		const long = "D:\\Projects\\zjhc\\b2i-all\\b2i\\wtpf-goods\\wtpf-goods-model\\src\\main\\java\\com\\ctzj\\wtpf\\goods\\persist\\model\\dataobject\\WtpfGoodsPropertyDefDo.java";
+		const long =
+			"D:\\Projects\\zjhc\\b2i-all\\b2i\\wtpf-goods\\wtpf-goods-model\\src\\main\\java\\com\\ctzj\\wtpf\\goods\\persist\\model\\dataobject\\WtpfGoodsPropertyDefDo.java";
 		const target = toolTargetOf({ name: "edit", arguments: JSON.stringify({ file_path: long }) })!;
 		expect(target.length).toBeLessThanOrEqual(120);
 		expect(target).toContain("WtpfGoodsPropertyDefDo.java");

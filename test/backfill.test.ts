@@ -25,15 +25,47 @@ function writeSession(workspace: string, sid: string, events: unknown[]) {
 	writeFileSync(join(dir, "session.v3.jsonl.zstd"), zstdCompressSync(Buffer.from(text, "utf8")));
 }
 
-const snapshotText = 'Current DSH file policy: workspace-write. Any available operation may modify files under the session workspace: "D:\\\\Projects\\\\zjhc\\\\b2i-all".';
+const snapshotText =
+	'Current DSH file policy: workspace-write. Any available operation may modify files under the session workspace: "D:\\\\Projects\\\\zjhc\\\\b2i-all".';
 
 describe("host/backfill：已经撑满的会话也能补出知识", () => {
 	it("扫描会话文件 → 按工作目录归属 → 写进跨会话知识（含用户规范与工具约定）", async () => {
 		writeSession("--D-Projects-zjhc-b2i-all--", "session-full-0001", [
-			{ type: "user/message", time: Date.now() - 60_000, data: { source: { kind: "plugin" }, content: [{ type: "text", text: snapshotText }] } },
-			{ type: "user/message", time: Date.now() - 59_000, data: { source: { kind: "user" }, content: [{ type: "text", text: "目录约定：数据脚本一律放 doc/<需求名>/*.sql（例 doc/x/08-数据割接（T）.sql）" }] } },
-			{ type: "tool/result", time: Date.now() - 58_000, data: { message: { content: [{ type: "tool-result", content: [{ type: "text", text: "方法名必须与 WTPF_ESB_SERVICE_DEF.LOCAL_METHOD_NAME 一致" }] }] } } },
-			{ type: "assistant/message", time: Date.now() - 57_000, data: { message: { content: [{ type: "text", text: "SERVICEURL_FLAG=NEW 的环境里必须用 NEW_SERVICEURL（见 server/index.js），要非空且以 http 开头" }] } } },
+			{
+				type: "user/message",
+				time: Date.now() - 60_000,
+				data: { source: { kind: "plugin" }, content: [{ type: "text", text: snapshotText }] },
+			},
+			{
+				type: "user/message",
+				time: Date.now() - 59_000,
+				data: {
+					source: { kind: "user" },
+					content: [{ type: "text", text: "目录约定：数据脚本一律放 doc/<需求名>/*.sql（例 doc/x/08-数据割接（T）.sql）" }],
+				},
+			},
+			{
+				type: "tool/result",
+				time: Date.now() - 58_000,
+				data: {
+					message: {
+						content: [
+							{ type: "tool-result", content: [{ type: "text", text: "方法名必须与 WTPF_ESB_SERVICE_DEF.LOCAL_METHOD_NAME 一致" }] },
+						],
+					},
+				},
+			},
+			{
+				type: "assistant/message",
+				time: Date.now() - 57_000,
+				data: {
+					message: {
+						content: [
+							{ type: "text", text: "SERVICEURL_FLAG=NEW 的环境里必须用 NEW_SERVICEURL（见 server/index.js），要非空且以 http 开头" },
+						],
+					},
+				},
+			},
 		]);
 		const files = recentSessionFiles(root, 7);
 		expect(files.length).toBe(1);
@@ -43,15 +75,19 @@ describe("host/backfill：已经撑满的会话也能补出知识", () => {
 		const stop = startBackfill(
 			{
 				dsHome: root,
-				extract: (text, source, userText) => extractKnowledgeCandidates(text, { source, userText }).map((c) => ({ kind: c.kind as string, text: c.text })),
+				extract: (text, source, userText) =>
+					extractKnowledgeCandidates(text, { source, userText }).map((c) => ({ kind: c.kind as string, text: c.text })),
 				messageText,
 				visibleText,
 				workspaceOf: (text) => workspaceFromSnapshotText(text),
 				projectKeyOf,
 				normalizeFact: (value, at) => normalizeProjectFact(value, at),
-				addFact: async (key, fact) => { added.push([key, fact.text]); return true; },
+				addFact: async (key, fact) => {
+					added.push([key, fact.text]);
+					return true;
+				},
 				looksSensitive,
-		requirementHintsOf: () => [],
+				requirementHintsOf: () => [],
 				log,
 			},
 			{ chunkMs: 5, maxSessions: 5 },

@@ -69,13 +69,13 @@ export function initStores(input: StoreInput): StoreHandles {
 				},
 				"lume: close identity domain",
 			);
-				return new IdentityStore({
-					profile: domain.table("profile"),
-					memory_facts: domain.table("memory_facts"),
-					style_rules: domain.table("style_rules"),
-					corpus_pins: domain.table("corpus_pins"),
-					custom_personas: domain.table("custom_personas"),
-				});
+			return new IdentityStore({
+				profile: domain.table("profile"),
+				memory_facts: domain.table("memory_facts"),
+				style_rules: domain.table("style_rules"),
+				corpus_pins: domain.table("corpus_pins"),
+				custom_personas: domain.table("custom_personas"),
+			});
 		} catch (error) {
 			input.ctx.logger?.warn?.("lume: 身份域不可用，档案/记忆/自定义人设功能降级", error);
 			return null;
@@ -96,7 +96,12 @@ export function initStores(input: StoreInput): StoreHandles {
 	const reflectionReady = (async () => {
 		try {
 			const domain = await input.ctx.storageDomain.open(LUME_REFLECTION_SPEC);
-			input.ctx.effect(() => async () => { await domain.close(); }, "lume: close reflection domain");
+			input.ctx.effect(
+				() => async () => {
+					await domain.close();
+				},
+				"lume: close reflection domain",
+			);
 			const store = new ReflectionStore(domain.table("logs"));
 			const migrated = await store.migrateLegacy();
 			if (migrated > 0) input.ctx.logger?.warn?.(`lume: 已迁移 ${migrated} 条旧版反思日志`);
@@ -107,7 +112,9 @@ export function initStores(input: StoreInput): StoreHandles {
 		}
 	})();
 	// 已吞异常：内部 try/catch 后返回降级值，句柄赋值不会 reject
-	void reflectionReady.then((s) => { reflectionStore = s; });
+	void reflectionReady.then((s) => {
+		reflectionStore = s;
+	});
 
 	function projectTask(sid: string, label: string, run: (store: ProjectStore) => Promise<unknown> | unknown): void {
 		void projectReady
@@ -122,15 +129,20 @@ export function initStores(input: StoreInput): StoreHandles {
 		if (!input.projectMemoryOn) return null;
 		try {
 			const domain = await input.ctx.storageDomain.open(LUME_PROJECT_SPEC);
-			input.ctx.effect(() => async () => { await domain.close(); }, "lume: close project domain");
+			input.ctx.effect(
+				() => async () => {
+					await domain.close();
+				},
+				"lume: close project domain",
+			);
 			return new ProjectStore({
 				contract: domain.table("contract"),
 				ledger: domain.table("ledger"),
 				hypotheses: domain.table("hypotheses"),
 				facts: domain.table("facts"),
-			design: domain.table("design"),
-			requirements: domain.table("requirements"),
-			taskMemory: domain.table("task_memory"),
+				design: domain.table("design"),
+				requirements: domain.table("requirements"),
+				taskMemory: domain.table("task_memory"),
 			});
 		} catch (error) {
 			input.ctx.logger?.warn?.("lume: 项目域不可用，任务契约/台账/项目知识降级", error);
@@ -138,7 +150,9 @@ export function initStores(input: StoreInput): StoreHandles {
 		}
 	})();
 	// 已吞异常：内部 try/catch 后返回降级值，句柄赋值不会 reject
-	void projectReady.then((s) => { project = s; });
+	void projectReady.then((s) => {
+		project = s;
+	});
 
 	/** RPC 等入口可能在存储兑现前被调用：等一次并回填句柄。 */
 	async function ensureReady(): Promise<void> {

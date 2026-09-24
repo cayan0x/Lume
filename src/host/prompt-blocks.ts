@@ -61,7 +61,12 @@ export interface BlockDeps {
 	buildTaskPhaseDirective: (phase: SessionRuntime["taskPhase"]) => string;
 	buildCasualDirective: (isTask: boolean) => string | null;
 	buildLongSessionGuard: (turnIndex: number) => string | null;
-	buildSessionAnchor: (turnIndex: number, mode: SessionRuntime["interactionMode"], query: string | null, recentTurns: string[]) => string | null;
+	buildSessionAnchor: (
+		turnIndex: number,
+		mode: SessionRuntime["interactionMode"],
+		query: string | null,
+		recentTurns: string[],
+	) => string | null;
 	buildCompactionNotice: (compaction: { turnIndex: number; shadowedItems: number; tokens: number }, turnIndex: number) => string | null;
 	// ── 文档能力 ──
 	/** 文档任务时的方法块指令（是否算文档任务、能力探测都在 index 侧完成）。 */
@@ -75,7 +80,10 @@ export interface BlockDeps {
 	coverageRows: typeof coverageMod.coverageRows;
 	hasFigureRefs: typeof coverageMod.hasFigureRefs;
 	danglingSectionRefs: typeof coverageMod.danglingSectionRefs;
-	buildRequirementCoverageDirective: (rows: ReturnType<typeof coverageMod.coverageRows>, opts: { figures?: boolean; danglingRefs?: readonly string[] }) => string | null;
+	buildRequirementCoverageDirective: (
+		rows: ReturnType<typeof coverageMod.coverageRows>,
+		opts: { figures?: boolean; danglingRefs?: readonly string[] },
+	) => string | null;
 }
 
 export interface BlockInput {
@@ -170,10 +178,16 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		// 这是「换个窗口接着干」的入口：上下文撑满时宿主压缩会失败，那个会话再也聊不动，
 		// 所以新会话必须能一眼看到上次的目标、已拍板、未决与关键定位。
 		{
-			text: deps.isColdStart({ hasContract: Boolean(deps.contractOf(sid)), changes: deps.changesOf(sid).length, requirements: deps.requirementsOf(sid).length })
+			text: deps.isColdStart({
+				hasContract: Boolean(deps.contractOf(sid)),
+				changes: deps.changesOf(sid).length,
+				requirements: deps.requirementsOf(sid).length,
+			})
 				? deps.renderTaskMemory((st.taskMemories?.[0] as never) ?? null, {
-					recent: (st.taskMemories ?? []).slice(0, 4).map((item) => ({ title: String((item as { title?: string }).title ?? ""), at: Number((item as { at?: number }).at ?? 0) })),
-				})
+						recent: (st.taskMemories ?? [])
+							.slice(0, 4)
+							.map((item) => ({ title: String((item as { title?: string }).title ?? ""), at: Number((item as { at?: number }).at ?? 0) })),
+					})
 				: null,
 			droppable: true,
 		},

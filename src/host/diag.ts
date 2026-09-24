@@ -21,12 +21,18 @@ export const LUME_LOG_FILE = "lume-compaction.log";
  * 现在按候选探测，落到第一个存在的目录。
  */
 function resolveLogHome(): string | null {
-	const candidates = [process.env.DSH_HOME, process.env.APPDATA ? join(process.env.APPDATA, "dsh-desktop") : null, process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "dsh-desktop") : null];
+	const candidates = [
+		process.env.DSH_HOME,
+		process.env.APPDATA ? join(process.env.APPDATA, "dsh-desktop") : null,
+		process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "dsh-desktop") : null,
+	];
 	for (const candidate of candidates) {
 		if (!candidate) continue;
 		try {
 			if (existsSync(candidate)) return candidate;
-		} catch { /* 探测失败就试下一个 */ }
+		} catch {
+			/* 探测失败就试下一个 */
+		}
 	}
 	return null;
 }

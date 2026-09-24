@@ -77,31 +77,41 @@ export type DistillStage = "mining" | "contract" | "corpus";
 
 // ── prompt 组装 ────────────────────────────────────────────────────────────
 
-
-
-
-
-
-
-
-
-
-
 /** 带一次重试的 JSON 调用：解析失败时把原始输出片段带进错误信息，UI 可见。 */
-async function callJson(deps: DistillDeps, route: LlmRoute, system: string, userText: string, maxTokens: number, signal?: AbortSignal): Promise<unknown> {
+async function callJson(
+	deps: DistillDeps,
+	route: LlmRoute,
+	system: string,
+	userText: string,
+	maxTokens: number,
+	signal?: AbortSignal,
+): Promise<unknown> {
 	const first = await deps.call(route, system, userText, maxTokens, signal);
 	if (first === null) throw new Error("LLM 调用失败（无输出）");
 	const parsed = parseJsonLoose<unknown>(first);
 	if (parsed !== null) return parsed;
 	deps.logger?.warn?.(`distill: 第一次输出无法解析为 JSON，重试一次。原始输出前 200 字：${first.slice(0, 200).replace(/\n/g, "⏎")}`);
-	const second = await deps.call(route, `${system}\n\n补充：上一次输出无法解析。必须严格只输出一个合法 JSON（对象或数组），不要有任何解释、围栏或多余文本。`, userText, maxTokens, signal);
+	const second = await deps.call(
+		route,
+		`${system}\n\n补充：上一次输出无法解析。必须严格只输出一个合法 JSON（对象或数组），不要有任何解释、围栏或多余文本。`,
+		userText,
+		maxTokens,
+		signal,
+	);
 	if (second === null) throw new Error(`LLM 调用失败（无输出）`);
 	const retried = parseJsonLoose<unknown>(second);
 	if (retried !== null) return retried;
-	throw new Error(`模型输出无法解析为 JSON（${route.provider}/${route.model}，maxTokens=${maxTokens}）。原始输出片段：${second.slice(0, 300).replace(/\n/g, "⏎")}`);
+	throw new Error(
+		`模型输出无法解析为 JSON（${route.provider}/${route.model}，maxTokens=${maxTokens}）。原始输出片段：${second.slice(0, 300).replace(/\n/g, "⏎")}`,
+	);
 }
 
-export async function runDistill(deps: DistillDeps, input: DistillInput, onProgress?: (stage: DistillStage) => void, signal?: AbortSignal): Promise<DistilledCard> {
+export async function runDistill(
+	deps: DistillDeps,
+	input: DistillInput,
+	onProgress?: (stage: DistillStage) => void,
+	signal?: AbortSignal,
+): Promise<DistilledCard> {
 	const text = input.text.trim();
 	if (!text) throw new Error("distill: 素材为空");
 	// 上限先按聊天记录宽容检查；精确上限在挖掘后按形态判定
@@ -118,7 +128,14 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 
 	onProgress?.("contract");
 	// 聊天记录点选模式：证据只含目标角色的台词，另一人的对话剔除
-	const contractPrompt = buildContractPrompt({ ...mined, hint: input.hint, excludeOthers: mined.kind === "chat", relationship: mined.relationship, contexts: mined.contexts, styleStats: mined.styleStats });
+	const contractPrompt = buildContractPrompt({
+		...mined,
+		hint: input.hint,
+		excludeOthers: mined.kind === "chat",
+		relationship: mined.relationship,
+		contexts: mined.contexts,
+		styleStats: mined.styleStats,
+	});
 	let contractOut: unknown;
 	try {
 		contractOut = await callJson(deps, route, contractPrompt.system, contractPrompt.userText, CONTRACT_TOKENS, signal);
@@ -134,7 +151,13 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 	if (mined.kind === "chat" && mined.pairs && mined.pairs.length > 0) {
 		corpus = sanitizeCorpus(mined.pairs);
 	} else {
-		const corpusPrompt = buildCorpusPrompt({ speaker: mined.speaker, displayName: contract.displayName, lines: mined.lines, hint: input.hint, mixed: mined.mixed });
+		const corpusPrompt = buildCorpusPrompt({
+			speaker: mined.speaker,
+			displayName: contract.displayName,
+			lines: mined.lines,
+			hint: input.hint,
+			mixed: mined.mixed,
+		});
 		const corpusOut = await callJson(deps, route, corpusPrompt.system, corpusPrompt.userText, CORPUS_TOKENS, signal).catch(() => null);
 		corpus = Array.isArray(corpusOut) ? sanitizeCorpus(corpusOut) : [];
 	}
@@ -150,10 +173,13 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 		storyFacts.push(
 			...(Array.isArray(storyOut)
 				? storyOut
-					.filter((m): m is { text: string } => typeof (m as { text?: unknown })?.text === "string" && Boolean((m as { text: string }).text.trim()))
-					.map((m) => ({ text: settleMemoryText(m.text, STORY_MEMORY_CAP) }))
-					.filter((m): m is { text: string } => m !== null)
-					.slice(0, STORY_FACTS_CAP)
+						.filter(
+							(m): m is { text: string } =>
+								typeof (m as { text?: unknown })?.text === "string" && Boolean((m as { text: string }).text.trim()),
+						)
+						.map((m) => ({ text: settleMemoryText(m.text, STORY_MEMORY_CAP) }))
+						.filter((m): m is { text: string } => m !== null)
+						.slice(0, STORY_FACTS_CAP)
 				: []),
 		);
 		// 事件记忆：从完整对话流（双方）提炼事实——不只提取目标角色的台词，
@@ -164,23 +190,28 @@ export async function runDistill(deps: DistillDeps, input: DistillInput, onProgr
 		eventFacts.push(
 			...(Array.isArray(memOut)
 				? memOut
-					.filter((m): m is { text: string } => typeof (m as { text?: unknown })?.text === "string" && Boolean((m as { text: string }).text.trim()))
-					.map((m) => ({ text: settleMemoryText(m.text, EVENT_MEMORY_CAP) }))
-					.filter((m): m is { text: string } => m !== null)
-					.slice(0, EVENT_FACTS_CAP)
+						.filter(
+							(m): m is { text: string } =>
+								typeof (m as { text?: unknown })?.text === "string" && Boolean((m as { text: string }).text.trim()),
+						)
+						.map((m) => ({ text: settleMemoryText(m.text, EVENT_MEMORY_CAP) }))
+						.filter((m): m is { text: string } => m !== null)
+						.slice(0, EVENT_FACTS_CAP)
 				: []),
 		);
 		const merged = dedupeMemories([...storyFacts, ...eventFacts]);
 		if (merged.length > 0) memory = merged;
 	}
 
-	return { ...contract, corpus, distillVersion: DISTILL_ALGORITHM_VERSION, distillSource: text, ...(input.hint ? { distillHint: input.hint } : {}), ...(memory && memory.length > 0 ? { memory } : {}) };
+	return {
+		...contract,
+		corpus,
+		distillVersion: DISTILL_ALGORITHM_VERSION,
+		distillSource: text,
+		...(input.hint ? { distillHint: input.hint } : {}),
+		...(memory && memory.length > 0 ? { memory } : {}),
+	};
 }
-
-
-
-
-
 
 export interface DistillJob {
 	id: string;
@@ -217,9 +248,14 @@ export class DistillJobRunner {
 		const controller = new AbortController();
 		const job: DistillJob = { id, status: "running", at: Date.now(), stage: "mining", controller };
 		this.#jobs.set(id, job);
-		void runDistill(this.#deps, { text, hint: input.hint }, (stage) => {
-			job.stage = stage;
-		}, controller.signal)
+		void runDistill(
+			this.#deps,
+			{ text, hint: input.hint },
+			(stage) => {
+				job.stage = stage;
+			},
+			controller.signal,
+		)
 			.then((card) => {
 				job.status = "done";
 				job.card = card;

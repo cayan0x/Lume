@@ -94,16 +94,14 @@ export function parseCard(text: string): ParseResult {
 				corpus: sanitizeCorpus(persona.corpus),
 				profileName: typeof persona.profileName === "string" && persona.profileName ? persona.profileName : null,
 				styleRules: Array.isArray(persona.styleRules)
-					? (persona.styleRules as { rule: string; at: number }[])
-						.filter((r) => typeof r?.rule === "string" && r.rule)
-						.slice(-STYLE_CAP)
+					? (persona.styleRules as { rule: string; at: number }[]).filter((r) => typeof r?.rule === "string" && r.rule).slice(-STYLE_CAP)
 					: [],
 				memory: Array.isArray(persona.memory)
-					? (persona.memory as { text: string; at: number }[])
-						.filter((m) => typeof m?.text === "string" && m.text)
-						.slice(-MEMORY_CAP)
+					? (persona.memory as { text: string; at: number }[]).filter((m) => typeof m?.text === "string" && m.text).slice(-MEMORY_CAP)
 					: undefined,
-				signatureWords: Array.isArray(persona.signatureWords) ? persona.signatureWords.filter((w): w is string => typeof w === "string" && w.length > 0) : undefined,
+				signatureWords: Array.isArray(persona.signatureWords)
+					? persona.signatureWords.filter((w): w is string => typeof w === "string" && w.length > 0)
+					: undefined,
 			},
 		},
 	};
@@ -114,7 +112,11 @@ export function parseCard(text: string): ParseResult {
  * 拒绝覆盖内置人设；返回规范化后的卡片（供导入写入）。
  */
 export function normalizeCard(card: CardPersona): { ok: true; value: CardPersona } | { ok: false; error: string } {
-	const name = card.name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+	const name = card.name
+		.toLowerCase()
+		.replace(/[^a-z0-9-]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 32);
 	if (!/^[a-z][a-z0-9-]*$/.test(name)) {
 		return { ok: false, error: `人设键名 "${name}" 不合法：必须以小写字母开头，只含小写字母/数字/连字符。` };
 	}

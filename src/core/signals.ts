@@ -14,12 +14,90 @@ export type ToolKind = "inspect" | "mutate" | "verify" | "plan" | "other";
 const PLAN_TOKENS = new Set(["todo", "plan", "contract", "change", "ledger", "hypothesis", "note"]);
 const LUME_TOKENS = new Set(["lume"]);
 const VERIFY_TOKENS = new Set([
-	"bash", "shell", "pwsh", "powershell", "cmd", "terminal", "run", "exec", "job", "make", "mvn", "gradle",
-	"npm", "pnpm", "yarn", "bun", "deno", "node", "tsc", "tsdown", "vite", "vitest", "jest", "pytest", "cargo",
-	"go", "dotnet", "msbuild", "compile", "build", "test", "lint", "typecheck", "check", "verify",
+	"bash",
+	"shell",
+	"pwsh",
+	"powershell",
+	"cmd",
+	"terminal",
+	"run",
+	"exec",
+	"job",
+	"make",
+	"mvn",
+	"gradle",
+	"npm",
+	"pnpm",
+	"yarn",
+	"bun",
+	"deno",
+	"node",
+	"tsc",
+	"tsdown",
+	"vite",
+	"vitest",
+	"jest",
+	"pytest",
+	"cargo",
+	"go",
+	"dotnet",
+	"msbuild",
+	"compile",
+	"build",
+	"test",
+	"lint",
+	"typecheck",
+	"check",
+	"verify",
 ]);
-const MUTATE_TOKENS = new Set(["edit", "write", "multiedit", "patch", "apply", "replace", "create", "delete", "remove", "rename", "move", "append", "insert", "mkdir", "apply_patch"]);
-const INSPECT_TOKENS = new Set(["read", "view", "cat", "grep", "search", "glob", "find", "ls", "list", "tree", "analyze", "symbol", "reference", "web", "fetch", "browser", "screenshot", "image", "git", "status", "diff", "log", "show", "stat", "head", "tail", "query", "sql", "map"]);
+const MUTATE_TOKENS = new Set([
+	"edit",
+	"write",
+	"multiedit",
+	"patch",
+	"apply",
+	"replace",
+	"create",
+	"delete",
+	"remove",
+	"rename",
+	"move",
+	"append",
+	"insert",
+	"mkdir",
+	"apply_patch",
+]);
+const INSPECT_TOKENS = new Set([
+	"read",
+	"view",
+	"cat",
+	"grep",
+	"search",
+	"glob",
+	"find",
+	"ls",
+	"list",
+	"tree",
+	"analyze",
+	"symbol",
+	"reference",
+	"web",
+	"fetch",
+	"browser",
+	"screenshot",
+	"image",
+	"git",
+	"status",
+	"diff",
+	"log",
+	"show",
+	"stat",
+	"head",
+	"tail",
+	"query",
+	"sql",
+	"map",
+]);
 
 /** 把工具名切成小写词元：`lume_contract` → [lume, contract]；`mcp__fs__read_file` → [mcp, fs, read, file]。 */
 function tokens(name: unknown): string[] {
@@ -36,7 +114,8 @@ function tokens(name: unknown): string[] {
  * 为什么需要它：把 `git grep` 当成一次验证，会把"未验证"洗白——那比不做更糟。
  * 所以取**宁窄勿宽**：宁可少自动推进几条，也不能让台账撒谎。
  */
-export const REAL_VERIFY_RE = /(?:^|[\s&|;"'])(?:tsc|tsdown|vitest|jest|mocha|pytest|mvn|gradle|gradlew|npm|pnpm|yarn|bun|deno|go|dotnet|cargo|make)\s[^&|]*\b(?:test|build|lint|typecheck|check|verify|compile|package|vitest|tsc)\b|node_modules[\\/]\.bin[\\/]|--noEmit|\btsc\b|\bvitest\b|\btsdown\b/i;
+export const REAL_VERIFY_RE =
+	/(?:^|[\s&|;"'])(?:tsc|tsdown|vitest|jest|mocha|pytest|mvn|gradle|gradlew|npm|pnpm|yarn|bun|deno|go|dotnet|cargo|make)\s[^&|]*\b(?:test|build|lint|typecheck|check|verify|compile|package|vitest|tsc)\b|node_modules[\\/]\.bin[\\/]|--noEmit|\btsc\b|\bvitest\b|\btsdown\b/i;
 
 export function isRealVerifyCommand(args: unknown): boolean {
 	const body = typeof args === "string" ? args : JSON.stringify(args ?? "");
@@ -56,7 +135,8 @@ export function toolArtifactText(args: unknown): string {
 	const parts: unknown[] = [record.content, record.new_string, record.newString, record.new_str, record.text, record.new_text];
 	const edits = Array.isArray(record.edits) ? record.edits : [];
 	for (const edit of edits) {
-		if (edit && typeof edit === "object") parts.push((edit as Record<string, unknown>).new_string, (edit as Record<string, unknown>).content);
+		if (edit && typeof edit === "object")
+			parts.push((edit as Record<string, unknown>).new_string, (edit as Record<string, unknown>).content);
 	}
 	return parts.filter((p): p is string => typeof p === "string" && p.trim().length > 0).join("\n");
 }
@@ -64,14 +144,27 @@ export function toolArtifactText(args: unknown): string {
 export function summarizeToolChange(args: unknown, toolName: string): string {
 	const record = (args && typeof args === "object" ? args : null) as Record<string, unknown> | null;
 	if (!record) return `由 ${toolName} 修改`;
-	const candidates: unknown[] = [record.new_string, record.newString, record.new_str, record.content, record.text, record.new_text, record.contents];
+	const candidates: unknown[] = [
+		record.new_string,
+		record.newString,
+		record.new_str,
+		record.content,
+		record.text,
+		record.new_text,
+		record.contents,
+	];
 	const edits = Array.isArray(record.edits) ? record.edits : [];
 	for (const edit of edits) {
-		if (edit && typeof edit === "object") candidates.push((edit as Record<string, unknown>).new_string, (edit as Record<string, unknown>).content);
+		if (edit && typeof edit === "object")
+			candidates.push((edit as Record<string, unknown>).new_string, (edit as Record<string, unknown>).content);
 	}
 	for (const candidate of candidates) {
 		if (typeof candidate !== "string" || !candidate.trim()) continue;
-		const firstLine = candidate.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+		const firstLine =
+			candidate
+				.split(/\r?\n/)
+				.map((line) => line.trim())
+				.find((line) => line.length > 0) ?? "";
 		if (!firstLine) continue;
 		return firstLine.replace(/\s+/g, " ").slice(0, 70);
 	}
@@ -173,14 +266,33 @@ export function classifyTool(name: unknown): ToolKind {
 }
 
 /** 通用失败迹象：工具结果里出现这些词，就当这一步没成功。 */
-const FAILURE_RE = /失败|报错|错误|异常|无法|找不到|不存在|没找到|\berror\b|\bfailed\b|\bfailure\b|\bexception\b|traceback|\bpanic\b|\bcannot\b|\bunable\b|permission denied|timed out|timeout|超时/i;
+const FAILURE_RE =
+	/失败|报错|错误|异常|无法|找不到|不存在|没找到|\berror\b|\bfailed\b|\bfailure\b|\bexception\b|traceback|\bpanic\b|\bcannot\b|\bunable\b|permission denied|timed out|timeout|超时/i;
 const UNKNOWN_RE = /结果未知|outcome unknown|tool_not_started|tool_outcome_unknown|仍在运行|still running|no output/i;
 /**
  * 环境故障迹象（区别于「代码写错了」）：依赖解析不了、命令不存在、离线仓库、
  * 网络/权限受阻。命中它才给「验证降级阶梯」——普通编译错误该归因到代码，
  * 给环境阶梯反而会误导。
  */
-const ENV_FAILURE_RE = /could not resolve dependencies|could not find artifact|cannot find module|module_not_found|command not found|not recognized as an internal|不是内部或外部命令|系统找不到指定的路径|no such file or directory|enoent|offline mode|cannot access .* in offline|本地仓库|repository.*(?:empty|missing)|network is unreachable|econnrefused|etimedout|proxy|self-signed certificate|eacces/i;
+/**
+ * 失败判据（唯一实现）。
+ *
+ * 现场（2026-09-24 评审）：这条正则原先在 host/turn-boundary.ts 与 host/session-events.ts 各抄一份，
+ * 两处都没单测、改一处漏一处——而它决定「红了要不要立刻闭环」。判据属于 core（纯函数 + 单测），不该漏在 host。
+ */
+export function looksLikeFailure(text: string): boolean {
+	return FAILURE_RE.test(String(text ?? "")) || /timed out|not started/i.test(String(text ?? ""));
+}
+
+/** 助手这轮是否声称「验证过」（交付对账与阶段推进共用）。 */
+const CLAIMS_VERIFICATION_RE = /验证|测试|构建|检查|确认生效|实际结果|已通过|未验证|无法验证/i;
+
+export function claimsVerification(text: string): boolean {
+	return CLAIMS_VERIFICATION_RE.test(String(text ?? ""));
+}
+
+const ENV_FAILURE_RE =
+	/could not resolve dependencies|could not find artifact|cannot find module|module_not_found|command not found|not recognized as an internal|不是内部或外部命令|系统找不到指定的路径|no such file or directory|enoent|offline mode|cannot access .* in offline|本地仓库|repository.*(?:empty|missing)|network is unreachable|econnrefused|etimedout|proxy|self-signed certificate|eacces/i;
 
 export interface ResultSignals {
 	failure: boolean;
@@ -252,7 +364,8 @@ function isDriftProposal(candidate: string, word: string): boolean {
 }
 
 /** 豁免语境：否定、疑问、风险与讨论——出现这些说明它在讨论，不是在动手。 */
-const DRIFT_EXEMPT_RE = /不|没|别|避免|无需|不用|是否|会不会|风险|影响|回滚|留痕|降级|万一|如果|若|讨论|方案|选项|历史|曾经|之前|已经|吗|？|\?/;
+const DRIFT_EXEMPT_RE =
+	/不|没|别|避免|无需|不用|是否|会不会|风险|影响|回滚|留痕|降级|万一|如果|若|讨论|方案|选项|历史|曾经|之前|已经|吗|？|\?/;
 /** 计划线索：变更词之前出现这些，才是在说「我要做的变更」。 */
 const DRIFT_PLAN_RE = /要|会|将|建议|应该|打算|计划|准备|必须|改为|改成|直接|需要/;
 const DRIFT_BEFORE = 24;

@@ -5,7 +5,19 @@
  * 载具越积越多时必须有东西可丢，否则尾部快照会把注意力挤没。
  */
 import { describe, expect, it } from "vitest";
-import { buildCarrierGapNotice, buildCitationDirective, buildContractMethodDirective, buildDocumentMethodDirective, buildDriftDirective, buildImpactDirective, buildQuestionAuditDirective, buildRequirementMethodDirective, buildStructureHint, buildUnverifiedDeliveryNotice, composeBlocks } from "../src/host/methods.js";
+import {
+	buildCarrierGapNotice,
+	buildCitationDirective,
+	buildContractMethodDirective,
+	buildDocumentMethodDirective,
+	buildDriftDirective,
+	buildImpactDirective,
+	buildQuestionAuditDirective,
+	buildRequirementMethodDirective,
+	buildStructureHint,
+	buildUnverifiedDeliveryNotice,
+	composeBlocks,
+} from "../src/host/methods.js";
 
 describe("方法块内容", () => {
 	it("契约方法块含六项要素与「数量先估后回填」", () => {
@@ -119,13 +131,7 @@ describe("composeBlocks", () => {
 		const filler = "x".repeat(60);
 		const keepMe = "k".repeat(60);
 		const text = composeBlocks(
-			[
-				{ text: "关键A" },
-				{ text: keepMe },
-				{ text: "关键B" },
-				{ text: filler, droppable: true },
-				{ text: "关键C" },
-			],
+			[{ text: "关键A" }, { text: keepMe }, { text: "关键B" }, { text: filler, droppable: true }, { text: "关键C" }],
 			80,
 		);
 		expect(text).toContain("关键A");

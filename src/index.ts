@@ -25,7 +25,20 @@ import { makeRpcRoute } from "./host/rpc-bridge.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
 import { IdentityStore, LUME_IDENTITY_SPEC, zodLike } from "./host/identity.js";
 import { PersonaRegistry } from "./host/registry.js";
-import { buildCorrectionPrompt, buildExtractionPrompt, extractNaming, isCoolingDown, isDuplicateFact, mergeNewFacts, parseCorrectionRule, parseFacts, resolveAuxRoute, shouldCaptureCorpus, shouldConsider, shouldConsiderCorrection } from "./host/extraction.js";
+import {
+	buildCorrectionPrompt,
+	buildExtractionPrompt,
+	extractNaming,
+	isCoolingDown,
+	isDuplicateFact,
+	mergeNewFacts,
+	parseCorrectionRule,
+	parseFacts,
+	resolveAuxRoute,
+	shouldCaptureCorpus,
+	shouldConsider,
+	shouldConsiderCorrection,
+} from "./host/extraction.js";
 import { DistillJobRunner, DISTILL_ALGORITHM_VERSION, runDistill } from "./host/distill.js";
 import { jaccard } from "./core/retrieval.js";
 import { fnv1a32 } from "./core/sampling.js";
@@ -40,14 +53,44 @@ import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseRefl
 import { appendLumeLog } from "./host/diag.js";
 import { clearNotice, forceNotice, noticeOpen, noticeText, setNotice } from "./host/notices.js";
 import { toolArgsOf, toolNameOf, toolTargetOf } from "./host/host-events.js";
-import { advancePhase, buildAlignmentCorrection, buildCasualDirective, buildCompactionNotice, buildInteractionDirective, buildLongSessionGuard, buildSessionAnchor, buildTaskPhaseDirective, buildToolFailureNotice, classifyInteraction, isUserAuthored, taskPhaseForMode } from "./host/protocol.js";
+import {
+	advancePhase,
+	buildAlignmentCorrection,
+	buildCasualDirective,
+	buildCompactionNotice,
+	buildInteractionDirective,
+	buildLongSessionGuard,
+	buildSessionAnchor,
+	buildTaskPhaseDirective,
+	buildToolFailureNotice,
+	classifyInteraction,
+	isUserAuthored,
+	taskPhaseForMode,
+} from "./host/protocol.js";
 import { DESIGN_SIGNAL_RE } from "./host/protocol.js";
 import { buildDocumentDirective, probeDocumentCapabilities } from "./host/documents.js";
 import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectStableThinkingProtocol } from "./host/thinking.js";
-import { normalizeChange, normalizeContract, normalizeHypothesis, normalizeProjectFact, projectKeyOf, renderChangeLedger, renderContract, renderHypotheses, renderProjectFacts } from "./core/ledger.js";
+import {
+	normalizeChange,
+	normalizeContract,
+	normalizeHypothesis,
+	normalizeProjectFact,
+	projectKeyOf,
+	renderChangeLedger,
+	renderContract,
+	renderHypotheses,
+	renderProjectFacts,
+} from "./core/ledger.js";
 import { normalizeDesign, renderDesign, renderRequirements } from "./core/ledger.js";
 import { classifyTool, readResultSignals } from "./core/signals.js";
-import { auditOpenQuestions, isRealVerifyCommand, summarizeToolChange, toolArtifactText, unrequestedChangeWords, type ResultSignals } from "./core/signals.js";
+import {
+	auditOpenQuestions,
+	isRealVerifyCommand,
+	summarizeToolChange,
+	toolArtifactText,
+	unrequestedChangeWords,
+	type ResultSignals,
+} from "./core/signals.js";
 import { recordSymbols, unsupportedClaims } from "./core/citations.js";
 import { coverageRows, danglingSectionRefs, hasFigureRefs, pickRequirementCorpus, splitRequirementItems } from "./core/coverage.js";
 
@@ -56,7 +99,19 @@ const QUESTION_AUDIT_MAX = 2;
 
 /** 只把「文档类产物」当交付物收进覆盖核对（源码改动进去只会制造噪音）。 */
 const DOC_ARTIFACT_RE = /\.(md|markdown|txt)$/i;
-import { buildCarrierGapNotice, buildCitationDirective, buildClaimDirective, buildContractMethodDirective, buildDocumentMethodDirective, buildImpactDirective, buildQuestionAuditDirective, buildRequirementCoverageDirective, buildStructureHint, buildUnverifiedDeliveryNotice, composeBlocks } from "./host/methods.js";
+import {
+	buildCarrierGapNotice,
+	buildCitationDirective,
+	buildClaimDirective,
+	buildContractMethodDirective,
+	buildDocumentMethodDirective,
+	buildImpactDirective,
+	buildQuestionAuditDirective,
+	buildRequirementCoverageDirective,
+	buildStructureHint,
+	buildUnverifiedDeliveryNotice,
+	composeBlocks,
+} from "./host/methods.js";
 import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
@@ -71,8 +126,16 @@ import { assembleBlockDeps, assembleSessionEventDeps, assembleToolDeps, startSes
 import type { HostPayload } from "./host/host-context.js";
 import type { WiringInput } from "./host/wiring.js";
 import { createSessionDisposedHandler, createSessionEventHandler } from "./host/session-events.js";
-import { DEFAULT_TRIGGER_THRESHOLDS, applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger, type TriggerId, type TriggerThresholds } from "./host/triggers.js";
-
+import {
+	DEFAULT_TRIGGER_THRESHOLDS,
+	applyToolSignal,
+	applyVerifyOutcome,
+	cooldownOk,
+	evaluateToolTrigger,
+	evaluateTurnTrigger,
+	type TriggerId,
+	type TriggerThresholds,
+} from "./host/triggers.js";
 
 /** schemastery → domainTable 形参的桥接（与 stores.identity().ts 同款）。 */
 const recordSchema = zodLike;
@@ -217,7 +280,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 */
 
 	const registry = new PersonaRegistry(builtins, () => stores.identity());
-	ctx.logger?.warn?.(`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}，能力=载具+触发器+设计pass+需求锚点）`);
+	ctx.logger?.warn?.(
+		`lume: 已加载（builtins=${Object.keys(builtins).join(",") || "空!"}，assets=${assetsDir}，能力=载具+触发器+设计pass+需求锚点）`,
+	);
 	ctx.logger?.warn?.(`lume: llmRoute 初始化策略：agentDefaultModel → settings → 回退`);
 
 	// ── 每会话运行时状态（内存，重启即弃，LRU 上限兜底）──
@@ -325,7 +390,14 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			if (shouldConsiderCorrection(userText) && !isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) {
 				const route = resolveAuxRoute(extractionRouteOverride, llmRoute.current);
 				if (route) {
-					const prompt = buildCorrectionPrompt(userText, assistantText, stores.identity().getStyleRules(personaName).map((r: any) => r.rule));
+					const prompt = buildCorrectionPrompt(
+						userText,
+						assistantText,
+						stores
+							.identity()
+							.getStyleRules(personaName)
+							.map((r: any) => r.rule),
+					);
 					const output = await callLlm(route, prompt.system, prompt.userText, 400);
 					const rule = output === null ? null : parseCorrectionRule(output);
 					if (rule) {
@@ -339,7 +411,13 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			// 通道 B：语料摘录——用户认可上一轮回复「像本人」时，把真实对话对
 			// 摘录进 corpus_pins（注入时并入采样池，让语气随真实使用收敛）。
 			if (shouldCaptureCorpus(userText) && pinCandidate && pinCandidate.assistant) {
-				const written = await stores.identity().addCorpusPin(personaName, { user: pinCandidate.user, assistant: pinCandidate.assistant, at: Date.now() }, (a: any, b: any) => jaccard(a, b) >= 0.8);
+				const written = await stores
+					.identity()
+					.addCorpusPin(
+						personaName,
+						{ user: pinCandidate.user, assistant: pinCandidate.assistant, at: Date.now() },
+						(a: any, b: any) => jaccard(a, b) >= 0.8,
+					);
 				if (written) ctx.logger?.warn?.(`lume: 语料摘录 → ${personaName}: ${pinCandidate.assistant.slice(0, 40)}`);
 			}
 
@@ -354,7 +432,10 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				existing.map((f: any) => f.text),
 			);
 			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute.current), prompt.system, prompt.userText, 800);
-			if (output === null) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）模型无输出`); return; }
+			if (output === null) {
+				ctx.logger?.warn?.(`lume: 反思跳过（${sid}）模型无输出`);
+				return;
+			}
 			st.lastExtractionAt = Date.now();
 			const fresh = mergeNewFacts(parseFacts(output), stores.identity().getMemory(personaName));
 			for (const fact of fresh) {
@@ -381,44 +462,41 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 	// 版本迁移：有本地原始素材的旧角色在后台自动重蒸馏；只替换基础契约/语料，
 	// 身份名、记忆、习得风格与 corpus pins 均留在独立表中，不参与覆盖。
-	void stores.identityReady.then(async (store) => {
-		if (!store) return;
-		for (const [personaName, oldCard] of Object.entries(store.listCustomPersonas() as Record<string, any>)) {
-			if (!oldCard.distillSource || (oldCard.distillVersion ?? 0) >= DISTILL_ALGORITHM_VERSION) continue;
-			try {
-				const upgraded = await runDistill({
-					route: () => resolveAuxRoute(distillRouteOverride, llmRoute.current),
-					call: (route, system, userText, maxTokens, signal) => callLlm(route, system, userText, maxTokens, signal),
-					logger: ctx.logger,
-				}, { text: oldCard.distillSource, hint: oldCard.distillHint });
-				await store.setCustomPersona(personaName, {
-					...oldCard,
-					displayName: oldCard.displayName,
-					description: oldCard.description,
-					promptText: upgraded.promptText,
-					corpus: upgraded.corpus,
-					distillVersion: upgraded.distillVersion,
-					distillSource: oldCard.distillSource,
-					distillHint: oldCard.distillHint,
-				});
-				ctx.logger?.warn?.(`lume: 已后台升级角色卡 ${personaName} → distill v${DISTILL_ALGORITHM_VERSION}`);
-			} catch (error) {
-				ctx.logger?.warn?.(`lume: 角色卡 ${personaName} 后台升级失败，保留旧卡`, error);
+	void stores.identityReady
+		.then(async (store) => {
+			if (!store) return;
+			for (const [personaName, oldCard] of Object.entries(store.listCustomPersonas() as Record<string, any>)) {
+				if (!oldCard.distillSource || (oldCard.distillVersion ?? 0) >= DISTILL_ALGORITHM_VERSION) continue;
+				try {
+					const upgraded = await runDistill(
+						{
+							route: () => resolveAuxRoute(distillRouteOverride, llmRoute.current),
+							call: (route, system, userText, maxTokens, signal) => callLlm(route, system, userText, maxTokens, signal),
+							logger: ctx.logger,
+						},
+						{ text: oldCard.distillSource, hint: oldCard.distillHint },
+					);
+					await store.setCustomPersona(personaName, {
+						...oldCard,
+						displayName: oldCard.displayName,
+						description: oldCard.description,
+						promptText: upgraded.promptText,
+						corpus: upgraded.corpus,
+						distillVersion: upgraded.distillVersion,
+						distillSource: oldCard.distillSource,
+						distillHint: oldCard.distillHint,
+					});
+					ctx.logger?.warn?.(`lume: 已后台升级角色卡 ${personaName} → distill v${DISTILL_ALGORITHM_VERSION}`);
+				} catch (error) {
+					ctx.logger?.warn?.(`lume: 角色卡 ${personaName} 后台升级失败，保留旧卡`, error);
+				}
 			}
-		}
-	}).catch((error) => ctx.logger?.warn?.(`lume: 旧角色后台重蒸馏失败：${describeError(error)}`));;
+		})
+		.catch((error) => ctx.logger?.warn?.(`lume: 旧角色后台重蒸馏失败：${describeError(error)}`));
 
 	// ── 会话事件：路由缓存 + 轮次缓冲 + 提取调度 + 清理 ──
-		ctx.effect(
-			() =>
-				ctx.on("session/event", (session: any, event: any) => sessionEventHandler(session, event)),
-			"lume: session events",
-		);
-		ctx.effect(
-			() =>
-				ctx.on("session/disposed", (session: any) => sessionDisposedHandler(session)),
-			"lume: session disposal",
-		);
+	ctx.effect(() => ctx.on("session/event", (session: any, event: any) => sessionEventHandler(session, event)), "lume: session events");
+	ctx.effect(() => ctx.on("session/disposed", (session: any) => sessionDisposedHandler(session)), "lume: session disposal");
 
 	// ── 载具与项目知识的读取入口（事件处理器 / 工具 / 注入三处共用）──
 	/**
@@ -485,7 +563,21 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			project: () => stores.project(),
 			reflectionReady: stores.reflectionReady,
 		},
-		access: { contractOf, changesOf, designOf, requirementsOf, hypothesesOf, factsOf, projectKeyFor, flushPendingFacts, settleVerification, saveSessionMemory, taskMemoriesOf, needsDesignPass, structureToolName },
+		access: {
+			contractOf,
+			changesOf,
+			designOf,
+			requirementsOf,
+			hypothesesOf,
+			factsOf,
+			projectKeyFor,
+			flushPendingFacts,
+			settleVerification,
+			saveSessionMemory,
+			taskMemoriesOf,
+			needsDesignPass,
+			structureToolName,
+		},
 		projectTask: stores.projectTask,
 		llmRoute,
 		callLlm,
@@ -503,7 +595,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		reflectionEnabled,
 	};
 
-		// 会话补蒸馏：把最近 7 天的会话（**含已经撑满、聊不动的那些**）榨成跨会话知识。
+	// 会话补蒸馏：把最近 7 天的会话（**含已经撑满、聊不动的那些**）榨成跨会话知识。
 	// 为什么必须在这里做：上下文撑满 → 宿主压缩会失败（现场：compaction/end error=context overflow）→
 	// 会话再也产不出事件 → 期间没沉淀的知识会永久丢；但会话记录还躺在硬盘上。
 	// 分片执行（每片一个会话）以免阻塞宿主同进程的事件循环；幂等来自 addFact 的相似度去重。
@@ -514,11 +606,11 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				if (!store) return;
 				stopBackfill = startSessionBackfill({
 					log: (message: string) => {
-							// 日志同时走宿主 logger：appendLumeLog 依赖 DSH_HOME，宿主进程里可能没有 →
-							// 补蒸馏会“跑了却没有任何日志”（现场踩过：重启后零沉淀零日志）。
-							appendLumeLog(message);
-							ctx.logger?.warn?.(`lume: ${message}`);
-						},
+						// 日志同时走宿主 logger：appendLumeLog 依赖 DSH_HOME，宿主进程里可能没有 →
+						// 补蒸馏会“跑了却没有任何日志”（现场踩过：重启后零沉淀零日志）。
+						appendLumeLog(message);
+						ctx.logger?.warn?.(`lume: ${message}`);
+					},
 					addFact: (key, fact) => store.addFact(key, fact, isDuplicateFact),
 				});
 			})
@@ -526,7 +618,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		return () => stopBackfill?.();
 	});
 
-const sessionEventDeps = assembleSessionEventDeps(wiring);
+	const sessionEventDeps = assembleSessionEventDeps(wiring);
 	const toolDeps = assembleToolDeps(wiring);
 	const blockDeps: BlockDeps = assembleBlockDeps(wiring);
 
@@ -537,7 +629,6 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 
 	// 工具定义本体在 host/tools.ts（调用点必须在 deps 声明之后）
 	registerLumeTools(toolDeps);
-
 
 	interface TurnText {
 		thinkingStable: string;
@@ -562,7 +653,7 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 		// 交付复核、压缩重锚、文档能力指引、失败纠偏、反思提醒——全部每步可变。
 		// 载具与方法块（契约/台账/假设/项目知识/影响面/文档方法/触发器提醒）排在最后：
 		// 它们是「此刻最该看的」，紧贴尾部注意力最强位；超预算时先丢可丢块（composeBlocks）。
-				// 记录工作目录：工具 exec / 会话事件里可能拿不到 cwd，项目键靠这里缓存兜住（实测项目知识曾落到 unknown）
+		// 记录工作目录：工具 exec / 会话事件里可能拿不到 cwd，项目键靠这里缓存兜住（实测项目知识曾落到 unknown）
 		if (typeof context?.agent?.session?.cwd === "string" && context.agent.session.cwd) st.cwd = context.agent.session.cwd;
 		// cwd 到手就补落盘暂存的项目知识（这条路径是"cwd 后到"的主要补写时机）
 		flushPendingFacts(sid, context);
@@ -589,9 +680,10 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 		const inWindow = st.switchTurn !== null && st.turnIndex - st.switchTurn < boundaryTurns;
 		const greeting = st.switchGreetingPending && inWindow;
 		const persona = registry.resolve(personaName);
-		const boundaryText = inWindow && st.switchTurn !== null
-			? composeBoundary({ registry, previous: st.prevPersona, current: personaName, greeting, escalated: st.leakEscalated })
-			: null;
+		const boundaryText =
+			inWindow && st.switchTurn !== null
+				? composeBoundary({ registry, previous: st.prevPersona, current: personaName, greeting, escalated: st.leakEscalated })
+				: null;
 		st.lastInjected = personaName;
 
 		// 恒定段：只依赖「谁在当值 + 契约正文 + 身份名」。检索结果、示例、播报都进易变段。
@@ -599,9 +691,9 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 		const personaStable = buildPersonaContractSection({ persona, profileName });
 		const personaData = buildPersonaRuntimeSection({
 			persona,
-			memories: personaName ? stores.identity()?.getMemory(personaName) ?? [] : [],
-			styleRules: personaName ? stores.identity()?.getStyleRules(personaName) ?? [] : [],
-			corpusPins: personaName ? stores.identity()?.getCorpusPins(personaName) ?? [] : [],
+			memories: personaName ? (stores.identity()?.getMemory(personaName) ?? []) : [],
+			styleRules: personaName ? (stores.identity()?.getStyleRules(personaName) ?? []) : [],
+			corpusPins: personaName ? (stores.identity()?.getCorpusPins(personaName) ?? []) : [],
 			query,
 			turnIndex: st.turnIndex,
 			sessionKey: sid,
@@ -615,7 +707,9 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 		const digest = fnv1a32(`${thinkingStable}\u0001${personaStable}`).toString(16);
 		if (st.stableDigest !== digest) {
 			st.stableDigest = digest;
-			appendLumeLog(`[${sid}] 系统段指纹 ${digest}（当值=${String(personaName)}，身份=${String(profileName)}，通道=${layeredOn ? "runtime-context" : "system（降级）"}）`);
+			appendLumeLog(
+				`[${sid}] 系统段指纹 ${digest}（当值=${String(personaName)}，身份=${String(profileName)}，通道=${layeredOn ? "runtime-context" : "system（降级）"}）`,
+			);
 		}
 		return { thinkingStable, thinkingRuntime, personaStable, personaData, boundary: boundaryText ?? "" };
 	}
@@ -628,9 +722,7 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 		const turn = computeTurn(sid, context);
 		if (layeredOn) return part === "thinking" ? turn.thinkingStable : turn.personaStable;
 		const stable = part === "thinking" ? turn.thinkingStable : turn.personaStable;
-		const dynamic = part === "thinking"
-			? turn.thinkingRuntime
-			: [turn.personaData, turn.boundary].filter(Boolean).join("\n\n");
+		const dynamic = part === "thinking" ? turn.thinkingRuntime : [turn.personaData, turn.boundary].filter(Boolean).join("\n\n");
 		return [stable, dynamic].filter(Boolean).join("\n\n");
 	}
 
@@ -668,8 +760,8 @@ const sessionEventDeps = assembleSessionEventDeps(wiring);
 				changes: stores.project().getChanges(sessionId),
 				hypotheses: stores.project().getHypotheses(sessionId),
 				facts: st.projectKey ? stores.project().getFacts(st.projectKey) : [],
-					design: stores.project() ? stores.project().getDesign(sessionId) : [],
-					requirements: stores.project() ? stores.project().getRequirements(sessionId) : [],
+				design: stores.project() ? stores.project().getDesign(sessionId) : [],
+				requirements: stores.project() ? stores.project().getRequirements(sessionId) : [],
 				triggers: { ...st.triggerCounters, fired: st.triggerFiredAt },
 			};
 		},

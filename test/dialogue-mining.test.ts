@@ -185,7 +185,8 @@ THE
 	});
 
 	it("keeps multi-message user context for style triggers", () => {
-		const mined = mineDialogue(`
+		const mined = mineDialogue(
+			`
 用户
 2026年05月02日 12:00
 你今天忙不忙
@@ -205,7 +206,9 @@ THE
 目标
 2026年05月02日 12:04
 好，你说
-`, "目标");
+`,
+			"目标",
+		);
 		expect(mined.pairs).toContainEqual({ user: "你今天忙不忙 有件事想问你", assistant: "你说嘛，我听着呢" });
 		expect(mined.contexts?.[0]).toContain("用户：你今天忙不忙");
 		expect(mined.contexts?.[0]).toContain("目标：你说嘛，我听着呢");

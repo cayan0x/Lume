@@ -33,7 +33,7 @@ export function buildDocumentMethodDirective(): string {
 		"2. 最小编辑：只改目标区域，保留原有格式、编号、交叉引用与样式——不要整份重写。",
 		"3. 术语与称谓全文一致：改一个术语前先全文检索它的全部出现位置，否则会留下半新半旧。",
 		"4. 交付前回读改动区域，列出「改了什么 / 没动什么 / 未核对什么」；没有回读证据不要说已改好。",
-			"不要写「本文档不含 X」「不在本次范围」这类此地无银的声明：需求外的内容直接删；确实要标来源，最多一行。",
+		"不要写「本文档不含 X」「不在本次范围」这类此地无银的声明：需求外的内容直接删；确实要标来源，最多一行。",
 	].join("\n");
 }
 
@@ -42,8 +42,8 @@ export function buildImpactDirective(): string {
 	return [
 		"〔改动影响面〕动手前列出：要改的符号 → 谁调用它、它实现或被实现于谁、配置或 SQL 映射、前端/模板引用；并标出「不打算改但需一并确认」的位置。",
 		"每处改动写明验证方式；同一文件的相关改动一次做完，不要反复回来改同一个文件。",
-			"每改完一处就用 lume_change 记一条（target=文件/符号、change=改了什么、verify=怎么验、status=done），验完推进到 verified；台账积着未验证项时会有提醒。",
-].join("\n");
+		"每改完一处就用 lume_change 记一条（target=文件/符号、change=改了什么、verify=怎么验、status=done），验完推进到 verified；台账积着未验证项时会有提醒。",
+	].join("\n");
 }
 
 /** 环境里有结构分析/符号工具时的一句提示：用符号级定位替代通篇 read。 */
@@ -114,9 +114,14 @@ export function buildDesignMethodDirective(): string {
  * 而导入路径的 `setStatus` 在 534 行。加"要核实"的散文没用——它以为自己核实过了。
  * 所以这里只**复述事实**：这行你这次没看，看过的是这些范围。
  */
-export function buildCitationDirective(items: Array<{ file: string; line: number; key: string }>, windowsOf: (key: string) => string): string | null {
+export function buildCitationDirective(
+	items: Array<{ file: string; line: number; key: string }>,
+	windowsOf: (key: string) => string,
+): string | null {
 	if (items.length === 0) return null;
-	const lines = items.slice(0, 3).map((item) => `- 你引用了 ${item.file}:${item.line}，本会话读到过这个文件的范围是：${windowsOf(item.key) || "（没有）"}`);
+	const lines = items
+		.slice(0, 3)
+		.map((item) => `- 你引用了 ${item.file}:${item.line}，本会话读到过这个文件的范围是：${windowsOf(item.key) || "（没有）"}`);
 	return [
 		"〔引用核对〕下面这些引用是**这次没打开过**的代码行：",
 		...lines,
@@ -134,13 +139,18 @@ export function buildQuestionAuditDirective(audit: { count: number; unsupported:
 			: `〔提问核对〕你这轮把 ${audit.count} 条「待用户确认」摆出来了（规则：真正阻塞的 ≤${MAX_OPEN_QUESTIONS} 条）：`,
 	];
 	for (const item of audit.unsupported) lines.push(`- ${item.slice(0, 100)}`);
-	lines.push("- 你这次读过的代码能不能定下？能定就定，写明依据与默认假设（「我按 X 做，除非你反对」）——已核实的事实再挂「待确认」等于把工作退回用户；");
+	lines.push(
+		"- 你这次读过的代码能不能定下？能定就定，写明依据与默认假设（「我按 X 做，除非你反对」）——已核实的事实再挂「待确认」等于把工作退回用户；",
+	);
 	lines.push("- 只有确实只能由用户提供的信息（环境 / 账号 / 业务取舍）才留，且写清你查到哪一步、为什么代码答不了。");
 	return lines.join("\n");
 }
 
 /** 需求覆盖核对：把需求**原文条目**与交付物里提到它的句子并列，替代模型的自证式「N 条全有落点」。 */
-export function buildRequirementCoverageDirective(rows: readonly CoverageRow[], opts: { figures?: boolean; danglingRefs?: readonly string[] } = {}): string | null {
+export function buildRequirementCoverageDirective(
+	rows: readonly CoverageRow[],
+	opts: { figures?: boolean; danglingRefs?: readonly string[] } = {},
+): string | null {
 	if (rows.length === 0) return null;
 	const lines = [`〔需求覆盖核对〕需求原文共 ${rows.length} 条（**按你的原文切分，不是你的总结**）——逐条给落点，别只写「N 条全有落点」：`];
 	for (const row of rows.slice(0, 10)) {
@@ -149,7 +159,8 @@ export function buildRequirementCoverageDirective(rows: readonly CoverageRow[], 
 		else for (const mention of row.mentions) lines.push(`   交付物里提到它的句子（命中片段「${mention.gram}」）：${mention.text}`);
 	}
 	if (rows.length > 10) lines.push(`（其余 ${rows.length - 10} 条同理，逐条自查）`);
-	if (opts.figures) lines.push("⚠ 需求里有「如图/图一/附件」这类图形引用，交付物里没提到图：交互细节在图里，确认你的落点是否覆盖了图上描述的行为。");
+	if (opts.figures)
+		lines.push("⚠ 需求里有「如图/图一/附件」这类图形引用，交付物里没提到图：交互细节在图里，确认你的落点是否覆盖了图上描述的行为。");
 	for (const ref of opts.danglingRefs ?? []) lines.push(`⚠ 你引用了 ${ref} 节，但交付物里没有这一节（落点写错或章节被删）。`);
 	lines.push("逐条比对时只判一件事：**交付物这句写的是不是需求这条要的意思**（不是「有没有提到」）。有出入就写清差异与依据。");
 	return lines.join("\n");
@@ -169,7 +180,9 @@ export function buildCarrierGapNotice(input: { mutations: number; hasContract: b
 }
 
 /** 交付对账：把「还没验证的具体条目」摆出来，而不是泛泛提醒「要有验证证据」。 */
-export function buildUnverifiedDeliveryNotice(items: Array<{ target: string; change: string; verify: string; status: string }>): string | null {
+export function buildUnverifiedDeliveryNotice(
+	items: Array<{ target: string; change: string; verify: string; status: string }>,
+): string | null {
 	const pending = items.filter((item) => item.status === "done" || item.status === "planned");
 	if (pending.length === 0) return null;
 	const lines = pending.slice(0, 8).map((item) => {
@@ -199,7 +212,7 @@ export function buildClaimDirective(claims: Array<{ symbol: string; sentence: st
 	return [
 		"〔断言核对〕你写了否定性断言，但本会话没有可核实的依据：",
 		...lines,
-		"否定断言和引用一样要给出处：读到那一行再下结论（\"我查过 X，它没有 Y\" 而不是 \"X 没有 Y\"）。",
+		'否定断言和引用一样要给出处：读到那一行再下结论（"我查过 X，它没有 Y" 而不是 "X 没有 Y"）。',
 	].join("\n");
 }
 

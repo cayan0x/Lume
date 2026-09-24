@@ -19,7 +19,9 @@ function setup(opts: { identity?: unknown; project?: unknown; contract?: unknown
 	const tools: Tool[] = [];
 	const ctx = {
 		logger: { warn: vi.fn() },
-		effect: (fn: () => unknown) => { fn(); },
+		effect: (fn: () => unknown) => {
+			fn();
+		},
 		tools: { register: (t: Tool) => tools.push(t) },
 	} as never;
 	const stores = {
@@ -63,7 +65,16 @@ const exec = { agent: { session: { id: "sid-1" } } };
 describe("host/tools：注册面", () => {
 	it("八个人格 + 载具工具都注册了（名字即模型契约）", () => {
 		const { byName } = setup();
-		for (const n of ["lume_remember", "lume_update_style", "lume_create_persona", "lume_contract", "lume_change", "lume_hypothesis", "lume_project_note", "lume_design"]) {
+		for (const n of [
+			"lume_remember",
+			"lume_update_style",
+			"lume_create_persona",
+			"lume_contract",
+			"lume_change",
+			"lume_hypothesis",
+			"lume_project_note",
+			"lume_design",
+		]) {
 			expect(byName.has(n), n).toBe(true);
 		}
 	});
@@ -109,7 +120,9 @@ describe("host/tools：入口守卫", () => {
 
 	it("正常记账：target + change → upsertChange 收到归一化条目", async () => {
 		const { byName, stores } = setup();
-		const res = (await byName.get("lume_change")!.execute({ target: "src/a.ts", change: "加了判空", verify: "npm test" }, exec)) as { ok?: boolean };
+		const res = (await byName.get("lume_change")!.execute({ target: "src/a.ts", change: "加了判空", verify: "npm test" }, exec)) as {
+			ok?: boolean;
+		};
 		expect(res.ok).toBe(true);
 		expect(stores.upsertChange).toHaveBeenCalled();
 	});
@@ -122,6 +135,8 @@ describe("host/tools：入口守卫", () => {
 
 	it("项目域未就绪 → 工具给可读错误（而不是静默丢弃这次记录）", async () => {
 		const { byName } = setup({ project: null });
-		await expect(byName.get("lume_project_note")!.execute({ kind: "build", text: "npm test" }, exec)).rejects.toThrow(/store is unavailable|项目域未就绪/);
+		await expect(byName.get("lume_project_note")!.execute({ kind: "build", text: "npm test" }, exec)).rejects.toThrow(
+			/store is unavailable|项目域未就绪/,
+		);
 	});
 });

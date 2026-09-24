@@ -4,9 +4,7 @@ import { parseCorpus, parseCorpusLine, parseManifest } from "../src/core/manifes
 describe("parseManifest", () => {
 	it("parses a valid manifest", () => {
 		const raw = JSON.stringify({
-			personalities: [
-				{ name: "loli", displayName: "萝莉", description: "可爱", promptFile: "loli.txt", corpusFile: "loli-corpus.jsonl" },
-			],
+			personalities: [{ name: "loli", displayName: "萝莉", description: "可爱", promptFile: "loli.txt", corpusFile: "loli-corpus.jsonl" }],
 		});
 		const entries = parseManifest(raw);
 		expect(entries).toHaveLength(1);
@@ -15,10 +13,7 @@ describe("parseManifest", () => {
 
 	it("parses signatureWords and drops non-string entries", () => {
 		const raw = JSON.stringify({
-			personalities: [
-				{ name: "loli", signatureWords: ["哥哥", "人家", 42, ""] },
-				{ name: "none" },
-			],
+			personalities: [{ name: "loli", signatureWords: ["哥哥", "人家", 42, ""] }, { name: "none" }],
 		});
 		const entries = parseManifest(raw);
 		expect(entries[0]?.signatureWords).toEqual(["哥哥", "人家"]);
@@ -38,9 +33,7 @@ describe("parseManifest", () => {
 	});
 
 	it("throws on entries without a name", () => {
-		expect(() => parseManifest(JSON.stringify({ personalities: [{ displayName: "no name" }] }))).toThrow(
-			/name/,
-		);
+		expect(() => parseManifest(JSON.stringify({ personalities: [{ displayName: "no name" }] }))).toThrow(/name/);
 	});
 });
 
@@ -70,12 +63,7 @@ describe("parseCorpusLine", () => {
 
 describe("parseCorpus", () => {
 	it("skips blank and invalid lines, keeps valid ones", () => {
-		const raw = [
-			'{"user":"a","assistant":"b"}',
-			"",
-			"garbage",
-			'{"assistant":"c"}',
-		].join("\n");
+		const raw = ['{"user":"a","assistant":"b"}', "", "garbage", '{"assistant":"c"}'].join("\n");
 		expect(parseCorpus(raw)).toEqual([
 			{ user: "a", assistant: "b" },
 			{ user: "", assistant: "c" },

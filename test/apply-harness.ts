@@ -152,10 +152,10 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 			},
 			...(runtimeContext
 				? {
-					context: (c: HarnessSection) => {
-						contexts[c.name] = c;
-					},
-				}
+						context: (c: HarnessSection) => {
+							contexts[c.name] = c;
+						},
+					}
 				: {}),
 		},
 		on: (type: string, handler: (session: any, event: any) => void) => {

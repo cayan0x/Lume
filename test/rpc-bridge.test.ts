@@ -28,12 +28,22 @@ describe("parseClientRequest（对齐宿主 rpcFetchHandler）", () => {
 	});
 
 	it("content-type 不是 JSON → 415；body 不是 JSON → 400", () => {
-		expect(parseClientRequest("/lume", { method: "POST", url: "/lume/list", contentType: "text/plain", rawBody: "{}" })).toMatchObject({ kind: "respond", status: 415 });
-		expect(parseClientRequest("/lume", { method: "POST", url: "/lume/list", contentType: "application/json", rawBody: "not json" })).toMatchObject({ kind: "respond", status: 400 });
+		expect(parseClientRequest("/lume", { method: "POST", url: "/lume/list", contentType: "text/plain", rawBody: "{}" })).toMatchObject({
+			kind: "respond",
+			status: 415,
+		});
+		expect(
+			parseClientRequest("/lume", { method: "POST", url: "/lume/list", contentType: "application/json", rawBody: "not json" }),
+		).toMatchObject({ kind: "respond", status: 400 });
 	});
 
 	it("信封非法 → 200 + error 信封（与宿主一致，而不是 4xx）", () => {
-		const parsed = parseClientRequest("/lume", { method: "POST", url: "/lume/list", contentType: "application/json", rawBody: JSON.stringify({ type: "nope", rpcId: "r9" }) });
+		const parsed = parseClientRequest("/lume", {
+			method: "POST",
+			url: "/lume/list",
+			contentType: "application/json",
+			rawBody: JSON.stringify({ type: "nope", rpcId: "r9" }),
+		});
 		expect(parsed).toMatchObject({ kind: "respond", status: 200, contentType: "application/json" });
 		const body = JSON.parse((parsed as { body: string }).body);
 		expect(body).toMatchObject({ type: "server-response", rpcId: "r9" });
@@ -104,11 +114,16 @@ describe("makeRpcRoute", () => {
 			method: "POST",
 			url: "/lume/list",
 			headers: { "content-type": "application/json" },
-			[Symbol.asyncIterator]: () => body(JSON.stringify({ type: "client-request", rpcId: "r1", method: "list", payload: { q: 1 } }))[Symbol.asyncIterator](),
+			[Symbol.asyncIterator]: () =>
+				body(JSON.stringify({ type: "client-request", rpcId: "r1", method: "list", payload: { q: 1 } }))[Symbol.asyncIterator](),
 		};
 		await route.handler(req, res);
 		expect(res.state.status).toBe(200);
-		expect(JSON.parse(res.state.body ?? "{}")).toEqual({ type: "server-response", rpcId: "r1", result: { ok: true, value: { endpoint: "list", payload: { q: 1 } } } });
+		expect(JSON.parse(res.state.body ?? "{}")).toEqual({
+			type: "server-response",
+			rpcId: "r1",
+			result: { ok: true, value: { endpoint: "list", payload: { q: 1 } } },
+		});
 	});
 
 	it("派发抛错 → 仍回可解析的错误信封（不把异常漏给客户端）", async () => {
@@ -120,7 +135,8 @@ describe("makeRpcRoute", () => {
 			method: "POST",
 			url: "/lume/list",
 			headers: { "content-type": "application/json" },
-			[Symbol.asyncIterator]: () => body(JSON.stringify({ type: "client-request", rpcId: "r7", method: "list", payload: null }))[Symbol.asyncIterator](),
+			[Symbol.asyncIterator]: () =>
+				body(JSON.stringify({ type: "client-request", rpcId: "r7", method: "list", payload: null }))[Symbol.asyncIterator](),
 		};
 		await route.handler(req, res);
 		expect(res.state.status).toBe(200);
@@ -130,7 +146,11 @@ describe("makeRpcRoute", () => {
 	});
 
 	it("信任闸拒绝时直接回状态码（不放行到派发）", async () => {
-		const route = makeRpcRoute("/lume", async () => ({ ok: true }), () => 403);
+		const route = makeRpcRoute(
+			"/lume",
+			async () => ({ ok: true }),
+			() => 403,
+		);
 		const res = fakeRes();
 		await route.handler({ method: "POST", url: "/lume/list", headers: {} }, res);
 		expect(res.state.status).toBe(403);

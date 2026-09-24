@@ -356,32 +356,45 @@ export function registerLumeTools(deps: ToolDeps): void {
 				},
 			}),
 		);
-		// 度量自读（0.8.x）：让「是不是更聪明了」可以被查，而不是靠印象。
-		// 只回机械事实（路由判定与命中判据、用户纠正/重复请求/越权改动、块预算、
-		// 触发器命中后行为是否变化），不做语义解释——测不了的项目会注明「无机械口径」。
-		deps.ctx.tools.register(
-			defineTool({
-				name: "lume_metrics",
-				description:
-					"读取 Lume 的运行时度量：最近的路由判定与命中的判据、用户纠正/重复请求/越权改动等外部结果信号、块装配预算、每个触发器命中后行为是否真的变了。用户问「最近效果如何」「为什么这轮判成问答」时用它回答，不要凭印象编。",
-				parameters: {
-					scope: { type: "string", description: "session（默认）= 本会话；all = 本落点全部会话" },
-				},
-				output: {
-					schema: METRICS_OUTPUT_SCHEMA,
-					render: (_args: unknown, value: unknown) => [
-						{ type: "text" as const, text: String((value as { text?: string } | null)?.text ?? "") },
-					],
-				},
-				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
-					const scope = String(args.scope ?? "session")
-						.trim()
-						.toLowerCase();
-					const sid = String(exec?.agent?.session?.id ?? "");
-					const text = scope === "all" ? deps.metricsSummary() : deps.metricsSummary(sid);
-					return { ok: true, text };
-				},
-			}),
-		);
 	}, "lume: carrier tools");
+
+	// ── 度量自读（0.8.x）──
+	// 让「是不是更聪明了」可以被查，而不是靠印象：只回机械事实（路由判定与命中判据、
+	// 用户纠正/重复请求/越权改动、块装配预算、触发器命中后行为是否变化），不做语义解释，
+	// 测不了的项目会注明「无机械口径」。
+	//
+	// **单开一个 effect，并且整段 try/catch**：它是本插件唯一一个自定义输出 schema 的工具
+	// （带 text 字段 + 动态 render）。注册期一旦抛错，会像 0.7.1 的 RPC 注册那样把整段
+	// apply 打断（那次界面上连人设都看不到）。度量是**观测设施**，缺了不该影响对话本身。
+	deps.ctx.effect(() => {
+		try {
+			deps.ctx.tools.register(
+				defineTool({
+					name: "lume_metrics",
+					description:
+						"读取 Lume 的运行时度量：最近的路由判定与命中的判据、用户纠正/重复请求/越权改动等外部结果信号、块装配预算、每个触发器命中后行为是否真的变了。用户问「最近效果如何」「为什么这轮判成问答」时用它回答，不要凭印象编。",
+					parameters: {
+						scope: { type: "string", description: "session（默认）= 本会话；all = 本落点全部会话" },
+					},
+					output: {
+						schema: METRICS_OUTPUT_SCHEMA,
+						render: (_args: unknown, value: unknown) => [
+							{ type: "text" as const, text: String((value as { text?: string } | null)?.text ?? "") },
+						],
+					},
+					execute: async (args: Record<string, unknown>, exec: HostPayload) => {
+						const scope = String(args.scope ?? "session")
+							.trim()
+							.toLowerCase();
+						const sid = String(exec?.agent?.session?.id ?? "");
+						const text = scope === "all" ? deps.metricsSummary() : deps.metricsSummary(sid);
+						return { ok: true, text };
+					},
+				}),
+			);
+		} catch (error) {
+			// 注册失败只有一条后果：查不到度量。如实留痕，但不影响对话与其它工具。
+			deps.ctx.logger?.warn?.("lume: lume_metrics 注册失败（度量是观测设施，缺它不影响对话）", error);
+		}
+	}, "lume: metrics tool");
 }

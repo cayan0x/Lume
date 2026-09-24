@@ -19,8 +19,7 @@
 > **状态**：2026-09-22 已提交 **PR [#5676](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/5676)**（改动 = `data/plugins/cayan0x__Lume.yml` 一个文件，+2/-2，仅替换 zh/en 描述）。等索引仓库维护者合并；合并后网站与两份 README 自动重生成。**列表改简介不需要发新版本的插件**（版本号/下载量由 registry 自动采集）。
 >
 > 投稿前置条件逐条核对：`package.json` 声明 `dsh.bundle.patch` ✓、官方包都在 `peerDependencies` 且 `dependencies: {}` ✓、仓库带 `dsh-plugin` topic ✓、创建于 2026-08-29（>1 天）✓、已发布 npm（`lume-dsh-plugin@0.7.2`）✓。
->
-> 
+
 ## 当前登记块（v0.8.0 起）
 
 ```yaml

@@ -6,12 +6,12 @@
 
 这份文件是为了不再重演 2026-09-22 的事故而写的。当天连续发布了四个「单测全绿、真机全坏」的版本：
 
-| 版本 | 单测 | 真机后果 | 坏在哪 |
-|---|---|---|---|
+| 版本  | 单测     | 真机后果                                     | 坏在哪                                                                         |
+| ----- | -------- | -------------------------------------------- | ------------------------------------------------------------------------------ |
 | 0.6.2 | 263 全绿 | **DSH 起不来**（`entry failed` → safe mode） | `ctx.connection.rpc.handle` 直接调用，新宿主内部要 `owner.webServer`，越权抛错 |
-| 0.7.0 | 313 全绿 | 同上（装了但从未跑起来） | 同一行代码 |
-| 0.7.1 | 320 全绿 | 宿主能起，**人设菜单空白**（RPC 通道没建立） | 把调用包进 `ctx.effect(...)`；cordis 的 effect 另起 fiber，注入授权不继承 |
-| 0.7.2 | 332 全绿 | 同上 | 主路径仍失败，且**没有回退路径** |
+| 0.7.0 | 313 全绿 | 同上（装了但从未跑起来）                     | 同一行代码                                                                     |
+| 0.7.1 | 320 全绿 | 宿主能起，**人设菜单空白**（RPC 通道没建立） | 把调用包进 `ctx.effect(...)`；cordis 的 effect 另起 fiber，注入授权不继承      |
+| 0.7.2 | 332 全绿 | 同上                                         | 主路径仍失败，且**没有回退路径**                                               |
 
 共同点：**坏在「宿主 API 的接线方式」上，而单测用的是假宿主**——所以再多的单测也抓不到。
 结论：发布门禁不能只看测试，必须**对产物本身断言**，并且**先发 next、验证通过才提升 latest**。
@@ -37,24 +37,24 @@ git tag -a vX.Y.Z -m "…" && git push origin main && git push origin vX.Y.Z
 
 宿主产物（`lib/index.js` / `lib/host/rpc-bridge.js`）：
 
-| 断言 | 防的是 |
-|---|---|
-| `applyInner` 存在（外层兜底） | 插件异常拖垮宿主启动（0.6.2/0.7.0） |
-| `inject(["connection", "webServer"]` 存在 | RPC 注册在无授权的 fiber 上（0.6.2/0.7.0） |
-| 回退路径 `webServer.register(自注册路由)` 存在 | 主路径失败时菜单跟着死（0.7.1/0.7.2） |
-| `describeError` + `shapes:` 存在 | 诊断只留下 `{}`，无法定位（0.7.2 现场） |
-| 不存在裸 `ctx.connection.rpc.handle(` | 同上第一条 |
-| 不存在 `…effect(() => …rpc.handle` | 子 fiber 丢授权（0.7.1） |
-| 错误信封带 `details` | 客户端 `parseConnectionResponse` 抛 `invalid server-response failure` |
+| 断言                                           | 防的是                                                                |
+| ---------------------------------------------- | --------------------------------------------------------------------- |
+| `applyInner` 存在（外层兜底）                  | 插件异常拖垮宿主启动（0.6.2/0.7.0）                                   |
+| `inject(["connection", "webServer"]` 存在      | RPC 注册在无授权的 fiber 上（0.6.2/0.7.0）                            |
+| 回退路径 `webServer.register(自注册路由)` 存在 | 主路径失败时菜单跟着死（0.7.1/0.7.2）                                 |
+| `describeError` + `shapes:` 存在               | 诊断只留下 `{}`，无法定位（0.7.2 现场）                               |
+| 不存在裸 `ctx.connection.rpc.handle(`          | 同上第一条                                                            |
+| 不存在 `…effect(() => …rpc.handle`             | 子 fiber 丢授权（0.7.1）                                              |
+| 错误信封带 `details`                           | 客户端 `parseConnectionResponse` 抛 `invalid server-response failure` |
 
 包与客户端产物：
 
-| 断言 | 防的是 |
-|---|---|
-| `dependencies` 为空 | 官方包必须走 peerDependencies（市场收录规则） |
-| peer 里没有 `@deepseek-ai/dsh-client-*` | 新版桌面严格 peer 闭包校验 → 更新被拒绝/回滚 |
-| 声明 `dsh.bundle.patch` | 市场安装无法挂载 |
-| 客户端 bundle 仍是 `__ModuleLoader__` 工厂 | 客户端静默不注册 |
+| 断言                                       | 防的是                                        |
+| ------------------------------------------ | --------------------------------------------- |
+| `dependencies` 为空                        | 官方包必须走 peerDependencies（市场收录规则） |
+| peer 里没有 `@deepseek-ai/dsh-client-*`    | 新版桌面严格 peer 闭包校验 → 更新被拒绝/回滚  |
+| 声明 `dsh.bundle.patch`                    | 市场安装无法挂载                              |
+| 客户端 bundle 仍是 `__ModuleLoader__` 工厂 | 客户端静默不注册                              |
 
 这些断言在 CI（`.github/workflows/ci.yml`）也会跑，所以**即使忘了本地门禁，PR 也会被挡**。
 

@@ -9,6 +9,8 @@
  * 全局：测试替身可以只实现自己关心的那几个。
  */
 import type { SessionRuntime } from "./session-runtime.js";
+import { existsSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 import { pathKey } from "../core/citations.js";
 import { claimsVerification, looksLikeFailure } from "../core/signals.js";
 
@@ -29,6 +31,28 @@ import {
 } from "./inbound.js";
 
 /** 每会话自动沉淀的项目知识上限：宁可少记，也不要让知识库变垃圾桶。 */
+
+/**
+ * 「本会话看过这个目标吗」的**唯一**判据：证据索引（pathKey 归一）+ 摸过的目标。
+ * 首改定位门槛与决策分档共用它——同一种问题只能有一个真值来源（两处各用一种键会得出两种结论）。
+ */
+function inspectedTarget(st: SessionRuntime, target: string): boolean {
+	const key = pathKey(target);
+	if (st.agent.evidence.has(key)) return true;
+	for (const seen of st.agent.inspectedTargets) if (pathKey(seen) === key) return true;
+	return false;
+}
+
+/**
+ * 只对**已存在**的文件判「没读过就改」：新建文件天然没读过，对它喊「先读一次」是错话。
+ * 相对路径按会话 cwd 解析；解析不了（cwd 未知）就当新建处理——宁可漏，不喊错话。
+ */
+function existingTarget(st: SessionRuntime, target: string | null | undefined): string | null {
+	const raw = String(target ?? "").trim();
+	if (!raw) return null;
+	const resolved = isAbsolute(raw) ? raw : st.cwd ? join(st.cwd, raw) : raw;
+	return existsSync(resolved) ? raw : null;
+}
 
 export type { SessionEventDeps };
 
@@ -115,14 +139,16 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
 				if (st.toolKind === "inspect" && deps.toolTargetOf(event.data)) st.triggerCounters.codeInspects++;
 				// 越权改动：判成问答却动了文件——「路由判错」的机械证据，比用户抱怨出现得更早。
-				// 决策分档的机械判据：要改的目标在本会话证据索引里查不到 basename（= 没读过就改）。
-				// 用 pathKey 归一（引用常用短名、工具参数常是完整路径），与引用核对同一套口径。
+				// 决策分档的机械判据：**已存在的文件**在本会话没看过就改 = 拿推测当依据。
+				// - 只管已存在的目标：新建文件天然「没读过」，对它喊「先读一次」是错话（外部审核指出）；
+				// - 看过的判据只走 inspectedTarget（证据索引 + 摸过的目标，同一套 pathKey），
+				//   不再让两处各问一次、各用一种键。
 				if (st.toolKind === "mutate") {
-					const target = deps.toolTargetOf(event.data);
-					if (target && !st.agent.evidence.has(pathKey(target))) {
+					const target = existingTarget(st, deps.toolTargetOf(event.data));
+					if (target && !inspectedTarget(st, target)) {
 						st.triggerCounters.unfoundedChanges++;
 						st.agent.lastBlindTarget = target;
-					} else if (target) st.agent.lastBlindTarget = null;
+					} else st.agent.lastBlindTarget = null;
 				}
 				if (st.toolKind === "mutate" && st.interactionMode === "question")
 					deps.recordMetric({
@@ -173,7 +199,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						);
 					}
 					// 首改前的定位门槛：要改的文件本会话从没被读过就动手 → 顶一次（不改代码，只补定位）
-					if (st.triggerCounters.mutations === 1 && target && !st.agent.inspectedTargets.has(target)) {
+					if (st.triggerCounters.mutations === 1 && target && !inspectedTarget(st, target)) {
 						const seen = [...st.agent.inspectedTargets].slice(-3).join("、") || "（本会话还没读过任何文件）";
 						if (!deps.noticeText(st, "trigger"))
 							deps.forceNotice(

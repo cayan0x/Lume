@@ -128,6 +128,23 @@ describe("core/metrics：触发器命中后行为是否真的变了", () => {
 		expect(summary.triggers.find((t) => t.id === "contract-missing")).toMatchObject({ fired: 1, improved: 1 });
 	});
 
+	it("二选一的提醒（unfounded-change）：真验证 或 假设从无到有，任一出现都算改善", () => {
+		const viaVerify: MetricRecord[] = [
+			state(1, 1, { hypotheses: 0 }),
+			fire("unfounded-change", 2, 2),
+			{ kind: "outcome", at: 3, sid: "s1", turn: 2, event: "verify-run", mode: "execute" },
+		];
+		expect(summarizeMetrics(viaVerify).triggers.find((t) => t.id === "unfounded-change")).toMatchObject({
+			fired: 1,
+			improved: 1,
+		});
+		const viaHypothesis: MetricRecord[] = [state(1, 1, { hypotheses: 0 }), fire("unfounded-change", 2, 2), state(2, 3, { hypotheses: 1 })];
+		expect(summarizeMetrics(viaHypothesis).triggers.find((t) => t.id === "unfounded-change")).toMatchObject({
+			fired: 1,
+			improved: 1,
+		});
+	});
+
 	it("同轮之后的快照也算改善（快照已按步记录，再要求 turn 严格大于命中轮就白记了）", () => {
 		const records: MetricRecord[] = [
 			state(1, 1, { hasContract: false }), // 基线（没有基线就判不了改善）

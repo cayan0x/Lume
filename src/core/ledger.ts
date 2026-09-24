@@ -73,6 +73,10 @@ export interface Hypothesis {
 	/** 证据：支持或推翻它的观察（含时间戳/命令输出摘要）。 */
 	evidence: string;
 	status: HypothesisStatus;
+	/** 裁决方式：用哪条命令 / 工具、看什么结果判定的（下结论时必填）。 */
+	method?: string;
+	/** 反例检查：找过哪些反例，或「已尝试 X 未找到反例」（下结论时必填）。 */
+	counter?: string;
 	at: number;
 }
 
@@ -179,6 +183,9 @@ export function normalizeHypothesis(input: Record<string, unknown>, at: number):
 		text,
 		evidence: clip(input.evidence, CHANGE_TEXT_CAP),
 		status: status === "testing" || status === "confirmed" || status === "excluded" ? status : "open",
+		// 裁决三件套里的另外两件：结构化保存（不折进 evidence，否则「多少结论带反例检查」没法机械统计）
+		method: clip(input.method, CHANGE_TEXT_CAP),
+		counter: clip(input.counter, CHANGE_TEXT_CAP),
 		at,
 	};
 }
@@ -283,8 +290,12 @@ export function renderHypotheses(list: Hypothesis[], limit = 8): string | null {
 					: item.status === "testing"
 						? "[验证中]"
 						: "[待验证]";
-		const evidence = item.evidence ? `（证据：${item.evidence}）` : "";
-		return `- ${mark} ${item.text}${evidence}`;
+		const parts = [
+			item.evidence ? `证据：${item.evidence}` : "",
+			item.method ? `裁决：${item.method}` : "",
+			item.counter ? `反例：${item.counter}` : "",
+		].filter(Boolean);
+		return `- ${mark} ${item.text}${parts.length > 0 ? `（${parts.join(" ｜ ")}）` : ""}`;
 	});
 	const excluded = list.filter((item) => item.status === "excluded").length;
 	const foot = excluded > 0 ? "\n已排除的假设不要重提；要推翻它必须给出新的证据。" : "";

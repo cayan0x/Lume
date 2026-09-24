@@ -280,15 +280,19 @@ export function registerLumeTools(deps: ToolDeps): void {
 						if (counter.length < 8)
 							throw new Error("下结论必须写反例检查 counter：找过哪些反例，或「已尝试 X 未找到反例」——只写「无」不算");
 						// 证据里的文件引用必须真的看过（与引用核对同一套 pathKey 口径），否则就是编证据
-						const refs = [...evidence.matchAll(/[A-Za-z0-9_./\\-]+\.[A-Za-z]{1,5}(?::\d+)?/g)]
-							.map((m) => m[0].split(":")[0] ?? "")
+						// 只把「像路径」的 token 当引用：含分隔符或带 :行号。否则 Node.js / e.g / i.e 都会被
+						// 当成文件引用，写一句诚实的证据反而被拒（外部审核指出）。
+						const refs = [...evidence.matchAll(/([A-Za-z0-9_./\\-]+\.[A-Za-z]{1,5})(:\d+)?/g)]
+							.filter((m) => (m[0] ?? "").includes("/") || (m[0] ?? "").includes("\\") || Boolean(m[2]))
+							.map((m) => m[1] ?? "")
 							.filter(Boolean);
 						const unseen = [...new Set(refs)].filter((ref) => !st.agent.evidence.has(pathKey(ref)));
 						if (unseen.length > 0) throw new Error(`证据里有本会话没看过的引用：${unseen.join("、")}——先去看过再引用（引用必须能被核对）`);
-						// 三项折进 evidence 一行：不新增存储字段＝不动归一化/渲染/兼容（历史条目照样读得出）
-						stored = `${evidence} ｜ 裁决：${method} ｜ 反例：${counter}`;
+						// 结构化保存三件套（早先折进 evidence 一行会让「多少结论带反例检查」没法机械统计，
+						// 也会在改回 open/testing 时被新证据覆盖）
+						stored = evidence;
 					}
-					const item = deps.normalizeHypothesis({ text: args.text, evidence: stored, status }, Date.now());
+					const item = deps.normalizeHypothesis({ text: args.text, evidence: stored, status, method, counter }, Date.now());
 					if (!item) throw new Error("lume_hypothesis requires text");
 					await deps.projectStore().upsertHypothesis(sid, item);
 					deps.runtime.get(sid).hypothesesTouched = true;

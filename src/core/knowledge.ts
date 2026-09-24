@@ -114,6 +114,13 @@ const CODE_SHAPE_RE =
 /** 表格行（`| a | b |`）：文档片段不是事实。 */
 const TABLE_ROW_RE = /^\s*\|/;
 
+/**
+ * 复制粘贴的命令行（真机剩的那条噪音就是这个形状：`npm run lint   # 架构规则（…）`）。
+ * 形状清单永远补不全，所以这条按**类别**拦：命令行开头 + 注释符，或含 shell 的管道/重定向。
+ */
+const COMMAND_LINE_RE =
+	/^\s*(?:npm|pnpm|npx|yarn|node|git|python|pip|mvn|gradle|go|cargo|make|tsc|vitest|jest|dotnet|docker|kubectl|psql|curl)\b[^\n]*#|2>&1|\|\s*(?:head|tail|grep|findstr|Select-String|Select-Object)\b/;
+
 /** 清单/引用/标题片段（`- x`、`* x`、`> x`、`# x`、`3. x`、`③ x`）：脱离上下文没有意义。 */
 const LIST_FRAGMENT_RE = /^\s*(?:[-*+>#]\s|\d+[.)]\s|[①-⑳])/;
 
@@ -150,7 +157,8 @@ export function extractKnowledgeCandidates(
 		if (sentence.length < MIN_LEN || sentence.length > MAX_LEN) continue;
 		// 现场噪音三类：检索脚手架、纯路径行、代码/文档的引用碎片
 		// 形状闸：对所有来源都生效（这一条就是上一版漏掉的那半扇门）
-		if (TEST_RUN_RE.test(sentence) || CODE_SHAPE_RE.test(sentence) || TABLE_ROW_RE.test(sentence)) continue;
+		if (TEST_RUN_RE.test(sentence) || CODE_SHAPE_RE.test(sentence) || TABLE_ROW_RE.test(sentence) || COMMAND_LINE_RE.test(sentence))
+			continue;
 		if (SCAFFOLD_RE.test(piece) && !/[。，、]|必须|一致|不要|禁止/.test(sentence)) continue;
 		if (PATH_ONLY_RE.test(sentence)) continue;
 		if (REJECT_RE.test(sentence)) continue;

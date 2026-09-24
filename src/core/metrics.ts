@@ -20,7 +20,15 @@
 export type MetricKind = "route" | "trigger" | "state" | "blocks" | "outcome";
 
 /** 触发器命中时「期望接下来发生什么」——这是「命中后行为变了没有」的唯一判据。 */
-export type EfficacyExpect = "verify" | "contract" | "design" | "ledger" | "hypothesis" | "none";
+export type EfficacyExpect =
+	| "verify"
+	| "contract"
+	| "design"
+	| "ledger"
+	| "hypothesis"
+	/** 提醒给的是二选一（先核实 或 落成假设）：两条路都算改善，否则度量会把调参的人往「多写假设、少核实」推。 */
+	| "verify-or-hypothesis"
+	| "none";
 
 export interface MetricCounters {
 	steps: number;
@@ -111,8 +119,9 @@ export const TRIGGER_EXPECT: Record<string, EfficacyExpect> = {
 	"dead-path": "verify",
 	"contract-missing": "contract",
 	"design-missing": "design",
-	// 决策分档：预期变化是「把不确定落成假设」（假设数从无到有），而不是空口承诺
-	"unfounded-change": "hypothesis",
+	// 决策分档：提醒是二选一（先做最便宜的核实 / 或落成假设），所以两条路都认。
+	// 只认「假设」会虚低——模型走了被鼓励的那条路（核实）反而记 0 改善（外部审核指出）。
+	"unfounded-change": "verify-or-hypothesis",
 	converge: "ledger",
 	"hypothesis-stale": "hypothesis",
 	"criteria-drift": "none",
@@ -287,6 +296,10 @@ function hasVerifyRun(records: readonly MetricRecord[], fire: TriggerMetric, win
 function improvedAfter(records: readonly MetricRecord[], fire: TriggerMetric, window: number): boolean {
 	// verify 类只认「真验证命令」：台账 verified 由自动推进产生，拿它当判据等于自我表扬。
 	if (fire.expect === "verify") return hasVerifyRun(records, fire, window);
+	// 二选一的提醒：真验证命令与「假设从无到有」任一出现都算改善
+	if (fire.expect === "verify-or-hypothesis") {
+		if (hasVerifyRun(records, fire, window)) return true;
+	}
 	const base = baselineAt(records, fire);
 	if (!base) return false;
 	for (const record of records) {
@@ -305,6 +318,7 @@ function improvedAfter(records: readonly MetricRecord[], fire: TriggerMetric, wi
 			case "ledger":
 				if (record.changes > base.changes) return true;
 				break;
+			case "verify-or-hypothesis":
 			case "hypothesis":
 				if (record.hypotheses > base.hypotheses) return true;
 				break;

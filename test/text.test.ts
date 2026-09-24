@@ -43,3 +43,25 @@ describe("core/text：可见正文 vs 全文", () => {
 		expect(visibleText({ content: [{ type: "text", text: 123 }] })).toBe("");
 	});
 });
+
+describe("core/text：真机 tool/result 的嵌套形状（0.8.0 现场取证）", () => {
+	/**
+	 * 真机形状：data.message.content = [{ type: "tool-result", content: [{ type: "text", text: "…" }] }]
+	 * 早期实现只看第一层 block.text → 工具结果文本**永远是空串** → 一条 bug 同时打死
+	 * 自动沉淀（0 候选）、失败识别（永远"无失败"）、grep 命中证据、否定断言证据底账。
+	 */
+	it("messageText 递归收下去：工具结果的文本在 content[0].content[0].text", () => {
+		const real = { source: { kind: "tool", callId: "c1" }, content: [{ type: "tool-result", toolCallId: "c1", content: [{ type: "text", text: "构建命令用 mvn -q package（pom.xml）" }] }] };
+		expect(messageText(real)).toContain("构建命令用 mvn -q package");
+	});
+
+	it("visibleText 排除工具收发块（工具说了什么 ≠ 助手说了什么）", () => {
+		const message = { content: [{ type: "text", text: "我核对了三处" }, { type: "tool-result", content: [{ type: "text", text: "工具输出不该出现在可见正文里" }] }, { type: "reasoning", text: "推理也不该出现" }] };
+		const out = visibleText(message);
+		expect(out).toBe("我核对了三处");
+	});
+
+	it("旧形状（扁平 text 块）仍然工作——向后兼容", () => {
+		expect(messageText({ content: [{ type: "text", text: "A" }, { type: "text", text: "B" }] })).toBe("A B");
+	});
+});

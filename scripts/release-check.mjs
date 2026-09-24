@@ -192,6 +192,14 @@ const FILE_INVARIANTS = [
 		incident: "现场实测：方法块/提醒不点名工具时，模型不会调用（lume_change 零调用）",
 		check: (text) => text.includes("lume_change") && text.includes("lume_project_note"),
 	},
+		// 记忆 ID：去重从模糊文本比对升级为内容寻址（同主题 → 同 id → 精确合并/覆盖），并给每条显示编号。
+		{
+			id: "memory-id",
+			files: ["lib/core/memory-id.js", "lib/core/ledger.js", "lib/host/project.js"],
+			what: "内容寻址记忆：topicKey → fnv1a32 id；同 id 精确合并，更具体才覆盖；注入显示 #n·id",
+			incident: "2026-09-24：只靠 Jaccard 去重时，同义不同词会写两条；且先到先得会把后来更完整的表述丢掉",
+			check: (text) => text.includes("memoryId") && text.includes("isMoreSpecific") && text.includes("deleteFactById"),
+		},
 		// 会话记忆：上下文不能当记忆载体 —— 撑满时宿主压缩会失败，必须能把进度搬到新会话（现场：context overflow）。
 		{
 			id: "task-memory",

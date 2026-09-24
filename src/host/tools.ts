@@ -284,6 +284,29 @@ export function registerLumeTools(deps: ToolDeps): void {
 				},
 			}),
 		);
+		deps.ctx.tools.register(
+			defineTool({
+				name: "lume_project_forget",
+				description:
+					"删掉一条已过时/记错的项目知识（注入块里的 #编号 或短 id）。旧结论被推翻时用它，别让错误知识继续跨会话传播。",
+				parameters: {
+					id: { type: "string", required: true, description: "要删的条目引用（#7 或 7 或短 id，见项目知识块里的 #编号·短id）" },
+				},
+				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已删除该条项目知识" }] },
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
+					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
+					const sid = String(exec?.agent?.session?.id ?? "");
+					if (!sid) throw new Error("lume_project_forget requires an active session");
+					const ref = String(args.id ?? "").trim();
+					if (!ref) throw new Error("lume_project_forget requires id");
+					const projectKey = deps.projectKeyFor(sid, { agent: exec?.agent });
+					if (!projectKey) throw new Error("lume_project_forget 拿不到工作目录，无法定位知识库");
+					const removed = await deps.projectStore().deleteFactById(projectKey, ref);
+					if (!removed) throw new Error(`lume_project_forget 没找到 ${ref}（用项目知识块里的 #编号 或短 id）`);
+					return { ok: true };
+				},
+			}),
+		);
 	deps.ctx.tools.register(
 		defineTool({
 			name: "lume_design",

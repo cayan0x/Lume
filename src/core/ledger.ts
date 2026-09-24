@@ -12,6 +12,7 @@ import { isRequirementStatement } from "./coverage.js";
  * 本模块只做纯逻辑（类型/解析/归一/渲染/上限），IO 在 host/project.ts。
  */
 import { fnv1a32 } from "./sampling.js";
+import { memoryId, numberFacts } from "./memory-id.js";
 
 /** 契约字段长度上限：契约是「一屏能看完」的东西，写长了自己也不看。 */
 export const CONTRACT_TEXT_CAP = 240;
@@ -80,6 +81,11 @@ export interface ProjectFact {
 	kind: ProjectFactKind;
 	text: string;
 	at: number;
+	/**
+	 * 内容寻址 id（见 core/memory-id.ts）：同主题的知识天然同 id →
+	 * 落盘时精确去重/覆盖（O(1)），不再靠全表字面相似度。老数据缺 id 时按算法补。
+	 */
+	id?: string;
 }
 
 const FACT_LABEL: Record<ProjectFactKind, string> = {
@@ -174,6 +180,8 @@ export function normalizeProjectFact(input: Record<string, unknown>, at: number)
 		kind: kind === "test" || kind === "module" || kind === "convention" || kind === "deadend" ? kind : "build",
 		text,
 		at,
+		// 内容寻址 id：同主题 → 同 id（去重/覆盖靠它，不再靠字面相似度）
+		id: memoryId(typeof kind === "string" ? kind : "build", text),
 	};
 }
 
@@ -267,13 +275,15 @@ function ageLabel(at: number, now = Date.now()): string {
 export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | null {
 	if (facts.length === 0) return null;
 	const order: ProjectFactKind[] = ["build", "test", "convention", "module", "deadend"];
-	const picked = facts.slice(-limit);
+	const numbered = numberFacts(facts);
+	const picked = numbered.slice(-limit);
 	const lines: string[] = [];
 	for (const kind of order) {
-		const group = picked.filter((fact) => fact.kind === kind);
+		const group = picked.filter((entry) => entry.item.kind === kind);
 		if (group.length === 0) continue;
 		lines.push(`${FACT_LABEL[kind]}：`);
-		for (const fact of group) lines.push(`- ${fact.text}${ageLabel(fact.at)}`);
+		// 编号（#n）+ 短 id：用户可点名纠正（“#7 过时了”），模型可引用；id 跨裁剪稳定。
+		for (const entry of group) lines.push(`- #${entry.n}${entry.item.id ? `·${entry.item.id.slice(0, 4)}` : ""} ${entry.item.text}${ageLabel(entry.item.at)}`);
 	}
 	return `〔项目知识｜本目录，跨会话累积〕\n${lines.join("\n")}`;
 }

@@ -39,6 +39,7 @@ import {
 	type TaskContract,
 } from "../core/ledger.js";
 import type { TaskMemory } from "../core/task-memory.js";
+import { isMoreSpecific } from "../core/memory-id.js";
 import { zodLike, type IdentityTable } from "./identity.js";
 
 /** 存储里用 -1 表示「未估/未回填」：schemastery 的 number 不接受 null，避免为它引入联合类型。 */
@@ -324,9 +325,33 @@ export class ProjectStore {
 	/** 追加项目事实；近似重复的忽略。返回是否写入。 */
 	async addFact(projectKey: string, fact: ProjectFact, isDuplicate: (candidate: string, existing: ProjectFact[]) => boolean): Promise<boolean> {
 		const facts = this.getFacts(projectKey);
+		// 内容寻址（见 core/memory-id.ts）：同主题就是同一条知识 → 精确命中，不再全表算相似度。
+		const same = fact.id ? facts.findIndex((item) => item.id === fact.id) : -1;
+		if (same >= 0) {
+			// 先到先得会让后来更完整的表述被丢掉；只有"更具体"（更长且主题一致）才覆盖。
+			if (isMoreSpecific(fact.text, facts[same]!.text)) {
+				facts[same] = fact;
+				await this.#factTable.put(projectKey, trimFacts(facts, PROJECT_FACT_CAP));
+				return true;
+			}
+			return false;
+		}
 		if (isDuplicate(fact.text, facts)) return false;
 		facts.push(fact);
 		await this.#factTable.put(projectKey, trimFacts(facts, PROJECT_FACT_CAP));
+		return true;
+	}
+
+	/** 按 id 或编号删除一条项目知识（编号 = 注入块里的 #n，会随裁剪顺移；id 稳定）。 */
+	async deleteFactById(projectKey: string, ref: string): Promise<boolean> {
+		const facts = this.getFacts(projectKey);
+		const wanted = ref.trim().replace(/^#/, "");
+		if (!wanted) return false;
+		const byId = facts.findIndex((item) => item.id === wanted || (item.id ?? "").startsWith(wanted));
+		const index = byId >= 0 ? byId : Number(wanted) - 1;
+		if (index < 0 || index >= facts.length) return false;
+		facts.splice(index, 1);
+		await this.#factTable.put(projectKey, facts);
 		return true;
 	}
 

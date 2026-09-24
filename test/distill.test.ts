@@ -1,20 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-	CHAT_TEXT_CAP,
-	DISTILL_TEXT_CAP,
-	DistillJobRunner,
-	buildContractPrompt,
-	buildMemoryPrompt,
-	buildStoryPrompt,
-	buildCorpusPrompt,
-	dedupeMemories,
-	extractBalancedAt,
-	normalizeContract,
-	normalizeKey,
-	parseJsonLoose,
-	runDistill,
-	settleMemoryText,
-} from "../src/host/distill.js";
+import { CHAT_TEXT_CAP, DISTILL_TEXT_CAP, DistillJobRunner, runDistill } from "../src/host/distill.js";
+import { buildContractPrompt, buildMemoryPrompt, buildStoryPrompt, buildCorpusPrompt, dedupeMemories, extractBalancedAt, normalizeContract, normalizeKey, parseJsonLoose, settleMemoryText } from "../src/host/distill-prompt.js";
 import type { DistillDeps } from "../src/host/distill.js";
 
 const ROUTE = { provider: "test", model: "test-model" };

@@ -1,3 +1,10 @@
+# CI：与本地同一条验证链（lint → 测试 → 发布门禁）。
+#
+# 为什么门禁也进 CI：scripts/release-check.mjs 是对**构建产物**的断言（31 项，每条绑一个历史事故）。
+# 只在发布时跑，会让「产物与源码不一致」这类问题到发布当天才暴露；这里每次 push 就拦。
+#
+# 依赖安装用 --legacy-peer-deps：仓内 @deepseek-ai/dsh-* 之间要求不同的 dsh-llm 版本（既存 peer 冲突，
+# 上游未对齐），不是本仓引入的问题；用 npm ci + legacy 保持与本地一致。
 name: CI
 
 on:
@@ -6,43 +13,19 @@ on:
   pull_request:
 
 jobs:
-  build-test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      # peerDependencies 挂在 DSH 生态上，CI 只装构建与测试所需的 devDependencies
-      - name: Install toolchain
-        run: npm install --legacy-peer-deps
-
-      - name: Type-check
-        run: npx tsc -p tsconfig.json
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
+          cache: npm
+      - name: 安装依赖
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+      - name: 架构检查（分层/ESM/日志/静默失败/抑制/类型边界/as any）
+        run: npm run lint
+      - name: 单元测试
         run: npm test
-
-      # 产物契约：客户端 bundle 必须是 __ModuleLoader__ 工厂格式
-      # Release gate: turn every real incident into an assertion on the artifact (see RELEASING.md)
-      - name: Release gate (host-compat invariants)
-        run: node scripts/release-check.mjs
-      - name: Verify client bundle contract
-        run: |
-          head -3 lib/client.js | grep -q '__ModuleLoader__.load' || {
-            echo '::error::lib/client.js does not start with the __ModuleLoader__ banner'
-            exit 1
-          }
-          grep -q 'exports.apply' lib/client.js || {
-            echo '::error::lib/client.js does not export apply'
-            exit 1
-          }
-          grep -q 'return module.exports' lib/client.js || {
-            echo '::error::lib/client.js factory does not return module.exports'
-            exit 1
-          }
+      - name: 构建 + 发布门禁（对产物断言）
+        run: npm run build && node scripts/release-check.mjs

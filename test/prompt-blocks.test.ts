@@ -77,7 +77,7 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 	});
 
 	it("执行轮：契约块 + 影响面 + 定位提示都在", () => {
-		const d = deps({ changesOf: () => [{ target: "a.ts", change: "x", verify: "", status: "done" }] });
+		const d = deps({ changesOf: () => [{ target: "a.ts", change: "x", why: "对齐契约 1", verify: "", status: "done" as const, at: 1 }] });
 		const blocks = carrierBlocks(d, { sid: "s", context: {}, st: st({ taskPhase: "execute" }), query: "改一下 A", mode: "execute" });
 		const all = texts(blocks).join("\n");
 		expect(all).toContain("先量化后动手");

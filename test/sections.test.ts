@@ -14,7 +14,7 @@ type Registered = { name: string; order?: number; text: (context?: unknown) => s
 function makeCtx(opts: { withContext?: boolean } = {}) {
 	const sections: Registered[] = [];
 	const contexts: Registered[] = [];
-	const warns: unknown[] = [];
+	const warns: unknown[][] = [];
 	const ctx = {
 		logger: { warn: (...args: unknown[]) => warns.push(args) },
 		effect: (fn: () => unknown) => { fn(); },

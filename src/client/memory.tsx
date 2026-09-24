@@ -14,7 +14,8 @@ import { Button } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
 import { inputStyle } from "./form-styles.js";
 // 星图的常量与纯函数在 client/graph-layout.ts（词法/相似度/时间/颜色/折行——都可单测）
-import { CARD_H, CARD_R, CARD_W, CORE_COLOR, NORMAL_COLOR, OVERLAY_H, OVERLAY_W, brighten, buildGraph, filterByAge, forceStep, hexGlow, hitTestAt, jaccard, relTime, rgba, wrapText } from "./graph-layout.js";
+import { CARD_H, CARD_R, CARD_W, CORE_COLOR, NORMAL_COLOR, OVERLAY_H, OVERLAY_W, brighten, buildGraph, filterByAge,
+	GRAPH_H, forceStep, hexGlow, hitTestAt, jaccard, relTime, rgba, wrapText } from "./graph-layout.js";
 import type { FilterKey, MemEdge, MemNode, MemoryItem } from "./graph-layout.js";
 
 type Translate = (key: string, params?: Record<string, unknown>) => string;

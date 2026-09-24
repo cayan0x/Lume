@@ -35,11 +35,11 @@ function makeSt(over: Partial<Stub> = {}): SessionRuntime {
 		lastFailureQuery: null,
 		failureStreak: 0,
 		interactionMode: "execute",
-		taskPhase: "plan",
+		taskPhase: "answer",
 		toolFailures: 0,
 		toolUnknown: 0,
 		prevSignatures: [],
-		lastInjected: 1,
+		lastInjected: "当值人设",
 		leakEscalated: false,
 		...over,
 	};
@@ -133,7 +133,7 @@ describe("turn-boundary（轮边界收尾）", () => {
 	});
 
 	it("风格泄漏：窗口已关仍检测到旧签名词 → 重开窗口并升级播报", () => {
-		const st = makeSt({ switchTurn: null, prevSignatures: ["小助手"], turnIndex: 5, lastInjected: 2 });
+		const st = makeSt({ switchTurn: null, prevSignatures: ["小助手"], turnIndex: 5, lastInjected: "当值人设" });
 		const deps = makeDeps({ detectLeak: () => ({ leaked: true, hits: [{ word: "小助手", count: 2 }] }) });
 		handleTurnEnd(deps, "sid", st, {});
 		// 注意：轮号在函数开头就 +1，窗口以「当前轮」为起点重开（5 → 6）

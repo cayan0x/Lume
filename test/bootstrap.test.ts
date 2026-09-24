@@ -19,7 +19,7 @@ function domainStub() {
 }
 
 function makeInput(opts: { failIdentity?: boolean; failReflection?: boolean; failProject?: boolean } = {}) {
-	const warns: unknown[] = [];
+	const warns: unknown[][] = [];
 	const opened: string[] = [];
 	const ctx = {
 		logger: { warn: (...a: unknown[]) => warns.push(a) },

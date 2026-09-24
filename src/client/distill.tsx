@@ -18,13 +18,9 @@ type Translate = (key: string, params?: Record<string, unknown>) => string;
 /** conn.rpc.call 的最小面（四参签名，末参恒 void 0）。 */
 type CallRpc = (endpoint: string, payload: unknown) => Promise<{ ok?: boolean; value?: unknown } | undefined>;
 
-
 type Phase = "input" | "running" | "preview" | "saved";
 
-
-const TEXT_CAP = 20_000;
 /** 聊天记录素材的宽容上限：原始文本含双人对话+时间戳，噪音过半。 */
-const CHAT_TEXT_CAP = 200_000;
 
 const miniBtn: React.CSSProperties = { background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--color-text-secondary, #999)", padding: "2px 4px" };
 

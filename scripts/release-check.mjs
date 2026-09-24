@@ -20,6 +20,7 @@ import path from "node:path";
 import process from "node:process";
 import zlib from "node:zlib";
 import https from "node:https";
+import vm from "node:vm";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -194,6 +195,34 @@ const FILE_INVARIANTS = [
 ];
 
 const BUNDLE_INVARIANTS = [
+	{
+		id: "client-bundle-parses",
+		what: "客户端 bundle 语法可解析（一个重复声明就会让整包加载失败）",
+		incident: "0.7.4 现场：distill.tsx 残留的 const TEXT_CAP 与 distill-job.ts 的同名声明被摊平到同一作用域 → 渲染进程 Uncaught SyntaxError → 插件整包加载失败、Harness 起不来（服务端其实是好的，所以报错说不清是哪个插件）",
+		check: (text) => {
+			try {
+				new vm.Script(text);
+				return true;
+			} catch {
+				return false;
+			}
+		},
+	},
+	{
+		id: "client-no-duplicate-decl",
+		what: "客户端 bundle 顶层没有重复声明（打包器把模块摊平到同一作用域）",
+		incident: "同上；var 形式的重复不报语法错，但后者会覆盖前者",
+		check: (text) => {
+			const seen = new Set();
+			for (const line of text.split("\n")) {
+				const m = line.match(/^(?:const|let|var|function|class)\s+([A-Za-z0-9_$]+)/);
+				if (!m) continue;
+				if (seen.has(m[1])) return false;
+				seen.add(m[1]);
+			}
+			return true;
+		},
+	},
 	{
 		id: "client-bundle-contract",
 		what: "客户端 bundle 仍是 __ModuleLoader__ 工厂（宿主可加载）",

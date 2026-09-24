@@ -84,7 +84,7 @@ import { jaccard } from "../core/retrieval.js";
 import { coverageRows, danglingSectionRefs, hasFigureRefs, pickRequirementCorpus, splitRequirementItems } from "../core/coverage.js";
 import type { AuxLlm } from "./llm-aux.js";
 import type { LlmRouteCell } from "./llm-route.js";
-import type { ProjectFact } from "../core/ledger.js";
+import type { ChangeItem, ProjectFact } from "../core/ledger.js";
 import { buildDocumentDirective, probeDocumentCapabilities } from "./documents.js";
 import type { DocumentCapabilities } from "./documents.js";
 import type { IdentityStore } from "./identity.js";
@@ -92,7 +92,9 @@ import type { ProjectAccess } from "./project-access.js";
 import type { ProjectStore } from "./project.js";
 import type { ReflectionStore } from "./reflection.js";
 import type { SessionRuntime, SessionRuntimeStore } from "./session-runtime.js";
-import type { BlockDeps } from "./prompt-blocks.js";
+import { focusDirectiveFor } from "./clauses.js";
+import type { BlockDeps, BlockInput } from "./prompt-blocks.js";
+import type { MetricRecord } from "../core/metrics.js";
 import type { SessionEventDeps } from "./session-deps.js";
 import type { ToolDeps } from "./tools.js";
 import type { TriggerThresholds } from "./triggers.js";
@@ -147,10 +149,20 @@ export interface WiringInput {
 	probeCaps: (context: HostPayload) => DocumentCapabilities;
 	/** 反思日志反馈（可空）。 */
 	reflectionFeedback: () => string | null;
+	/** 运行时度量：写入口 + 人读摘要（实现在 host/metrics-log.ts，生命周期归 index）。 */
+	metrics: {
+		record: (record: MetricRecord) => void;
+		summary: (scope?: string) => string;
+	};
 	// ── 配置开关（index 解析完 config 后传入）──
 	projectMemoryOn: boolean;
 	behaviorTriggersOn: boolean;
 	reflectionEnabled: boolean;
+}
+
+/** 未验证改动条数（台账口径）：与「交付对账」用的是同一套状态定义。 */
+function focusUnverified(items: readonly ChangeItem[]): number {
+	return items.filter((item) => item.status !== "verified" && item.status !== "skipped").length;
 }
 
 /** 项目域不可用时给出可读错误（工具入口统一用它，省得每处判空）。 */
@@ -163,6 +175,7 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 	return {
 		ctx: input.ctx,
 		appendLumeLog,
+		recordMetric: input.metrics.record,
 		forceNotice,
 		setNotice,
 		noticeOpen,
@@ -261,6 +274,7 @@ export function assembleToolDeps(input: WiringInput): ToolDeps {
 		projectOf: () => input.stores.project(),
 		// 取用器：工具入口统一用它，不可用时给可读错误（省得每处判空）
 		projectStore: () => requireProject(input.stores.project()),
+		metricsSummary: input.metrics.summary,
 	};
 }
 
@@ -299,6 +313,12 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
 		documentDirective: (query: string, context: HostPayload) => buildDocumentDirective({ query, capabilities: input.probeCaps(context) }),
 		structureToolName: input.access.structureToolName,
 		reflectionFeedback: input.reflectionFeedback,
+		// 条款预算：契约/未验证条数只有 index 侧拿得到，这里按 sid 现取（与 index 记录度量同源）
+		buildFocusClauseDirective: (block: BlockInput) =>
+			focusDirectiveFor(block.st, block.mode, block.query, {
+				hasContract: input.access.contractOf(block.sid) !== null,
+				unverifiedChanges: focusUnverified(input.access.changesOf(block.sid)),
+			}),
 		pickRequirementCorpus,
 		splitRequirementItems,
 		coverageRows,

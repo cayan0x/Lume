@@ -49,6 +49,7 @@ function makeSt(over: Partial<Stub> = {}): SessionRuntime {
 function makeDeps(over: Partial<Record<keyof SessionEventDeps, unknown>> = {}): SessionEventDeps {
 	const deps = {
 		flushPendingFacts: vi.fn(),
+		recordMetric: vi.fn(),
 		boundaryTurns: 3,
 		clearNotice,
 		forceNotice,
@@ -161,5 +162,33 @@ describe("turn-boundary（轮边界收尾）", () => {
 		});
 		handleTurnEnd(deps, "sid", st, {});
 		expect(noticeText(st, "turn")).toBeNull();
+	});
+
+	it("轮触发器命中 → 记下当时的计数器快照（之后「行为是否真的变了」才有基线）", () => {
+		const st = makeSt();
+		const deps = makeDeps({ evaluateTurnTrigger: () => ({ id: "criteria-drift", text: "〔契约对账〕…" }) });
+		handleTurnEnd(deps, "sid", st, {});
+		expect(deps.recordMetric).toHaveBeenCalledWith(expect.objectContaining({ kind: "trigger", id: "criteria-drift", sid: "sid" }));
+	});
+});
+
+/**
+ * 空转信号（0.8.x）：判成执行/诊断，这一轮却一次工具都没调。
+ * 与「越权改动」凑成一对：一个抓「该动没动」，一个抓「不该动却动了」，
+ * 两者都是路由判错的机械证据（不需要等用户抱怨）。
+ */
+describe("turn-boundary：空转信号", () => {
+	it("执行轮零工具调用 → 落一条 no-action", () => {
+		const st = makeSt({ interactionMode: "execute", toolCalls: 0 } as never);
+		const deps = makeDeps();
+		handleTurnEnd(deps, "sid", st, {});
+		expect(deps.recordMetric).toHaveBeenCalledWith(expect.objectContaining({ kind: "outcome", event: "no-action", mode: "execute" }));
+	});
+
+	it("问答轮不落空转信号（问一问本来就不该调工具）", () => {
+		const st = makeSt({ interactionMode: "question", toolCalls: 0 } as never);
+		const deps = makeDeps();
+		handleTurnEnd(deps, "sid", st, {});
+		expect(deps.recordMetric).not.toHaveBeenCalledWith(expect.objectContaining({ event: "no-action" }));
 	});
 });

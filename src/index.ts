@@ -63,7 +63,7 @@ import {
 	buildSessionAnchor,
 	buildTaskPhaseDirective,
 	buildToolFailureNotice,
-	classifyInteraction,
+	classifyWithTrajectory,
 	isUserAuthored,
 	taskPhaseForMode,
 } from "./host/protocol.js";
@@ -110,12 +110,15 @@ import {
 	buildRequirementCoverageDirective,
 	buildStructureHint,
 	buildUnverifiedDeliveryNotice,
-	composeBlocks,
+	composeBlocksDetailed,
+	type ComposeResult,
 } from "./host/methods.js";
 import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { initStores } from "./host/bootstrap.js";
+import { focusIdsFor } from "./host/clauses.js";
+import { createMetricsLog } from "./host/metrics-log.js";
 import { createAuxLlm } from "./host/llm-aux.js";
 import type { LumeConfig } from "./host/config.js";
 import { createLlmRouteCell } from "./host/llm-route.js";
@@ -261,6 +264,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	// ── 项目域：任务契约 / 改动台账 / 假设台账 / 项目知识（失败降级为无载具功能）──
 	const projectMemoryOn = config.projectMemory ?? true;
 	const behaviorTriggersOn = config.behaviorTriggers ?? true;
+	/** 运行时度量开关（默认开）：关掉只是不记录，不改变任何行为。 */
+	const metricsEnabled = config.metrics !== false;
 	const triggerThresholds: TriggerThresholds = {
 		...DEFAULT_TRIGGER_THRESHOLDS,
 		inspectStreak: config.triggerInspectStreak ?? DEFAULT_TRIGGER_THRESHOLDS.inspectStreak,
@@ -507,7 +512,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 * 读会话投影出的消息（`deriveMessages`，宿主侧带增量缓存），取最后一条真实用户
 	 * 消息作为本轮意图；messageId 未变时零成本短路，保证一轮内只冻结一次。
 	 */
-	function resolveIntent(context: any, st: SessionRuntime): { text: string; mode: SessionRuntime["interactionMode"] } {
+	function resolveIntent(sid: string, context: any, st: SessionRuntime): { text: string; mode: SessionRuntime["interactionMode"] } {
 		const session = context?.agent?.session;
 		if (typeof session?.cwd === "string" && session.cwd) st.cwd = session.cwd;
 		const messages = typeof session?.deriveMessages === "function" ? session.deriveMessages() : [];
@@ -529,7 +534,20 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			messageId = `text:${st.userText.slice(0, 120)}`;
 		}
 		if (text !== null && (st.intent === null || st.intent.messageId !== messageId)) {
-			const mode = classifyInteraction(text);
+			// 路由从「这一句话的词」升到「最近几轮轨迹的证据」（0.8.x）：纠正当场按被纠正前那句话重算、
+			// 在途任务对承接式追问有粘性、任务型轨迹上不因一句没有动词的话掉回问答。
+			// 路由是唯一「判错就全盘错」的决策，所以判定结论（模式 + 命中判据 + 证据来源）一并落进度量。
+			// recentUserQueries 里**已经包含这一句**（user/message 事件先到）：轨迹证据必须把它剔掉，
+			// 否则「最近三轮有两轮任务型」会被当前句自己凑够——那是自证，不是证据。
+			const normalizedQuery = text.trim().replace(/\s+/g, " ").slice(0, 240);
+			const decision = classifyWithTrajectory({
+				text,
+				recentUserTexts: st.recentUserQueries.filter((item) => item !== normalizedQuery),
+				prevMode: st.interactionMode,
+				prevPhase: st.taskPhase,
+				hadMutations: st.triggerCounters.mutations > 0,
+			});
+			const mode = decision.mode;
 			st.intent = { turnIndex: st.turnIndex, messageId, text };
 			st.lastQuery = text;
 			st.interactionMode = mode;
@@ -538,6 +556,17 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			st.toolSuccesses = 0;
 			st.toolFailures = 0;
 			st.toolUnknown = 0;
+			metricsLog.record({
+				kind: "route",
+				at: Date.now(),
+				sid,
+				turn: st.turnIndex,
+				mode: decision.mode,
+				matched: decision.matched,
+				source: decision.source,
+				excerpt: text.trim().replace(/\s+/g, " ").slice(0, 120),
+				...(decision.evidence ? { evidence: decision.evidence.trim().replace(/\s+/g, " ").slice(0, 120) } : {}),
+			});
 		}
 		return { text: st.intent?.text ?? st.lastQuery ?? "", mode: st.interactionMode };
 	}
@@ -553,6 +582,13 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	/** 提示块装配的依赖：块表在 host/prompt-blocks.ts，这里只负责接线。 */
 	/** 会话事件处理器的依赖（处理器本体在 host/session-events.ts，这里只接线）。 */
 	/** disposed 处理器复用同一批依赖。 */
+	// ── 运行时度量（0.8.x）──
+	// 放在装配最前面：它是后面所有优化的**靶子**——没有度量，「路由改准了没有 / 条款加权有没有用」
+	// 都只能靠感觉（这正是上一轮改动没能证明自己变聪明的原因）。
+	const metricsLog = createMetricsLog({ enabled: metricsEnabled });
+	// 回读磁盘尾部：跨会话趋势（纠正率是升还是降）比单个会话更有信息量。
+	metricsLog.loadFromDisk();
+
 	// ── 依赖装配：三个 deps 对象集中在 host/wiring.ts（无状态函数由它自己 import）──
 	// 这里只传「index 才有的运行期状态」：ctx / 存储句柄 / 会话态 / 模型路由 / 项目访问入口 / 配置开关。
 	const wiring: WiringInput = {
@@ -593,6 +629,10 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		projectMemoryOn,
 		behaviorTriggersOn,
 		reflectionEnabled,
+		metrics: {
+			record: (record) => metricsLog.record(record),
+			summary: (scope) => metricsLog.summaryText(scope),
+		},
 	};
 
 	// 会话补蒸馏：把最近 7 天的会话（**含已经撑满、聊不动的那些**）榨成跨会话知识。
@@ -622,6 +662,55 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	const toolDeps = assembleToolDeps(wiring);
 	const blockDeps: BlockDeps = assembleBlockDeps(wiring);
 
+	/**
+	 * 每轮落两条度量：一条**状态快照**（效能判定的基线：契约/设计/台账/假设/计数器）
+	 * 与一条**块装配**（预算压力 + 本轮加权了哪三条条款）。
+	 *
+	 * 同一步里提示词会被构建多次，所以状态快照按 (sid, turn) 去重——否则一次回复会记十几条。
+	 * 块装配不按轮去重：它记的是「这一步实际注入了什么」，逐步都要。
+	 */
+	const metricsTurnSeen = new Map<string, number>();
+	function recordTurnMetrics(
+		sid: string,
+		st: SessionRuntime,
+		query: string,
+		mode: SessionRuntime["interactionMode"],
+		composed: ComposeResult,
+	): void {
+		if (!metricsLog.enabled) return;
+		const changes = changesOf(sid);
+		const unverified = changes.filter((item) => item.status !== "verified" && item.status !== "skipped").length;
+		const state = { hasContract: contractOf(sid) !== null, unverifiedChanges: unverified };
+		metricsLog.record({
+			kind: "blocks",
+			at: Date.now(),
+			sid,
+			turn: st.turnIndex,
+			mode,
+			kept: composed.kept,
+			dropped: composed.dropped,
+			chars: composed.chars,
+			budget: composed.budget,
+			focus: focusIdsFor(st, mode, query, state),
+		});
+		if (metricsTurnSeen.get(sid) === st.turnIndex) return;
+		if (metricsTurnSeen.size > 200) metricsTurnSeen.clear();
+		metricsTurnSeen.set(sid, st.turnIndex);
+		metricsLog.record({
+			kind: "state",
+			at: Date.now(),
+			sid,
+			turn: st.turnIndex,
+			counters: { ...st.triggerCounters },
+			hasContract: state.hasContract,
+			designs: designOf(sid).length,
+			changes: changes.length,
+			unverified,
+			verified: changes.filter((item) => item.status === "verified").length,
+			hypotheses: hypothesesOf(sid).length,
+		});
+	}
+
 	const sessionDisposedHandler = createSessionDisposedHandler(sessionEventDeps);
 	const sessionEventHandler = createSessionEventHandler(sessionEventDeps);
 
@@ -642,7 +731,20 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		const st = runtime.get(sid);
 		// 意图取自会话权威历史（resolveIntent），不再读事件缓存里的最新文本：
 		// 后者会被注入消息覆盖，且首步可能还带着上一轮的值，导致模式在轮内漂移。
-		const { text: query, mode } = resolveIntent(context, st);
+		const { text: query, mode } = resolveIntent(sid, context, st);
+		// 路由自校：本会话已被用户纠正两次以上 → 顶一句带具体数字的提醒（上限 2 次防噪音）。
+		// 这是度量**回灌**到行为的那一环：只有记录没有回流，度量就只是日志。
+		const routeHealth = metricsLog.health(sid);
+		if (routeHealth.corrections >= 2 && noticeOpen(st, "metrics")) {
+			const modes = Object.entries(routeHealth.correctionsByMode)
+				.map(([name, count]) => `${name} ${count}`)
+				.join(" · ");
+			setNotice(
+				st,
+				"metrics",
+				`〔路由自校〕本会话已有 ${routeHealth.corrections} 次判定被用户纠正${modes ? `（落在：${modes}）` : ""}。这一轮先复述你理解的真实请求再动手；判不准就问一句，不要按上一轮的模式惯性继续。`,
+			);
+		}
 
 		// 协议正文按模型能力冻结（不随 query 切变体）：切变体会让系统提示词每轮改写，
 		// 代价远超省下的几百 token。见 selectStableThinkingProtocol。
@@ -657,7 +759,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		if (typeof context?.agent?.session?.cwd === "string" && context.agent.session.cwd) st.cwd = context.agent.session.cwd;
 		// cwd 到手就补落盘暂存的项目知识（这条路径是"cwd 后到"的主要补写时机）
 		flushPendingFacts(sid, context);
-		const thinkingRuntime = composeBlocks(volatileBlocks(blockDeps, { sid, context, st, query, mode }));
+		const composed = composeBlocksDetailed(volatileBlocks(blockDeps, { sid, context, st, query, mode }));
+		recordTurnMetrics(sid, st, query, mode, composed);
+		const thinkingRuntime = composed.text;
 
 		// 会话选择尚未就绪（启动竞态）：只出任务协议，人设段留空——与旧实现一致，
 		// 也避免把「尚未选择」误记成一次人设切换。

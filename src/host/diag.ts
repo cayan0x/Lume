@@ -20,7 +20,7 @@ export const LUME_LOG_FILE = "lume-compaction.log";
  * 诊断日志**写了等于没写** —— 补蒸馏"跑了却零日志"、映射命中日志也看不见，只能靠行为反推。
  * 现在按候选探测，落到第一个存在的目录。
  */
-function resolveLogHome(): string | null {
+export function lumeLogHome(): string | null {
 	const candidates = [
 		process.env.DSH_HOME,
 		process.env.APPDATA ? join(process.env.APPDATA, "dsh-desktop") : null,
@@ -37,13 +37,26 @@ function resolveLogHome(): string | null {
 	return null;
 }
 
-/** 追加一行诊断；失败静默。 */
-export function appendLumeLog(message: string): void {
+/** 追加一行到**指定目录**（测试与自检要指定落点，否则会把假数据写进真实指标文件）。 */
+export function appendLumeLineAt(home: string, file: string, message: string): void {
 	try {
-		const home = resolveLogHome();
-		if (!home) return;
-		appendFileSync(join(home, LUME_LOG_FILE), `${new Date().toISOString()} ${message}\n`, "utf8");
+		appendFileSync(join(home, file), `${message}\n`, "utf8");
 	} catch {
 		/* 诊断失败不阻断功能 */
 	}
+}
+
+/**
+ * 追加一行到指定诊断文件（自动探测落点）。
+ * 度量另开一个文件：压缩日志只在压缩时写、量小；度量每轮都写，混在一起会把压缩记录冲淡。
+ */
+export function appendLumeLine(file: string, message: string): void {
+	const home = lumeLogHome();
+	if (!home) return;
+	appendLumeLineAt(home, file, message);
+}
+
+/** 追加一行诊断；失败静默。 */
+export function appendLumeLog(message: string): void {
+	appendLumeLine(LUME_LOG_FILE, `${new Date().toISOString()} ${message}`);
 }

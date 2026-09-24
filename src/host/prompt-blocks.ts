@@ -74,6 +74,9 @@ export interface BlockDeps {
 	structureToolName: (context: unknown) => string | null;
 	/** 反思日志反馈（可空）。 */
 	reflectionFeedback: () => string | null;
+	// ── 条款预算（本轮重点）──
+	/** 本轮加权条款的正文（至多 3 条；完整协议仍挂在系统提示里）。 */
+	buildFocusClauseDirective: (input: BlockInput) => string | null;
 	// ── 覆盖核对（纯函数，直接引用也行；这里显式传出便于测试替身） ──
 	pickRequirementCorpus: typeof coverageMod.pickRequirementCorpus;
 	splitRequirementItems: typeof coverageMod.splitRequirementItems;
@@ -106,6 +109,8 @@ export function volatileBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 	return [
 		{ text: deps.buildInteractionDirective(mode) },
 		{ text: deps.buildTaskPhaseDirective(st.taskPhase) },
+		// 条款预算：完整协议在系统提示里一条不少，这里只按本轮形态加权最相关的三条
+		{ text: deps.buildFocusClauseDirective(input) },
 		{ text: deps.buildCasualDirective(deps.taskSignalRe.test(query)) },
 		{ text: deps.buildLongSessionGuard(st.turnIndex) },
 		{ text: deps.buildSessionAnchor(st.turnIndex, mode, query, st.recentTurns) },

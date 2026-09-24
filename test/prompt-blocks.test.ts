@@ -67,6 +67,8 @@ const deps = (over: Partial<BlockDeps> = {}): BlockDeps =>
 		documentDirective: () => null,
 		structureToolName: () => null,
 		reflectionFeedback: () => null,
+		// 条款预算：默认不加权（具体用例覆盖成"有重点"）
+		buildFocusClauseDirective: () => null,
 		pickRequirementCorpus: (items) => items.map((i) => i.text).join("\n"),
 		splitRequirementItems: () => [
 			{ index: 1, label: "1", text: "新增权限人字段" },
@@ -126,11 +128,20 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 		expect(noticeText(runtime, "coverage")).toBeNull();
 	});
 
-	it("易变段的顺序：路由在前、触发器提醒在最后（尾部注意力最强位）", () => {
+	it("易变段的顺序：路由在前、本轮重点随后、触发器提醒在最后（尾部注意力最强位）", () => {
 		const runtime = st({ notices: { trigger: { text: "〔先定位〕…", used: 1 } } });
-		const blocks = volatileBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "改 A", mode: "execute" });
+		const blocks = volatileBlocks(deps({ buildFocusClauseDirective: () => "〔本轮重点〕…三条" }), {
+			sid: "s",
+			context: {},
+			st: runtime,
+			query: "改 A",
+			mode: "execute",
+		});
 		const list = texts(blocks);
 		expect(list[0]).toContain("当前请求路由");
+		expect(list[1]).toContain("任务阶段");
+		// 条款加权紧跟路由/阶段（它是对这两条的展开），触发器提醒仍占尾部最强位
+		expect(list[2]).toContain("本轮重点");
 		expect(list[list.length - 1]).toContain("先定位");
 	});
 });

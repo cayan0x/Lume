@@ -42,6 +42,14 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 		);
 		if (fire && deps.cooldownOk(st.triggerFiredAt[fire.id], st.turnIndex)) {
 			st.triggerFiredAt[fire.id] = st.turnIndex;
+			deps.recordMetric({
+				kind: "trigger",
+				at: Date.now(),
+				sid,
+				turn: st.turnIndex,
+				id: fire.id,
+				counters: { ...st.triggerCounters },
+			});
 			if (fire.id === "criteria-drift") {
 				// 契约对账用「交付口径」渲染原始判据：防判据随进展漂移。
 				st.lastDriftTurn = st.turnIndex;
@@ -67,6 +75,18 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 	}
 	if (st.failureStreak >= 2)
 		deps.forceNotice(st, "protocol", "检测到相同请求连续失败：先定位根因并记录已排除假设，再选择不同方案；不要重复同一调用。");
+	// 空转信号：判成执行/诊断，但这一轮一次工具都没调——要么在纸上谈兵，要么就是路由判错了。
+	// 与「越权改动」凑成一对：一个抓「该动没动」，一个抓「不该动却动了」。
+	if ((st.interactionMode === "execute" || st.interactionMode === "diagnosis") && (st.toolCalls ?? 0) === 0)
+		deps.recordMetric({
+			kind: "outcome",
+			at: Date.now(),
+			sid,
+			turn: st.turnIndex,
+			event: "no-action",
+			mode: st.interactionMode,
+			detail: st.intent?.text?.slice(0, 120) ?? "",
+		});
 	const claimsVerificationNow = claimsVerification(st.assistantText);
 	// 交付对账（C4）：台账里还有"已改未验"就**列出具体条目**——泛泛提醒"要有验证证据"
 	// 实测没用，摆出未验证的具体项才有可执行性。

@@ -216,14 +216,38 @@ export function buildClaimDirective(claims: Array<{ symbol: string; sentence: st
 	].join("\n");
 }
 
-export function composeBlocks(blocks: Array<{ text: string | null; droppable?: boolean }>, budgetChars = 4200): string {
+export interface ComposeResult {
+	text: string;
+	/** 实际留下的块数 / 被丢掉的块数（预算压力只有记下来才看得见）。 */
+	kept: number;
+	dropped: number;
+	chars: number;
+	budget: number;
+}
+
+/**
+ * 装配并**记账**：与 composeBlocks 同一套逻辑，只是把「丢了几块」也报出来。
+ *
+ * 为什么要记账（2026-09-24 复盘）：一轮最多能塞 20+ 个块，唯一的减法只有超预算时
+ * 从尾部丢 droppable——丢没丢、丢了几块，此前**没有任何地方知道**。没有这个计数，
+ * 「条款该不该做预算」就只能靠感觉。
+ */
+export function composeBlocksDetailed(blocks: Array<{ text: string | null; droppable?: boolean }>, budgetChars = 4200): ComposeResult {
 	const present = blocks.filter((block): block is { text: string; droppable?: boolean } => Boolean(block.text));
 	let out = present.map((block) => block.text).join("\n\n");
-	if (out.length <= budgetChars) return out;
-	for (let i = present.length - 1; i >= 0 && out.length > budgetChars; i--) {
-		if (!present[i]!.droppable) continue;
-		present.splice(i, 1);
-		out = present.map((block) => block.text).join("\n\n");
+	let dropped = 0;
+	if (out.length > budgetChars) {
+		for (let i = present.length - 1; i >= 0 && out.length > budgetChars; i--) {
+			if (!present[i]!.droppable) continue;
+			present.splice(i, 1);
+			dropped++;
+			out = present.map((block) => block.text).join("\n\n");
+		}
+		if (out.length > budgetChars) out = out.slice(0, budgetChars);
 	}
-	return out.length > budgetChars ? out.slice(0, budgetChars) : out;
+	return { text: out, kept: present.length, dropped, chars: out.length, budget: budgetChars };
+}
+
+export function composeBlocks(blocks: Array<{ text: string | null; droppable?: boolean }>, budgetChars = 4200): string {
+	return composeBlocksDetailed(blocks, budgetChars).text;
 }

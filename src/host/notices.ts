@@ -29,6 +29,8 @@ export const NOTICE_CAPS: Record<string, number> = {
 	pressure: 3,
 	/** 载具缺口（动了代码但契约/设计都空） */
 	carrierGap: 2,
+	/** 度量自校：本会话路由被反复纠正时顶一次（上限 2，防噪音） */
+	metrics: 2,
 	// 以下无上限（靠场景与冷却控制）
 	trigger: Number.POSITIVE_INFINITY,
 	turn: Number.POSITIVE_INFINITY,

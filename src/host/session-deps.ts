@@ -25,6 +25,7 @@ import * as protocolMod from "./protocol.js";
 import * as reflectionMod from "./reflection.js";
 import * as thinkingMod from "./thinking.js";
 import * as triggersMod from "./triggers.js";
+import type { MetricRecord } from "../core/metrics.js";
 import type { ProjectStore } from "./project.js";
 import type { ProjectAccess, ProjectAccessDeps } from "./project-access.js";
 import type { AuxLlm } from "./llm-aux.js";
@@ -52,6 +53,8 @@ export interface SessionEnvDeps {
 	ctx: LumeHostContext;
 	/** 统一日志落盘（宿主 logger 之外还有本地文件线索）。 */
 	appendLumeLog: typeof diagMod.appendLumeLog;
+	/** 运行时度量写入口（host/metrics-log.ts）：只记机械事实，不做语义解释。 */
+	recordMetric: (record: MetricRecord) => void;
 	projectMemoryOn: boolean;
 	behaviorTriggersOn: boolean;
 	reflectionEnabled: boolean;

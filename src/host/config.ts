@@ -22,6 +22,12 @@ export interface LumeConfig {
 	distillModel?: string;
 	/** 会话结束反思日志：空闲时间评估任务执行协议的四项能力，各打 0-2 分落盘。 */
 	reflectionEnabled?: boolean;
+	/**
+	 * 运行时度量（默认 true）：路由判定 / 触发器命中 / 块装配 / 外部结果信号落到
+	 * DSH_HOME 下的 lume-metrics.jsonl（一行一条事实），并供 lume_metrics 工具读取。
+	 * 关掉只是不记录，不影响任何行为。
+	 */
+	metrics?: boolean;
 	switchBoundaryTurns?: number;
 	/**
 	 * 分层注入（默认 true）：system 段只留会话恒定文本，易变内容走 runtime-context

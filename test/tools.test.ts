@@ -15,7 +15,7 @@ import { jaccard } from "../src/core/retrieval.js";
 
 type Tool = { name: string; parameters?: Record<string, unknown>; execute: (args: unknown, exec: unknown) => Promise<unknown> };
 
-function setup(opts: { identity?: unknown; project?: unknown; contract?: unknown } = {}) {
+function setup(opts: { identity?: unknown; project?: unknown; contract?: unknown; metrics?: (scope?: string) => string } = {}) {
 	const tools: Tool[] = [];
 	const ctx = {
 		logger: { warn: vi.fn() },
@@ -49,6 +49,8 @@ function setup(opts: { identity?: unknown; project?: unknown; contract?: unknown
 		identity: opts.identity === undefined ? { addMemory: vi.fn(async () => true), addStyleRule: vi.fn(async () => true) } : opts.identity,
 		isDuplicateFact: () => false,
 		jaccard,
+		// 度量自读：真实现走 host/metrics-log（这里给可断言的替身）
+		metricsSummary: opts.metrics ?? (() => "METRICS"),
 		projectOf: () => project as never,
 		projectStore: () => {
 			if (!project) throw new Error("lume: 项目域未就绪（工具需要它来落账）");
@@ -138,5 +140,32 @@ describe("host/tools：入口守卫", () => {
 		await expect(byName.get("lume_project_note")!.execute({ kind: "build", text: "npm test" }, exec)).rejects.toThrow(
 			/store is unavailable|项目域未就绪/,
 		);
+	});
+});
+
+/**
+ * 度量自读工具（0.8.x）：让「是不是更聪明了」可以被查，而不是靠印象。
+ * 只有它把摘要回给模型，所以 scope 的语义（本会话 / 全部）必须锁住——
+ * 传错话，模型会拿别的会话的数据回答当前会话的问题。
+ */
+describe("host/tools：lume_metrics", () => {
+	it("注册面：lume_metrics 在册", () => {
+		expect(setup().byName.has("lume_metrics")).toBe(true);
+	});
+
+	it("默认查本会话；scope=all 时不带会话 id（拿全局趋势）", async () => {
+		const calls: Array<string | undefined> = [];
+		const { byName } = setup({
+			metrics: (scope) => {
+				calls.push(scope);
+				return `SUMMARY:${scope ?? "all"}`;
+			},
+		});
+		const session = (await byName.get("lume_metrics")!.execute({}, exec)) as { text: string };
+		expect(calls).toEqual(["sid-1"]);
+		expect(session.text).toBe("SUMMARY:sid-1");
+		const all = (await byName.get("lume_metrics")!.execute({ scope: "all" }, exec)) as { text: string };
+		expect(calls[1]).toBeUndefined();
+		expect(all.text).toBe("SUMMARY:all");
 	});
 });

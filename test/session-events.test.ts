@@ -89,6 +89,7 @@ function setup() {
 		runtime: { get: () => st } as never,
 		llmRoute: route,
 		appendLumeLog: vi.fn(),
+		recordMetric: vi.fn(),
 		forceNotice,
 		setNotice,
 		noticeOpen,
@@ -313,5 +314,37 @@ describe("host/session-events：会话记忆每轮导出（0.8.0）", () => {
 		(deps as unknown as { saveSessionMemory: typeof spy }).saveSessionMemory = spy;
 		handler({ id: "sid-1" }, { type: "turn/end", data: { turn: 1 } });
 		expect(spy).toHaveBeenCalled();
+	});
+});
+
+/**
+ * 运行时度量的事件侧（0.8.x）。
+ *
+ * 为什么必须有：度量里最有价值的两类信号——**用户纠正**与**越权改动**——都产生在事件流里，
+ * 而它们正是「路由判错」的外部证据（用户说的，不是模型自评）。这里锁住：信号真的被记下来、
+ * 带上当时生效的模式（落在哪个模式上就是哪个模式在误判）、且问答轮的正常只读不受影响。
+ */
+describe("host/session-events：度量（外部结果信号）", () => {
+	it("用户纠正 → 落一条 outcome，带当时生效的模式与原文摘要", () => {
+		const { handler, st, deps } = setup();
+		st.interactionMode = "diagnosis";
+		handler({ id: "sid-1" }, { type: "user/message", data: { content: [{ type: "text", text: "不是这个意思，我问的是字段定义" }] } });
+		expect(deps.recordMetric).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "outcome", event: "user-correction", mode: "diagnosis", sid: "sid-1" }),
+		);
+	});
+
+	it("判成问答却动了文件 → 落一条 overreach（路由判错的机械证据，比用户抱怨更早）", () => {
+		const { handler, st, deps } = setup();
+		st.interactionMode = "question";
+		handler({ id: "sid-1" }, { type: "tool/call", data: EDIT_CALL });
+		expect(deps.recordMetric).toHaveBeenCalledWith(expect.objectContaining({ kind: "outcome", event: "overreach", mode: "question" }));
+	});
+
+	it("问答轮的只读探查不算越权（问题本来就该查仓库事实）", () => {
+		const { handler, st, deps } = setup();
+		st.interactionMode = "question";
+		handler({ id: "sid-1" }, { type: "tool/call", data: READ_CALL });
+		expect(deps.recordMetric).not.toHaveBeenCalledWith(expect.objectContaining({ event: "overreach" }));
 	});
 });

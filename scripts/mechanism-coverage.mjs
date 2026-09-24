@@ -39,6 +39,25 @@ const EXTRA_MECHANISMS = [
 	{ id: "knowledge-scope", what: "知识作用域（repo/task 归属）", impl: "src/core/scope.ts", keyword: "classifyScope" },
 	{ id: "memory-id", what: "内容寻址记忆 id + 去重 + 遗忘工具", impl: "src/core/memory-id.ts", keyword: "memoryId" },
 	{ id: "host-event-shapes", what: "宿主事件形状适配（真机 fixtures）", impl: "src/host/host-events.ts", keyword: "parseToolCall" },
+	{
+		id: "protocol-focus-clauses",
+		what: "条款预算（每轮按形态加权最相关三条）",
+		impl: "src/host/clauses.ts",
+		keyword: "buildFocusClauseDirective",
+	},
+	{
+		id: "route-trajectory",
+		what: "轨迹路由（纠正重算 / 在途粘性 / 轨迹一致）",
+		impl: "src/host/protocol.ts",
+		keyword: "classifyWithTrajectory",
+	},
+	{
+		id: "runtime-metrics",
+		what: "运行时度量（落盘 + 聚合 + 触发器效能判定）",
+		impl: "src/host/metrics-log.ts",
+		keyword: "createMetricsLog",
+	},
+	{ id: "metrics-feedback", what: "度量回灌（纠正率过高时顶一句路由自校）", impl: "src/host/notices.ts", keyword: "metrics" },
 ];
 
 const read = (p) => {

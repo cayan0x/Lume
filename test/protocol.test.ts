@@ -9,6 +9,8 @@ import {
 	buildTaskPhaseDirective,
 	buildToolFailureNotice,
 	classifyInteraction,
+	classifyInteractionDetailed,
+	classifyWithTrajectory,
 	isUserAuthored,
 	taskPhaseForMode,
 } from "../src/host/protocol.js";
@@ -101,5 +103,77 @@ describe("buildCompactionNotice", () => {
 		const text = buildCompactionNotice({ turnIndex: 1, shadowedItems: 0, tokens: 0 }, 1)!;
 		expect(text).toContain("较早的历史已被摘要替换");
 		expect(text).not.toContain("0 项历史");
+	});
+});
+
+/**
+ * 路由的轨迹证据（0.8.x）。
+ *
+ * 单句正则只看「这一句话的词」，中文是发散的——词表永远补不完，而**判错的代价是全盘错**
+ * （后面所有条款都指向错的方向）。所以这里锁三件事：判定结论可归因（证据来源）、
+ * 在被问「能不能」时要给判断而不是直接动手、以及轨迹证据只在**在途/一致**时补位，
+ * 证据不足一律回落到单句结果（轨迹只用来补，不用来猜）。
+ */
+describe("interaction protocol：轨迹路由与可归因", () => {
+	it("判定带命中判据与证据来源（没有它，误判率无从统计）", () => {
+		expect(classifyInteractionDetailed("把这部分整理一下")).toMatchObject({
+			mode: "execute",
+			matched: "execute-verb",
+			source: "text",
+		});
+		expect(classifyInteractionDetailed("这个接口是什么？")).toMatchObject({ mode: "question", matched: "fallback" });
+		expect(classifyInteractionDetailed("")).toMatchObject({ mode: "question", matched: "empty" });
+	});
+
+	it("「能不能优化」先给判断与办法（诊断），不是直接动手", () => {
+		expect(classifyInteraction("看看这块能不能优化")).toBe("diagnosis");
+		// 没有变更对象的「能不能」只是普通疑问句，不许升格成任务
+		expect(classifyInteraction("这段代码能不能跑起来？")).toBe("question");
+	});
+
+	it("在问「怎么做」时不会因为句子里有动词就判成命令", () => {
+		expect(classifyInteraction("怎么整理这段数据比较好")).toBe("question");
+	});
+
+	it("用户纠正后按被纠正前那句话重算（不是在纠正句上再猜一次）", () => {
+		const decision = classifyWithTrajectory({
+			text: "不是让你改，我问的是字段定义",
+			recentUserTexts: ["把这部分整理一下"],
+			prevMode: "execute",
+			prevPhase: "execute",
+			hadMutations: false,
+		});
+		expect(decision).toMatchObject({ mode: "execute", source: "correction" });
+		expect(decision.evidence).toContain("整理");
+	});
+
+	it("在途任务的承接式追问保持任务模式（不因一句没有动词的话掉回问答）", () => {
+		const decision = classifyWithTrajectory({
+			text: "那继续吧",
+			recentUserTexts: ["帮我改一下接口"],
+			prevMode: "execute",
+			prevPhase: "execute",
+			hadMutations: true,
+		});
+		expect(decision).toMatchObject({ mode: "execute", source: "sticky" });
+	});
+
+	it("任务型轨迹上的一句短话按轨迹判任务；证据不足时绝不猜", () => {
+		const withEvidence = classifyWithTrajectory({
+			text: "列表页也一样",
+			recentUserTexts: ["帮我改一下接口", "把列表页也改一下"],
+			prevMode: "execute",
+			prevPhase: "execute",
+			hadMutations: true,
+		});
+		expect(withEvidence).toMatchObject({ mode: "execute", source: "trajectory" });
+		const noEvidence = classifyWithTrajectory({
+			text: "这个接口是什么？",
+			recentUserTexts: ["你好"],
+			prevMode: "question",
+			prevPhase: "answer",
+			hadMutations: false,
+		});
+		expect(noEvidence).toMatchObject({ mode: "question", source: "text" });
 	});
 });

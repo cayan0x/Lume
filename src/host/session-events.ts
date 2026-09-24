@@ -72,6 +72,18 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				anchorRequirement(sid, st, deps, text);
 				collectUserRuleFacts(sid, st, deps, text, event.data);
 				applyAlignNotice(st, deps, explicitCorrection, repeatedRequest);
+				// 外部结果信号（**用户给的**，不是模型自评）：用户纠正与重复请求是「上一轮判错 /
+				// 没做到」最直接的证据。带上当时生效的模式——落在哪个模式上，就是哪个模式在误判。
+				if (explicitCorrection || repeatedRequest)
+					deps.recordMetric({
+						kind: "outcome",
+						at: Date.now(),
+						sid,
+						turn: st.turnIndex,
+						event: explicitCorrection ? "user-correction" : "repeat-request",
+						mode: st.interactionMode,
+						detail: normalized.slice(0, 120),
+					});
 				st.recentUserQueries.push(normalized);
 				if (st.recentUserQueries.length > 5) st.recentUserQueries.shift();
 				st.recentTurns.push(`用户: ${text.slice(0, 300)}`);
@@ -101,6 +113,17 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				// （4 个会话里 0 次），而 edit/write 每次会话几十次。载具必须由插件自己落账，
 				// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
 				if (st.toolKind === "inspect" && deps.toolTargetOf(event.data)) st.triggerCounters.codeInspects++;
+				// 越权改动：判成问答却动了文件——「路由判错」的机械证据，比用户抱怨出现得更早。
+				if (st.toolKind === "mutate" && st.interactionMode === "question")
+					deps.recordMetric({
+						kind: "outcome",
+						at: Date.now(),
+						sid,
+						turn: st.turnIndex,
+						event: "overreach",
+						mode: "question",
+						detail: deps.toolNameOf(event.data),
+					});
 				// 引用-证据对齐与定位门槛的输入：read 的窗口、摸过的目标、最近一次调用的命令文本。
 				// 只把 read/view 这类**读文件**的工具记成窗口——grep 的 path 可能只是目录或模式，
 				// 记成"整文件读过"会把没看的行洗白（宁可少记，也不要给假证据）。
@@ -206,6 +229,15 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 					);
 					if (fire && deps.cooldownOk(st.triggerFiredAt[fire.id], st.turnIndex)) {
 						st.triggerFiredAt[fire.id] = st.turnIndex;
+						// 度量：记下命中**当时的计数器快照**，之后「行为是否真的变了」才有基线可比。
+						deps.recordMetric({
+							kind: "trigger",
+							at: Date.now(),
+							sid,
+							turn: st.turnIndex,
+							id: fire.id,
+							counters: { ...st.triggerCounters },
+						});
 						deps.forceNotice(st, "trigger", fire.text);
 						deps.ctx.logger?.warn?.(
 							`lume: [${sid}] 行为触发器 ${fire.id}（steps=${st.triggerCounters.steps}，inspect=${st.triggerCounters.inspectStreak}，mutate=${st.triggerCounters.mutateStreak}，verifyFail=${st.triggerCounters.verifyFailStreak}）`,

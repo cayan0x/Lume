@@ -257,7 +257,7 @@ export function startSessionBackfill(input: {
 			visibleText,
 			workspaceOf: (text) => workspaceFromSnapshotText(text),
 			projectKeyOf,
-			normalizeFact: (value, at) => normalizeProjectFact(value, at),
+			normalizeFact: (value, at, options) => normalizeProjectFact(value, at, options),
 			addFact: input.addFact,
 			looksSensitive,
 			log: input.log,

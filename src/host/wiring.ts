@@ -264,15 +264,28 @@ function slugOf(sid: string): string | null {
  * 所以新会话第一轮会缺〔项目知识〕（现场：14:15 新会话，模型答"我这轮没接上上下文"）。
  * 用「会话目录名 → 工作目录」的持久映射提前解出来。
  */
+/**
+ * 每会话只记「结果变化」的那一次。
+ *
+ * 现场（2026-09-24）：无条件留痕每轮都写一行 → 诊断日志里 890+ 条一模一样的记录，够用但太吵。
+ * 现在：首轮写一次（不论成败，它说明映射到底能不能用），之后只在结果**变化**时再写。
+ */
+const loggedWorkspaceOutcomes = new Map<string, string>();
+
 export function ensureSessionWorkspace(sid: string, st: SessionRuntime): void {
 	const home = resolveDsHome();
 	const slug = home ? slugOf(sid) : null;
 	const cached = home && slug ? workspaceFromSlug(home, slug) : null;
-	// 无条件留痕：这行是「第一轮为什么没有项目知识」的唯一自证手段（现场查过两次都只能靠猜）。
-	appendLumeLog(`[${sid}] 装配前补 cwd：dsHome=${home ?? "null"} slug=${slug ?? "null"} 映射=${cached ?? "null"} st.cwd=${st.cwd ?? "null"}`);
+	const outcome = !home ? "no-home" : !slug ? "no-slug" : !cached ? "no-map" : "from-map";
+	const key = outcome + "|" + (cached ?? "-") + "|" + (st.cwd ?? "-");
+	if (loggedWorkspaceOutcomes.get(sid) !== key) {
+		if (loggedWorkspaceOutcomes.size > 300) loggedWorkspaceOutcomes.clear(); // 只服务于「看得见」，别长成内存泄漏
+		loggedWorkspaceOutcomes.set(sid, key);
+		appendLumeLog(`[${sid}] 装配前补 cwd：dsHome=${home ?? "null"} slug=${slug ?? "null"} 映射=${cached ?? "null"} st.cwd=${st.cwd ?? "null"}（${outcome}）`);
+	}
 	if (st.cwd || !cached) return;
 	st.cwd = cached;
-	appendLumeLog(`[${sid}] 工作目录来自会话目录映射 → ${cached}`);
+	appendLumeLog(`[${sid}] 工作目录来自会话目录映射 → ${cached}（结果变化：st.cwd 由 null 变为该值）`);
 }
 
 /** 学到 cwd 时记进映射（本轮稍后、以及下一个会话的第一轮都能用）。 */

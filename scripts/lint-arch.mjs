@@ -17,7 +17,7 @@
  *     这条规则是「依赖边界类型化」的守门人：没有它，deps 会重新烂回 any。
  * 提示（不影响退出码）：单文件 >500 行、as any 计数。
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : [`${dir}/${e.name}`]));
 const files = walk("src").filter((f) => /\.tsx?$/.test(f));
@@ -120,6 +120,26 @@ for (const raw of files) {
 		}
 	}
 	hints.push("依赖声明检查：共 " + declared + " 个声明，未使用 " + unused + " 个");
+}
+// ── 规则 9：文档不许漂（ARCHITECTURE.md / README.md 里提到的 src 文件必须存在）──
+// 现场：ARCHITECTURE.md 点名 host/aux-calls.ts、host/extraction-runner.ts —— 全仓不存在（幽灵模块），
+// 还写着 446 条测试/34 文件 / index.ts 851 行，全都过期。「把知识写进文档」的第一个松掉的就是文档自己。
+{
+	for (const doc of ["ARCHITECTURE.md", "README.md"]) {
+		if (!existsSync(doc)) continue;
+		const text = readFileSync(doc, "utf8");
+		const seen = new Set();
+		for (const hit of text.matchAll(/(?:src|lib)\/[A-Za-z0-9_\-\/]+\.(?:ts|tsx|js)/g)) {
+			const rel = hit[0];
+			if (seen.has(rel)) continue;
+			seen.add(rel);
+			if (existsSync(rel)) continue;
+			// lib/ 是构建产物，文档里提到它时按 src 对应路径判断
+			const srcAlt = rel.startsWith("lib/") ? rel.replace(/^lib\//, "src/").replace(/\.js$/, ".ts") : null;
+			if (srcAlt && existsSync(srcAlt)) continue;
+			errors.push(doc + " 引用了不存在的路径：" + rel + "（文档漂了：要么补上这个文件，要么从文档里删掉）");
+		}
+	}
 }
 console.log("═══ 架构检查 ═══");
 if (errors.length === 0) console.log("✅ 分层 / ESM 扩展名 / 日志 / 静默失败 / 抑制理由 / 类型边界：全部通过");

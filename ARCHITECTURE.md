@@ -33,7 +33,7 @@ client 不得 import host 的运行时值**（类型导入可以，因为它不�
 | `host/prompt-blocks.ts` | 提示块装配（块表） | 块之间的冲突第一次能被测试断言 |
 | `host/sections.ts` | systemPrompt 段与易变段注册 | 三条通道的差异集中在一处说明 |
 | `host/llm-aux.ts` | 辅助模型调用 | 失败不影响对话，整块隔离 |
-| `host/aux-calls.ts` / `host/extraction-runner.ts` | 被动提取与调度 | 安全网而非主路径：三道门 + 失败静默 |
+|  /  | 被动提取与调度 | 安全网而非主路径：三道门 + 失败静默 |
 | `host/distill.ts` / `distill-prompt.ts` | 蒸馏 runner / 提示词与解析 | 提示词按效果迭代、runner 按调度需求改，节奏不同 |
 | `host/project-access.ts` | 载具/项目知识的读写入口 | 三处共用，必须单一真值来源 |
 | `host/host-events.ts` | 宿主事件形状适配 + 真机 fixtures | **宿主形状变了这里先红**（曾因 `arguments` 是 JSON 字符串打死六个功能） |
@@ -98,14 +98,14 @@ client 不得 import host 的运行时值**（类型导入可以，因为它不�
 | 层 | 工具 | 拦什么 |
 |---|---|---|
 | 编辑器/提交前 | `npm run lint`（`scripts/lint-arch.mjs`，零依赖 6 条规则） | 分层、ESM 扩展名、console、静默失败、`@ts-ignore`、**类型边界（裸 any）** |
-| 测试 | `npm test`（446 条，34 文件） | 判据行为 + client 纯逻辑；**宿主形状用 `test/fixtures/host-events/*.json` 的真机样本** |
+| 测试 | `npm test`（446 条，文件数以 `npm test` 为准） | 判据行为 + client 纯逻辑；**宿主形状用 `test/fixtures/host-events/*.json` 的真机样本** |
 | 发布 | `release:check`（31 项对**产物**断言） | 每条断言绑一个历史事故；`protocol-text-fingerprint` 提示这次动没动前缀 |
 
 **已知的"测不到"区**：宿主 RPC 注册、注入作用域、apply 兜底——**必须真机验证**（完全重启 DSH，看 `%APPDATA%\logs\harness.log`）。
 
 ## 七、当前已知短板（诚实清单）
 
-1. `index.ts` 仍 851 行：191 行配置 schema（该留）+ 装配/effect 注册；还有可搬的（RPC 注册、蒸馏 runner 的接线）；
+1. `index.ts` 仍 780 行（2026-09-24 实测；数字会变，以 `node -e` 当场数为准）：191 行配置 schema（该留）+ 装配/effect 注册；还有可搬的（RPC 注册、蒸馏 runner 的接线）；
 2. `client/` 只整理了蒸馏弹窗的逻辑抽取：`index.tsx` 281 / `manage.tsx` 299 / `memory.tsx` 263 行，尚未做同等级别的分层；
 3. `SessionRuntime` 39 个字段（`agent` 组已收口 7 个），其余仍平铺；
 4. `lint-arch.mjs` 是零依赖检查器而非 eslint（原因见文件头注释）；无 CI（本地 `release:check` 承担门禁）；

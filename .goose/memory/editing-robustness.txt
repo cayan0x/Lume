@@ -1,0 +1,46 @@
+# editing pitfalls windows gate workflow
+【改这个仓库时省时间的坑（都是这两个会话实测踩出来的）】
+
+1. **别用中文当 edit 锚点**：控制台读回来的中文是乱码版本，据此写的 `before` 永远匹配不上。做法：**只用 ASCII 锚点**（代码行、标识符、`from "./x.js";` 这类），或写一次性 node 脚本按「行号 + ASCII 片段校验」替换。脚本里每处替换都要**断言锚点恰好命中 1 次**，命中不上就打印并跳过——这才是"谨慎地改"。
+2. **缩进是 tab**：`edit` 工具里用 4 空格写的锚点会失败；要么用 tab，要么只锚定不含缩进的内层文本（替换子串，保留原缩进）。
+3. **脚本自身别写嵌套模板字面量**：我要生成的代码里含 `` `...${x}...` `` 时，脚本的模板字面量会解析失败（本会话踩了三次）。改成数组 + 单引号拼接，或把反引号转义。
+4. **多行命令会被 cmd 截断**：只能用 `&` 串联，或写成脚本文件再跑（推荐）。
+5. **`npx` / `npm exec` 在这台机器不可用**（Node 垫片坏）；脚本里一律 `process.execPath` 直接跑 node。
+6. **`execFileSync("npm.cmd", args, {shell:true})` 会静默空跑**（退出码 0、无输出、什么都没做）→ npm 发布直接走 shell。
+7. **发布门禁 `scripts/release-check.mjs` 的本地采集有文件白名单**：新增分文件断言时必须把该文件加进那个清单，否则检查读到空字符串而"假红"（本会话踩了两次）。
+8. **改 ProjectStore 的域/构造参数后**：`src/index.ts` 的 `new ProjectStore({...})` 与 `test/project-store.test.ts` 的 fake tables 都要同步补表，否则 tsc/测试立刻红（这是好事：说明类型在兜底）。
+9. 大改后固定验证顺序：`tsc` → `npm test` → `npm run build` → `node scripts/release-check.mjs` → `node scripts/install-local.mjs`（装本机）。
+
+# lume editing tooling workflow
+【本仓改代码的可复用技巧（2026-09-23 实测有效）】① 用 `edit` 工具改中文代码：**锚点尽量取 ASCII 行**（函数签名、`const x = ...`、`{ text: ... }` 这类），把中文注释/文案放进 `after`（新内容不需要匹配）；必须用中文锚点时，先 `node -e "...JSON.stringify(t[i])"` 把目标行原样打出来再复制——这样能看见真实制表符/空格，避免『No match found』（本次就因锚点漏了一个「词」字失败一次）。② `Developer.shell()` 在 `execute_typescript` 里**拿不到输出**（返回空），shell 一律走独立工具调用；`Memory.*` 在 execute 里正常。③ 一次改多文件多处时，把同一文件的多个 `edit` 放同一批也行（锚点互不重叠即可）。④ 验证顺序：`node node_modules\typescript\bin\tsc -p tsconfig.build.json --noEmit` → `npm test` → `npm run release:check`（含 build）→ `node scripts\install-local.mjs`。⑤ `npm test | findstr /C:"Tests "` 这类过滤能一行看结论（vitest 输出很长）。
+
+# lume release-check gate false-red editing-robustness
+【发布门禁自身的坑（2026-09-23 修）】scripts/release-check.mjs 的本地目标（collectTarget）原来用**手写的 10 个文件清单**构建 files map；当断言里新增一个产物文件（如 lib/core/citations.js、lib/host/thinking.js）却忘了加进清单时，text() 读到**空串**，check 静默返回 false，于是门禁**假红**（本次先以为是自己改坏了产物，实际是清单缺失）。修法：baseFiles + FILE_INVARIANTS.map(item => item.file) 合并去重派生。教训：门禁的断言与它的取数清单必须同源，否则新增断言会以「假红」而不是「报错」的形式暴露。本批另给门禁补了 6 条对产物的断言（citation-gate / auto-verify-ledger / real-verify-command / question-audit / pending-facts-flush / question-discipline），门禁 21 → 27 条。
+
+# lume harness-vs-real event-shape arguments-string silent-dead-code pending-restart
+【假宿主与真机的入参形状不一致 → 一批功能静默失效（2026-09-23 现场）】真机 DSH 的 tool/call 事件 data 形状是 { turn, step, callId, name, arguments }，其中 **arguments 是 JSON 字符串**（不是对象）；而 test/apply-harness.ts 发的是 { args: {...对象} }。因此只认 object 的 helper（toolArgsFromEvent / targetPathFromToolEvent）在真机上 path 永远为 null，导致**依赖工具入参的功能全部静默失效**：①自动改动台账 ②引用核对（读窗口索引）③首改前定位门槛 ④auto-verify（按 target 推进 verified）⑤交付对账（台账空→永不触发）⑥需求覆盖核对（抓不到产物正文）。证据：lume_project.json 里该会话 ledger=undefined；harness.log 里 verify-as-you-go（steps=7，inspect=0，mutate=4）——读了文件却 inspect 为 0。修法：toolArgsFromEvent 支持字符串入参（JSON.parse），targetPathFromToolEvent 复用它；回归测试必须用**真机形状**（arguments: JSON.stringify({file_path,new_string})）。**通用教训：单测跑在假宿主上，凡是「只用工具名/文本」的功能不受影响，凡依赖「工具入参」的功能都可能被形状差异打死——这类改动必须拿真机事件样本做回归。** 修复已装本机（live 逐字节相同），待重启生效。
+
+# lume refactor line-surgery checkpoint-commit gate-brittleness getter-for-async-handles
+【机械式整块搬迁 + 批量重命名：两次踩坑与三条纪律（2026-09-23 拆 index.ts）】把 index.ts 拆成 host/session-events、host/tools、host/prompt-blocks、host/bootstrap 四块的实操教训：① 用「结束行探测」定位代码块边界时，正则匹配到的是**更后面的**同型行（如 ctx.on 的标签行），结果把工具定义整块吃进 session-events.ts、index.ts 骤减 450 行——**靠一个检查点提交 `git checkout -- src/index.ts` 救回**；② 批量词边界重命名会误伤三处：import 路径（`./host/project.js` → `./host/stores.project().js`）、对象字面量简写（`identity,` → `stores.identity(),` 非法）、getter 名（`get identity()` → `get stores.identity()()`）；③ 依赖注入用「接口字段为唯一真相」重建 deps 对象，比逐处手工补字段可靠。纪律：（1）任何大面积重构**先提交检查点**；（2）每步跑 tsc + 全量用例（431 条）再继续；（3）重命名只认词边界并显式排除 import 路径/简写/getter。另：async 兑现的句柄必须用 **getter** 暴露给依赖（直传值会永远拿到 null——这正是「项目知识/台账整批静默失效」的形状），bootstrap 里为此加了 ensureReady()。**顺带发现门禁脆性**：4 条断言只查 lib/index.js，代码搬走后假红 → 新增 `files: [...]` 跨文件断言 + runner 自检「断言指向的产物文件是否存在」（清单写错必须报错，不能静默假红/假绿）。
+
+# line-surgery refactor-discipline checkpoint-commit tsc-as-oracle template-literal-trap crlf
+【线手术（抽取代码块+批量改名）收敛出的四条纪律 · 2026-09-24 一天踩三次】① 动手前**先提交检查点**——今天两次靠 `git checkout -- <file>` 回滚救回（结束行探测把工具定义整块吃进另一个文件；接口字段被当注释搬走）。② 只搬**函数边界清晰、无闭包捕获**的块；边界用**内容锚点**定位并打印首/末行确认（行号偏移一次就错）。③ 改名只认确定接收者（`st.`/`state.`），**漏的让 tsc 报**——今天靠这条抓到 `[...st.inspectedTargets]` 漏改。④ **生成代码时绝不用模板字面量包被搬代码**：里面的 `${}` 会插值、反引号会断字符串（今天因此白跑两轮）。⑤ 顺带：CRLF 仓库里用 `^...$` 锚点做多行匹配会失败，要写 `\r?$`；`.includes()` 不受影响。⑥ 判断边界前先**打印块的完整范围**（`${from}-${to}`），别凭上一次扫描的行号。
+
+# deps-typing returnType-pattern host-payload lint-guard tsc-as-oracle
+【把「工厂 + 显式 deps」的边界从 any 变真类型的可复制套路 · 2026-09-24】① 先给被注入的工厂加返回类型别名：export type X = ReturnType<typeof createX>；② deps 字段优先用 typeof mod.fn（命名空间导入）与 Pick<X,…>，不要手抄签名；③ 多个模块共用的依赖契约放到独立模块（如 host/session-deps.ts），否则使用方之间会反向依赖成环；④ 宿主任意形状只保留一个有名字的落点（HostPayload），并用 lint 规则把「裸 any 只允许出现在装配点与 HostPayload 定义处」变成硬约束——否则类型化一完成就会烂回去；⑤ 每一步都用 tsc 当判官（它报的缺成员/类型不符就是真契约），比人工核对快；⑥ 类型化过程常会顺手抓到真 bug（本例：let 变量按值拷进 deps → 事件里的更新丢失，功能静默失效）。
+
+# test-doubles real-implementations probe-first false-green expectCount
+【测试替身的三条纪律 · 2026-09-24】① 替身里的正则与文本函数必须用真实现：把 TASK_SIGNAL_RE stub 窄、或把 messageText stub 成返回空串，会让被测分支整段跳过 → 测试假绿（我因此白查两轮）。② 先跑探针再写断言：把真实行为打印出来（注册顺序、返回值原文），再按实际写期望——我的三处错误假设都是这么纠正的（defineTool 入口就校验 schema / sections 注册顺序 persona 在前 / 工具提示段独立于 layeredOn）。③ 替身 st 要覆盖这条分支会碰到的字段，缺字段会以 TypeError 失败（recentTurns 那次），看起来像断言失败其实是被测代码提前抛错。另：本仓契约工具 schema 的必填是 expectCount（判据数量）而非 goal——这是门禁 contract-count-required 守的设计意图。
+
+# incident client-bundle duplicate-declaration tsconfig-coverage gate verification-blindspot harness-boot-failure
+【事故复盘：客户端重复声明让 Harness 起不来 · 2026-09-24 · commit d4a49ce】现象：重启后 DSH 弹「Harness 暂时无法启动 / 插件代码加载失败」，日志 [renderer] Uncaught SyntaxError: Identifier 'TEXT_CAP' has already been declared + Failed to load plugins。**关键**：服务端半边是好的（harness.log 里 lume: 已加载 正常），所以对话框只能报「无法定位到具体插件」——别被这句话带偏，要去 harness.log 找 renderer 段。根因：把蒸馏弹窗常量抽到 client/distill-job.ts 时，distill.tsx 里旧的 const TEXT_CAP / CHAT_TEXT_CAP 没删干净（同文件已 import 同名）→ 客户端 bundle 由 tsdown 打成单个 __ModuleLoader__ 工厂，模块被摊平到同一作用域 → 产物出现两处 const TEXT_CAP。同批第二处：memory.tsx 用了 GRAPH_H 却没导入（替换脚本往多行 import 格式插，该文件是单行 import → 静默失败）。**为什么两道防线都没拦住（最重要的教训）**：① tsconfig.json（include src+test、jsx+DOM，本来能抓 import 与本地声明冲突）从没被任何命令执行，而 tsconfig.build.json 明确 exclude src/client —— 所以「tsc 干净」不覆盖客户端，我据此说「可安全重启」属于验证盲区；② 发布门禁只断言产物里有没有某字符串，从不检查产物能不能被解析。已修：npm run lint 现在跑 tsc -p tsconfig.json --noEmit（CI 与 release:check 自动继承）+ 门禁两条新断言 client-bundle-parses（vm.Script 仅解析不执行）与 client-no-duplicate-decl（顶层重复声明扫描，var 形式解析不报错也要拦）→ 门禁 31→33，并用负向测试（注入重复声明/语法错/var 重复）证明真会拦。纪律：改 client 必跑根 tsconfig；客户端产物必须解析校验；抽模块的「移走+删除」要在同一脚本完成并用类型检查兜底。
+
+# dsh-host cwd runtime-snapshot event-shapes timeline-discipline
+【这台宿主怎么拿 cwd（重要事实，别再找错地方）· 2026-09-24】DSH 0.9.1：request/context 只有 provider/model/contextWindow；request/header 只有 config/adapterDefaults/tools；tool/call 只有 turn/step/callId/name/arguments；exec 与提示词上下文的 agent.session 都没有 cwd。唯一可靠来源是经 user/message 通道投递的运行时快照文本，形如 Current DSH file policy: workspace-write … may modify files under the session workspace，后面跟带引号的绝对路径（JSON 风格双反斜杠）。该快照还带 approval policy 与路由注入块，所以插件要排除它被当成用户发言（isUserAuthored 看 source.kind）。教训：依赖宿主会提供某字段之前，先在真实事件里 grep 一遍它到底在哪；会话文件是累积的，判断新会话/新轮次必须用事件 at 时间戳或日志绝对时间戳，不能用文件 mtime。
+
+# dsh-host tool-result-shape nested-content silent-empty-input test-vs-real-shape
+【真机 tool/result 的文本嵌深一层 · 2026-09-24 · commit 363613f】DSH 0.9.1 的 tool/result 事件形状：data.message.content 是数组，元素形如 { type: tool-result, toolCallId, content: [ { type: text, text } ] } —— 文本比消息本体深一层。插件早期只读第一层 block.text，于是工具结果文本永远是空串（实测 238/238、307/307 全取不到）。一条 bug 同时打死四个机制：自动沉淀项目知识（0 候选）、失败识别（信号永远无失败）、grep 命中的证据记账（引用核对没有证据）、否定断言的证据底账（断言核对可能误报）。修法：core/text.ts 的 messageText 递归收集（限深 3，兼容旧扁平形状）；visibleText 额外整块排除 tool-call/tool-result。教训（与 cwd 那次同源）：新机制若依赖工具结果里的文本，先用真机事件验证取到的是不是空串——假宿主的扁平形状会让单测全绿而真机全哑。已加回归测试用真机嵌套形状。
+
+# codemod quoting crlf template-literal storage-table-naming
+【这批反复踩到的三个坑（都是机械改代码时的）】① **别在生成的代码里用双引号**：我用 Node 脚本写 TypeScript 时，中文注释里的英文双引号会把脚本字符串提前闭合（SyntaxError），一晚上踩了三次；注释里用「」或单引号。② **别用模板字面量包被生成的代码**：`${}` 会插值、反引号会断串。③ **CRLF**：本仓多数文件是 CRLF，Node 脚本里的锚点字符串必须用 \r\n，否则普遍 MISS（project.ts 用 tab+CRLF、session-deps.ts 用 tab+LF，逐文件确认）。另外：DSH 存储域强制表名 /^[a-z][a-z0-9_]*$/（camelCase 表名会让所有相关测试文件加载失败）。
+

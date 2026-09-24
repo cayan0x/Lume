@@ -1,0 +1,28 @@
+# Lume（lume-dsh-plugin）项目须知
+
+Lume 是 DSH Desktop 的插件（人设 / 记忆 / 任务协议）。TypeScript 源码在 `src/`，构建产物 `lib/`（tsdown）。
+构建 `npm run build`；测试 `npm test`（vitest）。注意：单测跑在**假宿主** `test/apply-harness.ts` 上。
+
+## 记忆协议（跨会话共享，开工先做、收尾必做）
+- **存储**：本项目记忆就是仓库内 `.goose/memory/<category>.txt`（goose memory 扩展的 local scope，按工作目录归属，一个 category 一个文件；首行 `# tags`，正文按条目分段）。**不要删除这些文件**——它们是真的记忆，删了就是删记忆。
+- **开场**：`retrieveMemories({category:"*", is_global:false})` 一次读完本项目全部记忆（这是跨会话共享的唯一入口，goose 不会自动注入记忆内容）。
+- **收尾**：把本次值得跨会话保留的结论用 `rememberMemory({category:"<主题>", data:"…", tags:[…], is_global:false})` 追加（规则 / 决策 / 死路 / 当前状态）。跨项目通用的偏好才用 `is_global:true`。
+- 另：读 `.goose/state.md`（本地交接状态：当前版本 / latest / 未决事项）——**收尾时更新它**。
+
+## 铁律（必须遵守）
+1. **改完只到「提交 / 停在待确认」**——不要自行 tag / push / npm publish，必须等用户明确确认。
+2. **宿主接线类改动（RPC 注册、注入作用域、apply 兜底）单测抓不到**：必须真机验证——完全重启 DSH（含托盘进程），看 `%APPDATA%\logs\harness.log` 里 `lume: RPC 通道` 那一行。
+3. 发布走两步：`npm run release:check`（对**产物**断言的门禁）→ `npm run release:publish`（先发 next、下载真 tarball 复检、通过才提升 latest）。见 `RELEASING.md`。
+
+## 新会话开场（按序做）
+1. 读记忆：`retrieveMemories({category:"*", is_global:false})`
+2. 读 `.goose/state.md`
+3. `git log -5 --stat`、`git status`、`npm dist-tag ls lume-dsh-plugin`
+4. 读 `CHANGELOG.md` 顶部一节 + `RELEASING.md`
+
+## 地图
+- 接线入口 `src/index.ts`；宿主层 `src/host/`（rpc.ts、rpc-bridge.ts、injection.ts、project.ts、triggers.ts、distill.ts）
+- 任务载具 / 改动台账：`src/core/ledger.ts`；市场材料 `docs/hub-pr/`；发布流程 `RELEASING.md`
+
+## 每次收尾
+更新 `.goose/state.md`，并把结论写进 `.goose/memory/`。

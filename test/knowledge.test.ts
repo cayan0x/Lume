@@ -119,6 +119,25 @@ describe("core/knowledge：三个来源（tool / assistant / user）的判据差
 		expect(extractKnowledgeCandidates("| `git status` | 复核：doc 那两行必须还是 ??（WTPF_X） |", { source: "assistant" })).toHaveLength(0);
 	});
 
+	it("形状闸：真机里灌进来的那些开发产物，一条都不许再收（2026-09-24 真机数据当负例）", () => {
+		const toolNoise = [
+			"✓ test/tools.test.ts > host/tools：入口守卫 > 身份域不可用 → lume_remember 给可读错误（不静默成功） 5ms",
+			"/** 可省略：写入侧（host/metrics-log）按 TRIGGER_EXPECT 统一补齐，省得每个调用点各写一遍",
+			"| `host/bootstrap.ts` | 四个存储域 + 生命周期 | 句柄必须 getter 暴露（Promise 异步兑现，直传值会永远拿到 null） |",
+			'expect(extractKnowledgeCandidates("| `git status` | 复核：doc 那两行必须还是 ??", { source: "assistant" })).toHaveLength(0)',
+			'+ extractKnowledgeCandidates("jasypt 在 JDK17 下跑不了", {',
+		];
+		for (const text of toolNoise) expect(extractKnowledgeCandidates(text, { source: "tool" }), text.slice(0, 40)).toHaveLength(0);
+		// 助手对自己判据的讨论也不能进知识库（判断类只认用户原话 / 被执行的命令）
+		for (const text of [
+			"③ P1 死路误报：「落点不可用：宿主没提供 DSH_HOME」被记成死路，判据必须改成谓词加对象",
+			"一句话里没有任何行不通的语义，core/knowledge.ts 的判据吃进了它",
+		])
+			expect(extractKnowledgeCandidates(text, { source: "assistant" }), text.slice(0, 40)).toHaveLength(0);
+		// 用户贴的规范条目照收（一等公民，不因「清单形状」被挡）
+		expect(extractKnowledgeCandidates("- 列名必须统一用 PERMISSION_NAME（见 mapper.xml）", { source: "user" }).length).toBeGreaterThan(0);
+	});
+
 	it("死路判据要「谓词 + 对象」：我们自己的诊断文案不算项目死路（真机踩过）", () => {
 		// 负例：这句曾被记成死路（「不可用」太泛），污染了最值钱的一类知识
 		expect(

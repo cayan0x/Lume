@@ -97,6 +97,26 @@ function stripScaffold(line: string): string {
 const REJECT_RE =
 	/(建议你|你可以|请把|请给|你应该|需要你|那条|这条|上述|前面那|刚才那)|Current runtime context|runtime context|file policy|workspace-write|approval policy|supersedes earlier|^\s*(#|【|一、|二、|三、)/;
 
+/**
+ * **形状**拒收：代码/测试产物/表格行/清单片段——它们不是句子，也不是事实。
+ *
+ * 为什么必须有（2026-09-24 真机数据，外部审核指出「它在往 DSH 嘴里塞垃圾」）：
+ * Lume 工作区 18 条知识里 11 条是本仓开发过程的产物——vitest 用例名（`✓ test/tools.test.ts > …`）、
+ * 源码注释（`/** 可省略：…`）、CHANGELOG 句子、markdown 表格行、测试代码（`expect(…)`）。
+ * 根因：这套形状过滤当时**只对非 tool 来源生效**，而噪音恰好全走 tool 通道（读文件/跑测试的输出）。
+ * 现在一律先过形状闸，再谈判据。
+ */
+const TEST_RUN_RE = /(?:^|\s)[✓✗×]\s|\b\d+\s*ms\s*$|test\/[\w./-]+\.test\.ts\s*[>›]/;
+
+const CODE_SHAPE_RE =
+	/(expect\(|\.toBe\(|\.toHaveLength\(|=>|\/\*\*|\*\/|^\s*\/\/|\{\s*\"|^\s*\+\s*\w|^\s*const\s|^\s*let\s|\t|\u0060\u0060\u0060)/;
+
+/** 表格行（`| a | b |`）：文档片段不是事实。 */
+const TABLE_ROW_RE = /^\s*\|/;
+
+/** 清单/引用/标题片段（`- x`、`* x`、`> x`、`# x`、`3. x`、`③ x`）：脱离上下文没有意义。 */
+const LIST_FRAGMENT_RE = /^\s*(?:[-*+>#]\s|\d+[.)]\s|[①-⑳])/;
+
 /** 问句不收：以问号收尾的句子是问题，不是可复用事实。 */
 const QUESTION_RE = /[?？]\s*$/;
 
@@ -129,6 +149,8 @@ export function extractKnowledgeCandidates(
 		const sentence = stripScaffold(piece);
 		if (sentence.length < MIN_LEN || sentence.length > MAX_LEN) continue;
 		// 现场噪音三类：检索脚手架、纯路径行、代码/文档的引用碎片
+		// 形状闸：对所有来源都生效（这一条就是上一版漏掉的那半扇门）
+		if (TEST_RUN_RE.test(sentence) || CODE_SHAPE_RE.test(sentence) || TABLE_ROW_RE.test(sentence)) continue;
 		if (SCAFFOLD_RE.test(piece) && !/[。，、]|必须|一致|不要|禁止/.test(sentence)) continue;
 		if (PATH_ONLY_RE.test(sentence)) continue;
 		if (REJECT_RE.test(sentence)) continue;
@@ -141,7 +163,7 @@ export function extractKnowledgeCandidates(
 		// 来源分流：用户来源只收「规范陈述」（否则会把需求描述当成项目知识）；
 		// 助手来源不采对话性句子（「我们/你要不要」那是交互，不是项目事实）。
 		if (source === "user" && !USER_RULE_RE.test(sentence)) continue;
-		if (source === "assistant" && /(我们|咱|你我|请问|要不要)/.test(sentence)) continue;
+		if (source === "assistant" && /(我们|咱|你我|请问|要不要|这轮|这一轮|注入块|我前面|我刚才|上面我)/.test(sentence)) continue;
 		// 非工具来源额外降噪（真机精度循环结果：这两类最容易混进片段与"一次性动作"）：
 		// - 一次性动作（改成/补一句/过一遍/复核/同步到）是任务步骤，不是可复用知识；
 		// - 片段续写词（同理/另外/同时/还有）与引用符号（§、连续 →、✅、L\d+-\d+）说明它不是完整句子；
@@ -150,9 +172,14 @@ export function extractKnowledgeCandidates(
 			if (/(改成|改为|补一句|补上|加一句|过一遍|复核|同步到|替换成|写成|落库到)/.test(sentence)) continue;
 			if (/^(同理|另外|同时|还有|以及|此外|且)/.test(sentence)) continue;
 			if (/(§|\u2705|L\d{2,}-\d{2,}|→.*→)/.test(sentence)) continue;
-			if (/^\s*(\||-\s|\*\s|\d+[.)]\s)/.test(sentence)) continue;
 		}
+		// 清单片段：工具/助手来源一律不收；**用户来源放行**（用户贴的规范条目就是一等公民）
+		if (source !== "user" && LIST_FRAGMENT_RE.test(sentence)) continue;
 		if (!rule) continue;
+		// 助手来源的**死路**不收：那是对"能不能做"的判断，必须由真实执行结果或用户原话支撑。
+		// （真机里 5 条「死路」全是助手在讨论自己的判据——「一句话里没有任何行不通的语义…」。）
+		// 约定/构建/测试仍收：项目约定常常只在助手归纳时才成型，这是原设计的明文意图。
+		if (source === "assistant" && rule.kind === "deadend") continue;
 		const key = sentence.slice(0, 60);
 		if (seen.has(key)) continue;
 		seen.add(key);

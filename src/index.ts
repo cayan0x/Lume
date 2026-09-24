@@ -513,7 +513,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			.then((store) => {
 				if (!store) return;
 				stopBackfill = startSessionBackfill({
-					log: appendLumeLog,
+					log: (message: string) => {
+							// 日志同时走宿主 logger：appendLumeLog 依赖 DSH_HOME，宿主进程里可能没有 →
+							// 补蒸馏会“跑了却没有任何日志”（现场踩过：重启后零沉淀零日志）。
+							appendLumeLog(message);
+							ctx.logger?.warn?.(`lume: ${message}`);
+						},
 					addFact: (key, fact) => store.addFact(key, fact, isDuplicateFact),
 				});
 			})

@@ -21,6 +21,7 @@ import { buildContextPressureDirective, contextPressure, renderTaskMemory, isCol
 import { toolArgsOf, toolNameOf, toolTargetOf, workspaceFromSnapshotText } from "./host-events.js";
 import { resolveDsHome, startBackfill } from "./backfill.js";
 import { rememberWorkspace, sessionDirSlug, workspaceFromSlug } from "./workspace-map.js";
+import { requirementHintsOf, type RequirementHint } from "./requirements-scan.js";
 import { TASK_SIGNAL_RE } from "./thinking.js";
 import { applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger } from "./triggers.js";
 import { detectLeak } from "../core/leak-detector.js";
@@ -111,6 +112,7 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		flushPendingFacts: input.access.flushPendingFacts,
 		settleVerification: input.access.settleVerification,
 		rememberWorkspace: rememberSessionWorkspace,
+		requirementHintsOf,
 		saveSessionMemory: input.access.saveSessionMemory,
 		taskMemoriesOf: input.access.taskMemoriesOf,
 		contractOf: input.access.contractOf,
@@ -179,6 +181,7 @@ export function assembleToolDeps(input: WiringInput): ToolDeps {
 		runtime: input.runtime,
 		defaultName: input.defaultName,
 		projectKeyFor: input.access.projectKeyFor,
+		requirementHintsOf,
 		normalizeContract,
 		normalizeChange,
 		normalizeHypothesis,
@@ -300,6 +303,7 @@ export function startSessionBackfill(input: {
 			visibleText,
 			workspaceOf: (text) => workspaceFromSnapshotText(text),
 			projectKeyOf,
+			requirementHintsOf,
 			normalizeFact: (value, at, options) => normalizeProjectFact(value, at, options),
 			addFact: input.addFact,
 			looksSensitive,

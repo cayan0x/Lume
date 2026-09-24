@@ -1,3 +1,4 @@
+import type { RequirementHint } from "./requirements-scan.js";
 /**
  * 会话事件处理链路的**依赖契约**（架构整理 ①⑤：边界类型化 + 契约独立成模块）。
  *
@@ -93,6 +94,8 @@ export interface SessionCarrierDeps {
 	settleVerification: ProjectAccess["settleVerification"];
 	/** 学到 cwd 时把「会话目录名 → 工作目录」存下来（第一轮装配要靠它） */
 	rememberWorkspace: (sid: string, cwd: string) => void;
+	/** 需求线索（<cwd>/doc/<需求名>/ + 文档里的标识符）：知识作用域优先按它归属 */
+	requirementHintsOf: (cwd: string | null | undefined) => RequirementHint[];
 }
 
 /** 判据纯函数（core/host 的纯逻辑）：事件里只调用、不改状态。 */

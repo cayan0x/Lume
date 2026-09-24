@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import type { ProjectFact } from "../core/ledger.js";
 import type { KnowledgeSource } from "../core/knowledge.js";
+import type { RequirementHint } from "./requirements-scan.js";
 
 /**
  * 定位 DSH 数据目录（补蒸馏要找 `<base>/harness/sessions`）。
@@ -52,9 +53,11 @@ export interface BackfillDeps {
 	/** 项目键 = 工作目录哈希。 */
 	projectKeyOf: (cwd: unknown) => string | null;
 	/** 归一化 + 落盘（内部自带相似度去重与上限）。 */
-		normalizeFact: (input: Record<string, unknown>, at: number, options?: { taskTitle?: string | null }) => ProjectFact | null;
+		normalizeFact: (input: Record<string, unknown>, at: number, options?: { taskTitle?: string | null; requirementHints?: readonly { name: string; keywords: readonly string[] }[] }) => ProjectFact | null;
 	addFact: (projectKey: string, fact: ProjectFact) => Promise<boolean>;
 	looksSensitive: (text: string) => boolean;
+	/** 需求线索（<cwd>/doc/<需求名>/ + 文档里的标识符）：作用域按它归属 */
+	requirementHintsOf: (cwd: string | null | undefined) => RequirementHint[];
 	log: (message: string) => void;
 	/** 单个会话最多贡献多少条（防止一个巨大会话刷满桶）。 */
 	perSession?: number;
@@ -165,7 +168,7 @@ export function startBackfill(deps: BackfillDeps, options: { days?: number; maxS
 						if (added >= perSession) break;
 						if (deps.looksSensitive(candidate.text)) continue;
 						if (seen.some((prior) => prior === candidate.text)) continue;
-						const fact = deps.normalizeFact({ kind: candidate.kind, text: candidate.text }, Number(event.time) || Date.now(), { taskTitle: sessionTitle });
+						const fact = deps.normalizeFact({ kind: candidate.kind, text: candidate.text }, Number(event.time) || Date.now(), { taskTitle: sessionTitle, requirementHints: deps.requirementHintsOf(cwd) });
 						if (!fact) continue;
 						seen.push(candidate.text);
 						if (await deps.addFact(key, fact)) added++;

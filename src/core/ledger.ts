@@ -180,7 +180,7 @@ export function normalizeHypothesis(input: Record<string, unknown>, at: number):
 	};
 }
 
-export function normalizeProjectFact(input: Record<string, unknown>, at: number, options: { taskTitle?: string | null } = {}): ProjectFact | null {
+export function normalizeProjectFact(input: Record<string, unknown>, at: number, options: { taskTitle?: string | null; requirementHints?: readonly { name: string; keywords: readonly string[] }[] } = {}): ProjectFact | null {
 	const text = clip(input.text, FACT_TEXT_CAP);
 	if (!text) return null;
 	const kind = input.kind;
@@ -191,7 +191,7 @@ export function normalizeProjectFact(input: Record<string, unknown>, at: number,
 		// 内容寻址 id：同主题 → 同 id（去重/覆盖靠它，不再靠字面相似度）
 		id: memoryId(typeof kind === "string" ? kind : "build", text),
 		// 作用域：需求特有的结论不该污染别的需求（判定见 core/scope.ts，机械规则）
-		...classifyScope(text, options.taskTitle),
+		...classifyScope(text, { taskTitle: options.taskTitle, requirementHints: options.requirementHints }),
 	};
 }
 

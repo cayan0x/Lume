@@ -50,10 +50,41 @@ export interface KnowledgeScope {
  * 判定一条知识的作用域。`taskTitle` 为空（宿主没给标题）时退化为 repo——
  * 宁可把一条需求知识当通用（多给一点），也不要因为缺标题把通用知识误标成需求级（漏给）。
  */
-export function classifyScope(text: string, taskTitle: string | null | undefined): KnowledgeScope {
-	const title = String(taskTitle ?? "").trim();
-	if (!title) return { scope: "repo" };
+export interface ScopeInput {
+	taskTitle?: string | null;
+	/** 这个仓库里的需求线索（`<cwd>/doc/<需求名>/` + 该需求文档里出现的标识符）——比会话标题可靠得多。 */
+	requirementHints?: readonly { name: string; keywords: readonly string[] }[];
+}
+
+/**
+ * 判定一条知识的作用域。
+ *
+ * 现场问题（2026-09-24）：判据原先只用**会话标题**，而标题常是"接着优惠视图的任务干活"这种临时话 →
+ * 判不出归属 → 40 条知识全归 repo → 任何需求都能看到全部知识 → 模型从"退费 / 优惠视图 / 通用约定"
+ * 三条线索里读出了**三个需求**（实际只有两个；WTPF_GOODS_PROPERTY_DEF 就是优惠视图那张表）。
+ *
+ * 现在优先按**仓库里真实存在的需求名**归属（来自 `<cwd>/doc/*`）：命中多个取最长的（更具体）。
+ * `taskTitle` 只作为兜底。
+ */
+export function classifyScope(text: string, input: string | null | undefined | ScopeInput): KnowledgeScope {
+	const options: ScopeInput = typeof input === "string" || input == null ? { taskTitle: input ?? null } : input;
 	const body = String(text ?? "").toLowerCase();
+	let best: { name: string; score: number } | null = null;
+	for (const hint of options.requirementHints ?? []) {
+		const name = String(hint?.name ?? "").trim();
+		if (!name) continue;
+		// 需求名切词（中文 2~4 字窗口）+ 文档里抽到的标识符（表名/常量/字段名）
+		for (const keyword of [...taskKeywords(name), ...(hint.keywords ?? [])]) {
+			const token = String(keyword).toLowerCase();
+			if (token.length < 2 || !body.includes(token)) continue;
+			if (!best || token.length > best.score) best = { name, score: token.length };
+		}
+	}
+	if (best) return { scope: "task", task: best.name };
+	const title = String(options.taskTitle ?? "").trim();
+	// 标题可能是"首条用户消息"被截断的样子（含方括号/换行/过长）——那种**不是需求名**，
+	// 拿它当 task 标签会造出 `[系统背景与诊断事实] 你是 DSH…` 这种垃圾归属（现场见过）。
+	if (!title || title.length > 30 || /[[\]\n\r]/.test(title)) return { scope: "repo" };
 	if (TASK_POINTER_RE.test(body)) return { scope: "task", task: title };
 	const hit = taskKeywords(title).some((keyword) => keyword.length >= 2 && body.includes(keyword));
 	return hit ? { scope: "task", task: title } : { scope: "repo" };

@@ -51,6 +51,7 @@ describe("host/backfill：已经撑满的会话也能补出知识", () => {
 				normalizeFact: (value, at) => normalizeProjectFact(value, at),
 				addFact: async (key, fact) => { added.push([key, fact.text]); return true; },
 				looksSensitive,
+		requirementHintsOf: () => [],
 				log,
 			},
 			{ chunkMs: 5, maxSessions: 5 },

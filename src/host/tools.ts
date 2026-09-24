@@ -1,3 +1,4 @@
+import type { RequirementHint } from "./requirements-scan.js";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 
 /**
@@ -37,6 +38,8 @@ export interface ToolDeps {
 	projectOf: () => ProjectStore | null;
 	/** 取用器：不可用时抛可读错误（工具入口统一用它，省得每处判空）。 */
 	projectStore: () => ProjectStore;
+	/** 需求名清单（<cwd>/doc/* 目录名） */
+	requirementHintsOf: (cwd: string | null | undefined) => RequirementHint[];
 	/** 身份域句柄（异步兑现，可能不可用）。 */
 	identity: IdentityStore | null;
 	/** 归一化：模型给什么形状都先过这一层（core/ledger）。 */
@@ -265,7 +268,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_project_note requires an active session");
-					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now(), { taskTitle: deps.runtime.get(sid).sessionTitle });
+					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now(), { taskTitle: deps.runtime.get(sid).sessionTitle, requirementHints: deps.requirementHintsOf(deps.runtime.get(sid).cwd) });
 					if (!fact) throw new Error("lume_project_note requires text");
 				if (deps.looksSensitive(fact.text))
 					throw new Error("lume_project_note 拒绝含密钥/连接串/凭证的内容：项目知识是**明文跨会话**存储；请改记「存在某类配置，细节见 <文件:行>」");

@@ -98,7 +98,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						if (deps.projectMemoryOn && st.agent.autoFacts < AUTO_FACT_CAP) {
 							for (const candidate of deps.extractKnowledgeCandidates(text, { source: "user" })) {
 								if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
-								const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now(), { taskTitle: st.sessionTitle });
+								const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now(), { taskTitle: st.sessionTitle, requirementHints: deps.requirementHintsOf(st.cwd) });
 								if (!fact || deps.looksSensitive(fact.text)) continue;
 								st.pendingFacts.push(fact);
 								if (st.pendingFacts.length > 8) st.pendingFacts.shift();

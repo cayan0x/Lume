@@ -99,6 +99,7 @@ function setup() {
 		hypothesesOf: () => [],
 		factsOf: () => [],
 		projectKeyFor: () => "D:/Projects/demo",
+		requirementHintsOf: () => [],
 		needsDesignPass: () => false,
 		structureToolName: () => null,
 		probeCaps: () => ({ hasDocumentTool: false } as never),

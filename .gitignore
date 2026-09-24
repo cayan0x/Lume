@@ -19,3 +19,7 @@ LUME_THINKING_PLAN.md
 # 本地同步脚本（含本机绝对路径）
 sync-to-dsh.bat
 sync-to-dsh.mjs
+
+# 本地临时脚本与提交信息（.goose/memory 与 state.md 是有意入库的项目记忆，保留跟踪）
+.goose/tmp-*
+.goose/commit-msg.txt

@@ -156,8 +156,10 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		{ text: deps.renderRequirements(deps.requirementsOf(sid)) },
 		// 需求覆盖核对：需求原句 vs 交付物句子（只在有文档产物时出现）
 		{ text: noticeText(st, "coverage") },
-		// 项目知识：只在与项目相关的轮次出现（闲聊不该背仓库事实）。
-		{ text: isTask ? deps.renderProjectFacts(deps.factsOf(sid, context)) : null, droppable: true },
+		// 项目知识：**任何轮次都渲染**——它是事实（跨会话累积的约定/命令/死路），不是方法指引。
+		// 现场教训：曾只在非问答轮渲染，于是「新开会话先问一句『你知道 X 需求吗』」这种最自然的开场白
+		// 恰好看不到知识，用户会以为沉淀没生效。事实类回显与需求锚点同等处理（可丢块，成本可控）。
+		{ text: deps.renderProjectFacts(deps.factsOf(sid, context)), droppable: true },
 		// 方法块：按任务形态出现；文档方法论只在判定为文档任务时出现。
 		{ text: isTask && mode !== "question" ? deps.buildImpactDirective() : null, droppable: true },
 		{ text: docDirective ? deps.buildDocumentMethodDirective() : null },

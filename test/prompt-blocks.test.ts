@@ -111,3 +111,19 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 		expect(list[list.length - 1]).toContain("先定位");
 	});
 });
+
+describe("host/prompt-blocks：项目知识在任何轮次都要可见（0.8.0）", () => {
+	/**
+	 * 现场教训：曾经只在非问答轮渲染项目知识，于是"新开会话先问一句『你知道 X 需求吗』"
+	 * 这种最自然的开场白恰好看不到知识——用户会以为沉淀没生效。事实类回显应与需求锚点同等处理。
+	 */
+	it("问答轮也要能看到项目知识（它是事实，不是方法指引）", () => {
+		const facts = [{ kind: "convention" as const, text: "方法名必须与 WTPF_ESB_SERVICE_DEF.LOCAL_METHOD_NAME 一致", at: Date.now() }];
+		const runtime = st();
+		const blocks = carrierBlocks(
+			deps({ renderProjectFacts: (list: { text: string }[]) => (list.length ? `〔项目知识｜本目录，跨会话累积〕\n- ${list[0]!.text}` : null), factsOf: () => facts }),
+			{ sid: "s", context: {}, st: runtime, query: "你知道优惠视图需求吗", mode: "question" },
+		);
+		expect(texts(blocks).join("\n")).toContain("LOCAL_METHOD_NAME");
+	});
+});

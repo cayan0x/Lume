@@ -265,14 +265,14 @@ function slugOf(sid: string): string | null {
  * 用「会话目录名 → 工作目录」的持久映射提前解出来。
  */
 export function ensureSessionWorkspace(sid: string, st: SessionRuntime): void {
-	if (st.cwd) return;
 	const home = resolveDsHome();
-	if (!home) return;
-	const cwd = workspaceFromSlug(home, slugOf(sid));
-	if (cwd) {
-		st.cwd = cwd;
-		appendLumeLog(`[${sid}] 工作目录来自会话目录映射 → ${cwd}`);
-	}
+	const slug = home ? slugOf(sid) : null;
+	const cached = home && slug ? workspaceFromSlug(home, slug) : null;
+	// 无条件留痕：这行是「第一轮为什么没有项目知识」的唯一自证手段（现场查过两次都只能靠猜）。
+	appendLumeLog(`[${sid}] 装配前补 cwd：dsHome=${home ?? "null"} slug=${slug ?? "null"} 映射=${cached ?? "null"} st.cwd=${st.cwd ?? "null"}`);
+	if (st.cwd || !cached) return;
+	st.cwd = cached;
+	appendLumeLog(`[${sid}] 工作目录来自会话目录映射 → ${cached}`);
 }
 
 /** 学到 cwd 时记进映射（本轮稍后、以及下一个会话的第一轮都能用）。 */

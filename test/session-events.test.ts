@@ -1,0 +1,190 @@
+import { describe, expect, it, vi } from "vitest";
+import { createSessionEventHandler } from "../src/host/session-events.js";
+import type { SessionEventDeps } from "../src/host/session-deps.js";
+import type { SessionRuntime } from "../src/host/session-runtime.js";
+import { clearNotice, forceNotice, noticeOpen, noticeText, setNotice } from "../src/host/notices.js";
+import { toolArgsOf, toolNameOf, toolTargetOf } from "../src/host/host-events.js";
+import { applyToolSignal, applyVerifyOutcome } from "../src/host/triggers.js";
+import { classifyTool, summarizeToolChange, toolArtifactText } from "../src/core/signals.js";
+import { messageText, visibleText } from "../src/core/text.js";
+import { DESIGN_SIGNAL_RE } from "../src/host/protocol.js";
+import { TASK_SIGNAL_RE } from "../src/host/thinking.js";
+import { createLlmRouteCell } from "../src/host/llm-route.js";
+
+/**
+ * 会话事件处理器（host/session-events.ts）的直接测试。
+ *
+ * 它是最"接线密集"的一块，以前的覆盖方式只有 apply-carriers 的端到端路径。这里直接喂事件，
+ * 锁三类**只有事件流才会发生**的行为：
+ *  ① request/context 更新的是**共享路由单元**（曾经以值拷贝进 deps，更新丢失导致提取/蒸馏静默失效）；
+ *  ② 用户消息落需求锚点（逐字，跨会话回显）；
+ *  ③ tool/call 的证据记账与自动改动台账（载具必须插件自己落账，模型几乎不主动调 lume_change）。
+ */
+
+const EDIT_CALL = { turn: 1, step: 1, callId: "c1", name: "edit", arguments: JSON.stringify({ file_path: "src/a.ts", old_string: "x", new_string: "const a = 1;" }) };
+const READ_CALL = { turn: 1, step: 2, callId: "c2", name: "read", arguments: JSON.stringify({ file_path: "src/b.ts", offset: 10, limit: 20 }) };
+
+function setup() {
+	const projectTasks: Array<[string, string]> = [];
+	const st = {
+		notices: {},
+		turnIndex: 0,
+		userText: "",
+		assistantText: "",
+		lastInjected: "当值",
+		intent: null,
+		interactionMode: "question",
+		taskPhase: "answer",
+		toolCalls: 0,
+		toolFailures: 0,
+		toolUnknown: 0,
+		toolKind: "other" as const,
+		triggerCounters: { steps: 0, inspectStreak: 0, mutateStreak: 0, verifyFailStreak: 0, mutations: 0, codeInspects: 0 } as never,
+		agent: { evidence: new Map(), inspectedTargets: new Set<string>(), seenSymbols: new Set<string>(), artifactText: "", lastToolName: null, lastToolArgs: null, lastToolTarget: null } as never,
+		recentUserQueries: [] as string[],
+		recentTurns: [] as string[],
+		requirementFresh: false,
+		pendingFacts: [] as unknown[],
+		driftWordsReported: [] as string[],
+		triggerFiredAt: {},
+		hypothesesTouched: false,
+		compaction: null,
+		lastDriftTurn: null,
+		knowledgePrompted: false,
+		failureStreak: 0,
+		lastFailureQuery: null,
+		prevSignatures: [],
+		leakEscalated: false,
+		switchTurn: null,
+		switchGreetingPending: false,
+		cwd: "",
+		projectKey: undefined,
+	} as unknown as SessionRuntime;
+	const route = createLlmRouteCell();
+	const deps = {
+		ctx: { logger: { warn: vi.fn() } },
+		runtime: { get: () => st } as never,
+		llmRoute: route,
+		appendLumeLog: vi.fn(),
+		forceNotice,
+		setNotice,
+		noticeOpen,
+		noticeText,
+		clearNotice,
+		projectMemoryOn: true,
+		behaviorTriggersOn: true,
+		reflectionEnabled: false,
+		boundaryTurns: 2,
+		triggerThresholds: { inspectStreak: 6, changeStreak: 4, deadPathFails: 3, knowledgeSteps: 8, designAfterInspects: 3 },
+		defaultName: "当值",
+		isTaskQuery: () => false,
+		scheduleExtraction: vi.fn(),
+		callLlm: vi.fn(async () => null),
+		access: {},
+		projectTask: (sid: string, label: string) => { projectTasks.push([sid, label]); },
+		flushPendingFacts: vi.fn(),
+		settleVerification: vi.fn(),
+		contractOf: () => null,
+		changesOf: () => [],
+		designOf: () => [],
+		requirementsOf: () => [],
+		hypothesesOf: () => [],
+		factsOf: () => [],
+		projectKeyFor: () => "D:/Projects/demo",
+		needsDesignPass: () => false,
+		structureToolName: () => null,
+		probeCaps: () => ({ hasDocumentTool: false } as never),
+		reflectionFeedback: () => null,
+		renderContract: () => null,
+		unsupportedCitations: () => [],
+		unsupportedClaims: () => [],
+		recordSymbols: vi.fn(),
+		formatWindows: () => "",
+		auditOpenQuestions: () => ({ count: 0, unsupported: [] }),
+		unrequestedChangeWords: () => [],
+		visibleText,
+		messageText,
+		classifyTool,
+		summarizeToolChange,
+		toolArtifactText,
+		toolNameOf,
+		toolArgsOf,
+		toolTargetOf,
+		DOC_ARTIFACT_RE: /\.(md|markdown|txt)$/i,
+		DESIGN_SIGNAL_RE,
+		TASK_SIGNAL_RE, // 用真规则：锚点门槛就靠它（stub 写窄了会假绿）
+		advancePhase: (_p: string, s: string) => s,
+		cooldownOk: () => true,
+		evaluateToolTrigger: () => null,
+		evaluateTurnTrigger: () => null,
+		applyToolSignal,
+		applyVerifyOutcome,
+		recordReadArgs: vi.fn(),
+		readResultSignals: vi.fn(),
+		recordResultText: vi.fn(),
+		buildAlignmentCorrection: () => null,
+		buildDriftDirective: () => null,
+		buildCitationDirective: () => null,
+		buildClaimDirective: () => null,
+		buildQuestionAuditDirective: () => null,
+		buildUnverifiedDeliveryNotice: () => null,
+		buildCarrierGapNotice: () => null,
+		buildReflectionPrompt: () => "",
+		parseReflectionScore: () => null,
+		resolveAuxRoute: () => null,
+		detectLeak: () => ({ leaked: false, hits: [] }),
+		isUserAuthored: () => true,
+		isCompactionCheckpoint: () => false,
+		projectOf: () => null,
+	} as unknown as SessionEventDeps;
+	const handler = createSessionEventHandler(deps);
+	return { handler, st, deps, route, projectTasks };
+}
+
+describe("host/session-events：事件流行为", () => {
+	it("request/context 更新**共享**路由单元（曾经以值拷贝进 deps，更新丢失 → 提取/蒸馏静默失效）", () => {
+		const { handler, route } = setup();
+		handler({}, { type: "request/context", data: { provider: "deepseek", model: "deepseek-v4-flash" } });
+		expect(route.current).toEqual({ provider: "deepseek", model: "deepseek-v4-flash" });
+	});
+
+	it("用户消息落需求锚点（逐字，跨会话回显）", () => {
+		const { handler, projectTasks } = setup();
+		handler({ id: "sid-1" }, { type: "user/message", data: { content: [{ type: "text", text: "把导入改成只更新已填列" }] } });
+		expect(projectTasks.some(([, label]) => label.includes("需求锚点"))).toBe(true);
+	});
+
+	it("tool/call 自动落改动台账（模型几乎不主动调 lume_change，载具必须插件自己记）", () => {
+		const { handler, projectTasks } = setup();
+		handler({ id: "sid-1" }, { type: "tool/call", data: EDIT_CALL });
+		expect(projectTasks.some(([, label]) => label.includes("自动改动"))).toBe(true);
+	});
+
+	it("tool/call 记录证据：读工具的窗口与被摸过的目标（引用核对的输入）", () => {
+		const { handler, st, deps } = setup();
+		handler({ id: "sid-1" }, { type: "tool/call", data: READ_CALL });
+		expect(deps.recordReadArgs).toHaveBeenCalled();
+		expect([...(st.agent.inspectedTargets as Set<string>)]).toContain("src/b.ts");
+		expect(st.agent.lastToolTarget).toBe("src/b.ts");
+		expect(st.agent.lastToolName).toBe("read");
+	});
+
+	it("tool/call 累计调用与类别信号（连击判定的事件侧输入）", () => {
+		const { handler, st } = setup();
+		handler({ id: "sid-1" }, { type: "tool/call", data: EDIT_CALL });
+		expect(st.toolCalls).toBe(1);
+		expect(st.toolKind).toBe("mutate");
+		expect((st.triggerCounters as { mutateStreak: number }).mutateStreak).toBeGreaterThan(0);
+	});
+
+	it("turn/end 交给轮边界处理（事件分发与轮收尾是两件事）", () => {
+		const { handler, st } = setup();
+		handler({ id: "sid-1" }, { type: "turn/end", data: { turn: 1 } });
+		expect(st.turnIndex).toBe(1);
+	});
+
+	it("未知事件类型不抛错（宿主加新事件时插件不能被带崩）", () => {
+		const { handler } = setup();
+		expect(() => handler({ id: "sid-1" }, { type: "some/future/event", data: {} })).not.toThrow();
+	});
+});

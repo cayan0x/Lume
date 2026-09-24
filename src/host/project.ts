@@ -336,7 +336,10 @@ export class ProjectStore {
 				return true;
 			}
 			// 唯一例外：作用域修正（老数据没有 scope，补扫时能把它纠正成"本需求"）——这让老库自愈。
-			if (fact.scope && current.scope !== fact.scope) {
+			// ⚠️ 只在**新判定是 task**（也就是这次真的拿到了需求线索）时才改：否则一旦某轮没有线索
+			// （比如没预热到 cwd、`doc/` 下没有需求目录），就会把已经归好的 task 标签**改回 repo**——
+			// 我在 2026-09-24 的存量重归属里真踩过（22 条标签被冲掉，从备份才救回来）。
+			if (fact.scope === "task" && current.scope !== "task") {
 				facts[same] = { ...current, scope: fact.scope, task: fact.task };
 				await this.#factTable.put(projectKey, trimFacts(facts, PROJECT_FACT_CAP));
 				return true;

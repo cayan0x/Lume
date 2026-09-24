@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { classifyScope, taskKeywords, visibleForTask } from "../src/core/scope.js";
 import { renderProjectFacts } from "../src/core/ledger.js";
 
@@ -90,5 +91,12 @@ describe("core/scope：垃圾 task 标签不许入库（现场）", () => {
 	});
 	it("正常需求名（短、无方括号）仍可用作兜底归属", () => {
 		expect(classifyScope("优惠视图的列名要用 PERMISSION_NAME", { taskTitle: "B2I优惠视图新增字段" }).scope).toBe("task");
+	});
+});
+
+describe("host/project：作用域修正只许升不许降（现场：22 条标签被冲掉）", () => {
+	it("没有需求线索时，不得把已归好的 task 标签改回 repo（addFact 只在升到 task 时纠正）", () => {
+		const src = readFileSync("src/host/project.ts", "utf8");
+		expect(src).toContain('fact.scope === "task" && current.scope !== "task"');
 	});
 });

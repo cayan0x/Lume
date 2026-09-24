@@ -18,7 +18,8 @@ describe("core/knowledge：值得跨会话保留的事实", () => {
 	});
 
 	it("死路（明确说行不通）→ 收，且是最值钱的一类", () => {
-		const out = extractKnowledgeCandidates("Windows 上 drwxr 权限位不可用，只能看 ACL（试过 icacls 也没用）");
+		// 「不可用」已从判据里删掉（豁免名单式写法站不住），正例改用强谓词
+		const out = extractKnowledgeCandidates("Windows 上 drwxr 权限位行不通，只能看 ACL（试过 icacls 也没用）");
 		expect(out.map((c) => c.kind)).toContain("deadend");
 	});
 
@@ -125,6 +126,10 @@ describe("core/knowledge：三个来源（tool / assistant / user）的判据差
 				source: "assistant",
 			}).some((candidate) => candidate.kind === "deadend"),
 		).toBe(false);
+		// 二审的负例：「不可用」单独立案时，下面这些照收不误（换个词同一个 bug 再来）
+		for (const text of ["身份域不可用", "载具不可用（尚未接线）", "作用域不可用，只能按 repo 级"]) {
+			expect(extractKnowledgeCandidates(text, { source: "assistant" }).some((candidate) => candidate.kind === "deadend")).toBe(false);
+		}
 		// 正例：明确的「跑不了」+ 具体对象 → 收
 		expect(
 			extractKnowledgeCandidates("jasypt 在 JDK17 下跑不了，报 UnsupportedClassVersionError（见 pom.xml）", {

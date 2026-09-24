@@ -137,6 +137,10 @@ describe("interaction protocol：轨迹路由与可归因", () => {
 			matched: "recheck",
 		});
 		expect(classifyInteractionDetailed("重新核对一下改动")).toMatchObject({ mode: "diagnosis" });
+		// 覆盖要够宽（二审指出：原版只枚举六个动词，这句就漏了，靠默认落回问答蒙对）
+		expect(classifyInteractionDetailed("再次评价一下刚才的改动")).toMatchObject({ mode: "diagnosis" });
+		expect(classifyInteractionDetailed("评估一下这次实现")).toMatchObject({ mode: "diagnosis" });
+		expect(classifyInteractionDetailed("帮我看一遍刚才的修改")).toMatchObject({ mode: "diagnosis" });
 	});
 
 	it("在问「怎么做」时不会因为句子里有动词就判成命令", () => {

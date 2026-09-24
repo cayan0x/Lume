@@ -128,6 +128,18 @@ describe("core/metrics：触发器命中后行为是否真的变了", () => {
 		expect(summary.triggers.find((t) => t.id === "contract-missing")).toMatchObject({ fired: 1, improved: 1 });
 	});
 
+	it("同轮之后的快照也算改善（快照已按步记录，再要求 turn 严格大于命中轮就白记了）", () => {
+		const records: MetricRecord[] = [
+			state(1, 1, { hasContract: false }), // 基线（没有基线就判不了改善）
+			fire("contract-missing", 2, 2),
+			state(2, 3, { hasContract: true }), // 同一轮、命中之后
+		];
+		expect(summarizeMetrics(records).triggers.find((t) => t.id === "contract-missing")).toMatchObject({
+			fired: 1,
+			improved: 1,
+		});
+	});
+
 	it("台账 verified 增加**不算**改善（它由 settleVerification 自动推进，拿来当判据就是自我表扬）", () => {
 		const records: MetricRecord[] = [
 			state(1, 2, { counters: counters({ verifyFailStreak: 2 }) }),

@@ -289,7 +289,9 @@ function improvedAfter(records: readonly MetricRecord[], fire: TriggerMetric, wi
 	if (!base) return false;
 	for (const record of records) {
 		if (record.kind !== "state" || record.sid !== fire.sid) continue;
-		if (record.turn <= fire.turn || record.turn > fire.turn + window) continue;
+		// 允许**同轮**（但必须在命中之后）：快照已经按步记录了，如果再要求 turn 严格大于命中轮，
+		// 同一轮里新增的快照对效能判定就完全不可见——只有 verify-run 那条路吃到了新分辨率（审核指出）。
+		if (record.turn < fire.turn || record.turn > fire.turn + window) continue;
 		if (record.at < fire.at) continue;
 		switch (fire.expect) {
 			case "contract":

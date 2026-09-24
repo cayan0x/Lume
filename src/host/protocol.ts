@@ -69,9 +69,14 @@ const CHANGE_OBJECT_RE = /优化|重构|重写|整理|清理|拆分|合并|迁�
 /** 能力/可行性询问：「看看这块能不能优化」→ 先给判断与办法（诊断），不是让人直接动手。 */
 const SOFT_CHANGE_RE = /能不能|能否|可不可以|是否可以|有没有办法|有没有可能|可否/;
 
-/** 复核既有改动：再/重新 + 检查/复核/验证 + 代码/改动/实现。 */
+/**
+ * 复核既有改动：再/重新/再次 + 「看/查/评价」一族动词 + 代码/改动/实现/方案。
+ *
+ * 覆盖要够宽（二审指出：原来只枚举六个动词，「再次评价一下刚才的改动」就漏了，靠默认落回问答蒙对）：
+ * 检查/核对/检验/验证/确认/评价/评估/评审/审阅/审一遍/过一遍/看一遍/看看/看一下 都算；前缀可省。
+ */
 const RECHECK_RE =
-	/(?:再|重新|从头|复核|复检|回归)[^。；\n]{0,12}(?:检查|看一下|看一遍|过一遍|核对|验证|确认)[^。；\n]{0,12}(?:代码|改动|修改|实现|产物|结果|逻辑)/;
+	/(?:(?:再|重新|从头|再次|复核|复检|复审|复查|回顾)[^。；\n]{0,8})?(?:检查|核对|检验|验证|确认|评价|评估|评审|审阅|审一遍|审一下|过一遍|看一遍|看看|看一下)[^。；\n]{0,12}(?:代码|改动|修改|实现|产物|结果|逻辑|方案|思路)/;
 
 /**
  * 路由纠正语用：用户在说「你刚才理解错了这一轮要什么」。
@@ -114,6 +119,9 @@ export function classifyInteractionDetailed(text: string | null | undefined): Ro
 	const query = String(text ?? "").trim();
 	if (!query) return { mode: "question", matched: "empty", source: "text" };
 	const howto = HOWTO_RE.test(query);
+	// 复核既有改动要**先于**执行判定：这类句子的宾语本身就是「改动/修改/实现」，
+	// 若让动词表先跑，「帮我看一遍刚才的修改」会被抢成 execute（二审的同一个洞）。
+	if (!howto && RECHECK_RE.test(query)) return { mode: "diagnosis", matched: "recheck", source: "text" };
 	if (!howto && EXECUTE_RE.test(query)) return { mode: "execute", matched: "execute-request", source: "text" };
 	if (!howto && EXECUTE_EXTRA_RE.test(query)) return { mode: "execute", matched: "execute-verb", source: "text" };
 	// 可行性询问放在执行之后：显式命令（把 X 改一下）仍然优先判执行，
@@ -122,7 +130,6 @@ export function classifyInteractionDetailed(text: string | null | undefined): Ro
 		return { mode: "diagnosis", matched: "capability-ask", source: "text" };
 	// 复核既有改动（真机实测：「做了修改，你再重新检查一下代码」被判成 research）：
 	// 「再/重新 + 检查/复核 + 代码/改动」要的是判断与结论，不是检索资料 → 诊断。
-	if (!howto && RECHECK_RE.test(query)) return { mode: "diagnosis", matched: "recheck", source: "text" };
 	if (DIAGNOSIS_RE.test(query)) return { mode: "diagnosis", matched: "diagnosis", source: "text" };
 	if (DISCUSSION_RE.test(query)) return { mode: "discussion", matched: "discussion", source: "text" };
 	if (RESEARCH_RE.test(query)) return { mode: "research", matched: "research", source: "text" };

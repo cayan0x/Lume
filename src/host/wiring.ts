@@ -323,6 +323,10 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
 			focusDirectiveFor(block.st, block.mode, block.query, {
 				hasContract: input.access.contractOf(block.sid) !== null,
 				unverifiedChanges: focusUnverified(input.access.changesOf(block.sid)),
+				// 纠正闭环的**注入侧**：只传契约/未验证条数不够——记录侧传了 correctionsByMode 而这里不传，
+				// 闭环就从来没接上（度量记 focus=[align,…]、注入里却没有 align，「选择政策只有一处」当场作废）。
+				// 两侧同源，见 host/clauses.ts 的 applyCorrectionClosedLoop。
+				correctionModes: input.metrics.health(block.sid).correctionsByMode,
 			}),
 		pickRequirementCorpus,
 		splitRequirementItems,

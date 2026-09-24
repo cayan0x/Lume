@@ -121,7 +121,9 @@ export function classifyInteractionDetailed(text: string | null | undefined): Ro
 	const howto = HOWTO_RE.test(query);
 	// 复核既有改动要**先于**执行判定：这类句子的宾语本身就是「改动/修改/实现」，
 	// 若让动词表先跑，「帮我看一遍刚才的修改」会被抢成 execute（二审的同一个洞）。
-	if (!howto && RECHECK_RE.test(query)) return { mode: "diagnosis", matched: "recheck", source: "text" };
+	// 但**明确命令优先**：宾语里有动作（改成/删掉/替换/重写…）就还是执行——
+	// 「检查一下这段代码，有问题就改成对的」要的是动手，不是诊断（二审指出的代价）。
+	if (!howto && !EXECUTE_EXTRA_RE.test(query) && RECHECK_RE.test(query)) return { mode: "diagnosis", matched: "recheck", source: "text" };
 	if (!howto && EXECUTE_RE.test(query)) return { mode: "execute", matched: "execute-request", source: "text" };
 	if (!howto && EXECUTE_EXTRA_RE.test(query)) return { mode: "execute", matched: "execute-verb", source: "text" };
 	// 可行性询问放在执行之后：显式命令（把 X 改一下）仍然优先判执行，

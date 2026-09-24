@@ -102,6 +102,8 @@ export interface FocusInput {
 	mutations?: number;
 	/** 各模式被用户纠正过的次数（度量采到的，用来闭环改选择：错得多的模式把「对齐」顶上来）。 */
 	correctionModes?: Record<string, number>;
+	/** 各模式最后一次被纠正的轮号（闭环的冷却判据）。 */
+	lastCorrectionTurnByMode?: Record<string, number>;
 }
 
 /**
@@ -129,12 +131,21 @@ export function focusClauseIds(input: FocusInput): string[] {
  *
  * 规则保守：**本模式**被纠正 ≥2 次才动，只把「对齐纠偏」插到最前面，条数上限不变。
  * 注意它只改变加权顺序，不改模式判定——判错模式该修判定，不该靠加一条提醒掩盖。
+ *
+ * **有冷却**（二审指出：上一版是单调、永久、无冷却的，别的机制都有 NOTICE_CAPS 兜着、这条没有）：
+ * 只认「近期」纠正——最后一次纠正距今超过 CORRECTION_LOOP_TURNS 轮，就不再加权。
+ * 否则某个模式被纠两次之后，这个会话此后每一轮都挂着 align，把提醒变成背景噪音。
  */
 function applyCorrectionClosedLoop(input: FocusInput, ids: string[]): string[] {
 	const corrections = input.correctionModes?.[input.mode] ?? 0;
 	if (corrections < 2 || input.correction || ids[0] === "align") return ids;
+	const last = input.lastCorrectionTurnByMode?.[input.mode];
+	if (last === undefined || input.turnIndex - last > CORRECTION_LOOP_TURNS) return ids;
 	return ["align", ...ids].slice(0, FOCUS_CLAUSE_LIMIT);
 }
+
+/** 闭环的记忆窗口（轮）：超过就不再加权，避免「沾上就摘不掉」。 */
+export const CORRECTION_LOOP_TURNS = 6;
 
 function baseClauseIds(input: FocusInput): string[] {
 	if (input.correction) return ["align", "question-discipline", "independent"];
@@ -187,6 +198,7 @@ export interface FocusState {
 	unverifiedChanges: number;
 	/** 各模式被纠正次数（来自度量）；装配与度量两侧都传同一份。 */
 	correctionModes?: Record<string, number>;
+	lastCorrectionTurnByMode?: Record<string, number>;
 }
 
 /**
@@ -218,6 +230,7 @@ export function focusInputFor(st: SessionRuntime, mode: SessionRuntime["interact
 		phase: st.taskPhase,
 		turnIndex: st.turnIndex,
 		correctionModes: state.correctionModes,
+		lastCorrectionTurnByMode: state.lastCorrectionTurnByMode,
 		correction: ROUTE_CORRECTION_RE.test(String(query ?? "")),
 		compactionRecent: st.compaction !== null && st.turnIndex - st.compaction.turnIndex <= 1,
 		unverifiedChanges: state.unverifiedChanges,

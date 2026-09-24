@@ -327,6 +327,7 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
 				// 闭环就从来没接上（度量记 focus=[align,…]、注入里却没有 align，「选择政策只有一处」当场作废）。
 				// 两侧同源，见 host/clauses.ts 的 applyCorrectionClosedLoop。
 				correctionModes: input.metrics.health(block.sid).correctionsByMode,
+				lastCorrectionTurnByMode: input.metrics.health(block.sid).lastCorrectionTurnByMode,
 			}),
 		pickRequirementCorpus,
 		splitRequirementItems,

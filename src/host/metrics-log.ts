@@ -45,6 +45,8 @@ export interface MetricsHealth {
 	overreach: number;
 	noAction: number;
 	correctionsByMode: Record<string, number>;
+	/** 各模式**最后一次**被纠正的轮号（闭环要冷却：不能沾上就永久生效）。 */
+	lastCorrectionTurnByMode: Record<string, number>;
 }
 
 export interface MetricsLog {
@@ -122,7 +124,14 @@ export function createMetricsLog(opts: { enabled?: boolean; ring?: number; home?
 
 	const health = (sid: string): MetricsHealth => {
 		if (healthCache && healthCache.sid === sid && healthCache.count === ring.length) return healthCache.value;
-		const value: MetricsHealth = { routes: 0, corrections: 0, overreach: 0, noAction: 0, correctionsByMode: {} };
+		const value: MetricsHealth = {
+			routes: 0,
+			corrections: 0,
+			overreach: 0,
+			noAction: 0,
+			correctionsByMode: {},
+			lastCorrectionTurnByMode: {},
+		};
 		for (const entry of ring) {
 			if (entry.sid !== sid) continue;
 			if (entry.kind === "route") value.routes++;
@@ -130,6 +139,7 @@ export function createMetricsLog(opts: { enabled?: boolean; ring?: number; home?
 				if (entry.event === "user-correction") {
 					value.corrections++;
 					value.correctionsByMode[entry.mode] = (value.correctionsByMode[entry.mode] ?? 0) + 1;
+					value.lastCorrectionTurnByMode[entry.mode] = Math.max(value.lastCorrectionTurnByMode[entry.mode] ?? -1, entry.turn);
 				} else if (entry.event === "overreach") value.overreach++;
 				else if (entry.event === "no-action") value.noAction++;
 			}

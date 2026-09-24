@@ -686,8 +686,9 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		const state = {
 			hasContract: contractOf(sid) !== null,
 			unverifiedChanges: unverified,
-			// 纠正闭环：本模式被纠正过的次数（与装配侧同一份数据，见 host/clauses.ts）
+			// 纠正闭环：本模式被纠正过的次数与最后一次的轮号（与装配侧同一份数据，见 host/clauses.ts）
 			correctionModes: health.correctionsByMode,
+			lastCorrectionTurnByMode: health.lastCorrectionTurnByMode,
 		};
 		metricsLog.record({
 			kind: "blocks",

@@ -4,6 +4,7 @@ import {
 	PROTOCOL_CLAUSES,
 	buildFocusClauseDirective,
 	focusClauseIds,
+	CORRECTION_LOOP_TURNS,
 	focusIdsFor,
 	focusInputFor,
 	parseProtocolClauses,
@@ -96,9 +97,30 @@ describe("host/clauses：本轮重点（每轮最多三条）", () => {
 
 	it("纠正闭环：本模式被纠正 ≥2 次 → 把「对齐纠偏」顶上来（度量采到的纠正落点必须有人消费）", () => {
 		expect(focusClauseIds({ mode: "research", phase: "execute", turnIndex: 1 })[0]).toBe("evidence-source");
-		const looped = focusClauseIds({ mode: "research", phase: "execute", turnIndex: 1, correctionModes: { research: 2 } });
+		const looped = focusClauseIds({
+			mode: "research",
+			phase: "execute",
+			turnIndex: 1,
+			correctionModes: { research: 2 },
+			lastCorrectionTurnByMode: { research: 1 },
+		});
 		expect(looped[0]).toBe("align");
 		expect(looped).toHaveLength(FOCUS_CLAUSE_LIMIT);
+		// 没有「最后一次纠正轮号」时保守不动（拿不到冷却信息就不加权）
+		expect(focusClauseIds({ mode: "research", phase: "execute", turnIndex: 1, correctionModes: { research: 9 } })[0]).toBe(
+			"evidence-source",
+		);
+		// 冷却（二审指出：上一版单调、永久、无冷却 → 沾上就摘不掉）
+		const fresh = {
+			mode: "research" as const,
+			phase: "execute" as const,
+			turnIndex: 10,
+			correctionModes: { research: 3 },
+			lastCorrectionTurnByMode: { research: 9 },
+		};
+		expect(focusClauseIds(fresh)[0]).toBe("align");
+		const stale = { ...fresh, turnIndex: 10 + CORRECTION_LOOP_TURNS + 1 };
+		expect(focusClauseIds(stale)[0]).toBe("evidence-source");
 		// 只影响被纠正的那个模式，别的模式不受牵连
 		expect(focusClauseIds({ mode: "execute", phase: "execute", turnIndex: 1, correctionModes: { research: 5 } })[0]).not.toBe("align");
 	});

@@ -141,6 +141,8 @@ describe("interaction protocol：轨迹路由与可归因", () => {
 		expect(classifyInteractionDetailed("再次评价一下刚才的改动")).toMatchObject({ mode: "diagnosis" });
 		expect(classifyInteractionDetailed("评估一下这次实现")).toMatchObject({ mode: "diagnosis" });
 		expect(classifyInteractionDetailed("帮我看一遍刚才的修改")).toMatchObject({ mode: "diagnosis" });
+		// 但宾语里有**动作**时命令优先：这句要的是动手，不是诊断（二审指出的代价）
+		expect(classifyInteractionDetailed("检查一下这段代码，有问题就改成对的")).toMatchObject({ mode: "execute" });
 	});
 
 	it("在问「怎么做」时不会因为句子里有动词就判成命令", () => {

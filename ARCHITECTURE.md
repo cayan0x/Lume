@@ -112,7 +112,7 @@ client 不得 import host 的运行时值**（类型导入可以，因为它不�
 | 层            | 工具                                                                                | 拦什么                                                                                                                                                   |
 | ------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 编辑器/提交前 | `npm run lint`（`scripts/lint-arch.mjs`，零依赖 9 条规则，另加 `prettier --check`） | 分层、ESM 扩展名、console、静默失败、抑制必须带理由、**类型边界（裸 any）**、`as any`、**依赖必须真的被使用**、**文档引用必须存在**                      |
-| 测试          | `npm test`（616 条；条数以 `npm test` 当场输出为准）                                | 判据行为 + client 纯逻辑；**宿主形状用 `test/fixtures/host-events/*.json` 的真机样本**；另有 `scripts/mechanism-coverage.mjs` 要求 45 个机制各有行为测试 |
+| 测试          | `npm test`（619 条；条数以 `npm test` 当场输出为准）                                | 判据行为 + client 纯逻辑；**宿主形状用 `test/fixtures/host-events/*.json` 的真机样本**；另有 `scripts/mechanism-coverage.mjs` 要求 45 个机制各有行为测试 |
 | 发布          | `release:check`（38 项对**产物**断言）                                              | 每条断言绑一个历史事故；`protocol-text-fingerprint` 提示这次动没动前缀                                                                                   |
 
 **已知的"测不到"区**：宿主 RPC 注册、注入作用域、apply 兜底——**必须真机验证**（完全重启 DSH，看 `%APPDATA%\logs\harness.log`）。

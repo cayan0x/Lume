@@ -163,6 +163,7 @@ describe("host/metrics-log：落盘、缓冲与自证", () => {
 		log.record({ kind: "outcome", at: 2, sid: "s1", turn: 2, event: "user-correction", mode: "execute", detail: "不是让你改" });
 		// 同轮同类的结果信号只留第一条（越权改动一步里能连触发十几次，否则纠正率被灌水）
 		log.record({ kind: "outcome", at: 3, sid: "s1", turn: 2, event: "user-correction", mode: "execute", detail: "重复" });
+		log.flush(); // 攒批写盘：不刷就只有内存（每轮末由状态快照触发自动刷）
 		const lines = readFileSync(log.path!, "utf8").trim().split("\n");
 		expect(lines).toHaveLength(2);
 		expect(lines[1]).toContain("user-correction");
@@ -204,6 +205,40 @@ describe("host/metrics-log：落盘、缓冲与自证", () => {
 		expect(log.records()).toHaveLength(0);
 		expect(log.summaryText()).toContain("已关闭");
 		expect(() => readFileSync(join(dir, LUME_METRICS_FILE), "utf8")).toThrow();
+	});
+
+	it("状态快照充当每轮的落盘点：写到它时自动刷盘（热路径上不做逐条同步写）", () => {
+		const dir = home();
+		const log = createMetricsLog({ home: dir });
+		log.record({
+			kind: "blocks",
+			at: 1,
+			sid: "s1",
+			turn: 1,
+			mode: "execute",
+			kept: 8,
+			dropped: 0,
+			chars: 900,
+			budget: 4200,
+			focus: ["verify"],
+		});
+		// 还没到状态快照：只在内存里，磁盘上不该有内容
+		expect(() => readFileSync(join(dir, LUME_METRICS_FILE), "utf8")).toThrow();
+		log.record({
+			kind: "state",
+			at: 2,
+			sid: "s1",
+			turn: 1,
+			counters: counters(),
+			hasContract: false,
+			designs: 0,
+			changes: 0,
+			unverified: 0,
+			verified: 0,
+			hypotheses: 0,
+		});
+		const lines = readFileSync(join(dir, LUME_METRICS_FILE), "utf8").trim().split("\n");
+		expect(lines).toHaveLength(2); // 块装配 + 状态快照一起落下
 	});
 
 	it("重启后能回读磁盘尾部（跨会话趋势：纠正率是升还是降）", () => {

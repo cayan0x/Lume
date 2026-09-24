@@ -18,12 +18,22 @@ import process from "node:process";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DRY = process.argv.includes("--dry-run");
 const ROOTS = ["D:\\DSH-Data\\dsh-desktop\\harness", path.join(process.env.APPDATA ?? "", "dsh-desktop", "harness")];
+/**
+ * 装完之后自检：这几条必须能在**被读的两个文件**（lib/index.js、lib/host/protocol.js）里找到。
+ *
+ * 纪律（2026-09-24 踩过）：标记只能取这两个文件里真实存在的字符串——
+ * 旧版本这里写了 `自动改动台账`（实际在 methods.js）与 `契约数量必填`（早已改词），
+ * 于是每次安装都打印 false，看着像装坏了。宁可换成"本批新代码的符号"，
+ * 也别留一条永远为假的审计项。
+ */
 const MARKERS = [
-	["自动改动台账", "自动）由"],
-	["契约数量必填", "required: true"],
-	["设计三问", "设计三问"],
-	["lume_design 工具", '"lume_design"'],
-	["设计决策回显", "renderDesign"],
+	["轨迹路由", "classifyWithTrajectory"],
+	["判据可归因", "classifyInteractionDetailed"],
+	["条款预算", "focusIdsFor"],
+	["装配记账", "composeBlocksDetailed"],
+	["运行时度量", "metricsLog"],
+	["提示段注册", "installPromptSections"],
+	["RPC 通道", "RPC 通道 /lume"],
 ];
 const MANIFEST = ["cordis.patch.yml", "LICENSE", "README.md"];
 

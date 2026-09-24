@@ -29,6 +29,14 @@ export const LUME_METRICS_FILE = "lume-metrics.jsonl";
 export const METRIC_RING = 800;
 /** 回读上限（字节）：只读文件尾部，避免长年累积把启动拖慢。 */
 const READ_TAIL_BYTES = 512 * 1024;
+/**
+ * 攒够多少条就强制刷盘。
+ *
+ * 为什么必须攒批（2026-09-24 实测）：块装配记录是**每次构建提示词**都会写的，
+ * 一步里可能构建好几次；原来是每条一次同步 appendFileSync，热路径上非常贵——
+ * 本仓最重的 apply-carriers 用例因此从 3.0s 涨到超过 5s 超时。改成缓冲 + 批量写。
+ */
+const FLUSH_AT = 24;
 
 /** 会话级的健康计数（每步都会读，所以按记录数记忆化）。 */
 export interface MetricsHealth {
@@ -46,6 +54,8 @@ export interface MetricsLog {
 	/** 人读摘要（工具入口用它）；会如实带上落点与条数，避免「看着有数据其实没落盘」。 */
 	summaryText(scope?: string): string;
 	health(sid: string): MetricsHealth;
+	/** 把缓冲里的记录真正落盘（每轮末自动刷一次；测试与关闭前要手动调）。 */
+	flush(): void;
 	/** 启动时回读磁盘尾部；返回读回的条数（0 = 没有历史或没有落点）。 */
 	loadFromDisk(): number;
 	/** 落盘路径（没有可用落点时为 null——工具要如实说明，不能假装有）。 */
@@ -61,6 +71,20 @@ export function createMetricsLog(opts: { enabled?: boolean; ring?: number; home?
 	const home = opts.home ?? lumeLogHome();
 	const path = home ? join(home, LUME_METRICS_FILE) : null;
 	let healthCache: { sid: string; count: number; value: MetricsHealth } | null = null;
+
+	/** 待落盘的 JSONL 行（攒批写；进程若中途死掉最多丢一轮）。 */
+	let pending: string[] = [];
+
+	/** 真正落盘：一次 append 写多行。失败静默（诊断通道纪律）。 */
+	const flush = (): void => {
+		if (!enabled || !home || pending.length === 0) {
+			pending = [];
+			return;
+		}
+		const lines = pending.join("\n");
+		pending = [];
+		appendLumeLineAt(home, LUME_METRICS_FILE, lines);
+	};
 
 	const record = (incoming: MetricRecord): void => {
 		if (!enabled) return;
@@ -88,7 +112,10 @@ export function createMetricsLog(opts: { enabled?: boolean; ring?: number; home?
 		ring.push(entry);
 		if (ring.length > ringSize) ring.shift();
 		healthCache = null;
-		if (home) appendLumeLineAt(home, LUME_METRICS_FILE, toMetricLine(entry));
+		pending.push(toMetricLine(entry));
+		// 每轮的状态快照必然出现一次 —— 用它当"本轮结束"的落盘点，避免新增依赖接线；
+		// 长轮次（一步里构建多次提示词）则由条数上限兜住。
+		if (entry.kind === "state" || pending.length >= FLUSH_AT) flush();
 	};
 
 	const records = (sid?: string): readonly MetricRecord[] => (sid ? ring.filter((entry) => entry.sid === sid) : ring);
@@ -143,6 +170,7 @@ export function createMetricsLog(opts: { enabled?: boolean; ring?: number; home?
 
 	return {
 		record,
+		flush,
 		records,
 		summary: summaryTo,
 		summaryText: (scope?: string) => {

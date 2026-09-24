@@ -14,9 +14,21 @@ import { claimsVerification, looksLikeFailure } from "../core/signals.js";
 import type { HostPayload, LumeHostContext } from "./host-context.js";
 import { handleTurnEnd } from "./turn-boundary.js";
 import type { SessionEventDeps } from "./session-deps.js";
+import {
+	AUTO_FACT_CAP,
+	anchorRequirement,
+	applyAlignNotice,
+	checkContextPressure,
+	checkEvidenceNotices,
+	checkRequirementDrift,
+	collectAssistantFacts,
+	collectUserRuleFacts,
+	handleCompactionCheckpoint,
+	learnWorkspaceFromSnapshot,
+} from "./inbound.js";
 
 /** 每会话自动沉淀的项目知识上限：宁可少记，也不要让知识库变垃圾桶。 */
-const AUTO_FACT_CAP = 6;
+
 
 export type { SessionEventDeps };
 
@@ -49,166 +61,35 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 			}
 
 			case "user/message": {
-				// 压缩检查点：宿主把被压缩的历史替换成一条摘要消息，必须与真实
-				// 用户消息区分——否则摘要会被当成「用户当前说的话」，污染协议
-				// 路由所依赖的 lastQuery 与对话缓冲。这是兜底识别：同一轮里
-				// compaction/summary 通常先到且带规模，不要把那条覆盖成无规模的。
-				if (deps.isCompactionCheckpoint(event.data)) {
-					if (!st.compaction || st.compaction.turnIndex !== st.turnIndex) {
-						st.compaction = { turnIndex: st.turnIndex, shadowedItems: 0, tokens: 0 };
-					}
-					deps.appendLumeLog(`[${sid}] 检测到上下文压缩检查点（第 ${st.turnIndex} 轮）`);
-					break;
-				}
-				// 只有真实用户消息能定义本轮意图。宿主快照（@deepseek-ai/dsh-system-prompt）、
-				// 工作区指令（agent-instructions）、技能目录（skill-catalog）都经这条通道投递，
-				// 曾被当成用户发言：覆盖真实请求，并把模式从「执行」冲成「问答」。
-				// 运行时快照里带会话工作目录——这台宿主（0.9.1）的 request/context、request/header、tool/call 都**不带 cwd**，
-				// exec/context 的 agent.session 也没有 cwd 字段。实测代价：模型主动记的 3 条项目知识全部因
-				// 「拿不到工作目录」被丢在暂存里，facts 表只剩历史的 unknown 键。
-				// 必须在 isUserAuthored 之前看：快照不是用户发言，但它是唯一能拿到 cwd 的地方。
-				if (!st.cwd) {
-					const snapshotWorkspace = deps.workspaceFromSnapshotText(deps.messageText(event.data));
-					if (snapshotWorkspace) {
-						st.cwd = snapshotWorkspace;
-						deps.ctx.logger?.warn?.(`lume: [${sid}] 工作目录已解析（来源：运行时快照）→ ${snapshotWorkspace}`);
-						if (deps.projectMemoryOn) deps.flushPendingFacts(sid, event.data);
-						deps.rememberWorkspace(sid, snapshotWorkspace);
-						// 工作目录已知 → 预取本目录的会话记忆（提示块是同步装配的，先落到缓存）：
-						// 新会话开局要靠它接上「上一个会话干了什么」——上下文撑满时那边已经聊不动了。
-						if (st.taskMemories === null) {
-							st.taskMemories = [];
-							void deps.taskMemoriesOf(sid, 4).then((list) => {
-								st.taskMemories = list;
-							});
-						}
-					}
-				}
+				if (handleCompactionCheckpoint(sid, st, deps, event.data)) break;
+				learnWorkspaceFromSnapshot(sid, st, deps, event.data);
 				if (!deps.isUserAuthored(event.data)) break;
 				const text = deps.messageText(event.data);
-				if (text) {
-					const normalized = text.trim().replace(/\s+/g, " ").slice(0, 240);
-					const explicitCorrection = /不是这个意思|不是我说的|你理解错|答非所问|听不懂|我说的是|我指的是|不对|错了|别这样|重新来/i.test(
-						text,
-					);
-					const repeatedRequest = normalized.length >= 5 && st.recentUserQueries.includes(normalized);
-					st.userText = text;
-					// 需求锚点：**插件自己逐字记**，不依赖模型调用工具——实测「先量化后动手」被注入 14 次，
-					// 契约仍 0 次；而模型会用自己的转述工作（「新增字段」被转成「复用 create_id」）→ 必须锚定原话。
-					if (deps.projectMemoryOn && (deps.TASK_SIGNAL_RE.test(text) || deps.DESIGN_SIGNAL_RE.test(text))) {
-						deps.projectTask(sid, "需求锚点落账", (store) =>
-							store.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }),
-						);
-						st.requirementFresh = true;
-					}
-					// 用户的**规范陈述**（必须/一律/唯一约定…）是最权威的跨会话知识：不靠工具、不靠提醒也能沉淀。
-					if (deps.projectMemoryOn && st.agent.autoFacts < AUTO_FACT_CAP) {
-						for (const candidate of deps.extractKnowledgeCandidates(text, { source: "user" })) {
-							if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
-							const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now(), {
-								taskTitle: st.sessionTitle,
-								requirementHints: deps.requirementHintsOf(st.cwd),
-							});
-							if (!fact || deps.looksSensitive(fact.text)) continue;
-							st.pendingFacts.push(fact);
-							if (st.pendingFacts.length > 8) st.pendingFacts.shift();
-							st.agent.autoFacts++;
-							deps.ctx.logger?.warn?.(`lume: [${sid}] 自动沉淀候选（用户规范·${fact.kind}）：${fact.text.slice(0, 60)}`);
-						}
-						deps.flushPendingFacts(sid, event.data);
-					}
-					deps.forceNotice(
-						st,
-						"align",
-						explicitCorrection
-							? deps.buildAlignmentCorrection("user-correction")
-							: repeatedRequest
-								? deps.buildAlignmentCorrection("repeated-request")
-								: null,
-					);
-					st.recentUserQueries.push(normalized);
-					if (st.recentUserQueries.length > 5) st.recentUserQueries.shift();
-					st.recentTurns.push(`用户: ${text.slice(0, 300)}`);
-					if (st.recentTurns.length > 12) st.recentTurns.shift();
-					// 模式/阶段的冻结统一由 resolveIntent（组装时读会话权威历史）负责，
-					// 这里只记账：两处都写会让「同一条消息」被判定为不同轮而反复重算。
-				}
+				if (!text) break;
+				const normalized = text.trim().replace(/\s+/g, " ").slice(0, 240);
+				const explicitCorrection = /不是这个意思|不是我说的|你理解错|答非所问|听不懂|我说的是|我指的是|不对|错了|别这样|重新来/i.test(text);
+				const repeatedRequest = normalized.length >= 5 && st.recentUserQueries.includes(normalized);
+				st.userText = text;
+				anchorRequirement(sid, st, deps, text);
+				collectUserRuleFacts(sid, st, deps, text, event.data);
+				applyAlignNotice(st, deps, explicitCorrection, repeatedRequest);
+				st.recentUserQueries.push(normalized);
+				if (st.recentUserQueries.length > 5) st.recentUserQueries.shift();
+				st.recentTurns.push(`用户: ${text.slice(0, 300)}`);
+				if (st.recentTurns.length > 12) st.recentTurns.shift();
+				// 模式/阶段的冻结统一由 resolveIntent（组装时读会话权威历史）负责；这里只记账。
 				break;
 			}
 			case "assistant/message": {
-				// 只取**可见正文**：推理块不参与判定（实测扫推理会让模型开始躲词，见 core/text.ts）
 				const text = deps.visibleText((event.data as { message?: unknown } | undefined)?.message);
-				if (text) {
-					st.assistantText = text;
-					// 助手可见回答里的**项目约定/结论**也是一条沉淀来源：它不在工具输出里、也不是需求原话，
-					// 却常常就是「这个仓库怎么干活」的关键（例如某开关环境下必须用另一个服务地址变量）。
-					// 判据与工具来源同源，另加"非对话句/非一次性动作"过滤（见 core/knowledge.ts）。
-					if (deps.projectMemoryOn && text.length > 40 && st.agent.autoFacts < AUTO_FACT_CAP) {
-						for (const candidate of deps.extractKnowledgeCandidates(text, { source: "assistant", userText: st.userText ?? "" })) {
-							if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
-							const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now(), {
-								taskTitle: st.sessionTitle,
-							});
-							if (!fact) continue;
-							st.pendingFacts.push(fact);
-							if (st.pendingFacts.length > 8) st.pendingFacts.shift();
-							st.agent.autoFacts++;
-							deps.ctx.logger?.warn?.(`lume: [${sid}] 自动沉淀候选（助手结论·${fact.kind}）：${fact.text.slice(0, 60)}`);
-						}
-						deps.flushPendingFacts(sid, event.data);
-					}
-					// 需求漂移（词法级、零成本）：只有模型把**需求没提的变更说成自己要做的**才顶一句。
-					// 语料取「用户侧原话」全集（锚点 + 最近问句 + 本轮原话）——用户自己提过的词不算脑补；
-					// 每会话限次、同词不重报：反复顶会让模型开始躲词而不是解决问题（2026-09-23 实测）。
-					const requirementText = [
-						deps
-							.requirementsOf(sid)
-							.map((item) => item.text)
-							.join("\n"),
-						st.recentUserQueries.join("\n"),
-						st.userText,
-					].join("\n");
-					const driftWords =
-						requirementText && deps.noticeOpen(st, "drift")
-							? deps.unrequestedChangeWords(requirementText, text, st.driftWordsReported)
-							: [];
-					if (deps.setNotice(st, "drift", deps.buildDriftDirective(driftWords))) st.driftWordsReported.push(...driftWords);
-
-					// 上下文压力预警：宿主给了 contextWindow 与用量。
-					// 上下文不能当记忆载体，所以接近上限时**先把记忆落盘**，再劝换窗口（换窗口不等于丢进度）。
-					const usage = (event.data as { usage?: { totalTokens?: number; inputTokens?: number; cacheReadTokens?: number } } | undefined)
-						?.usage;
-					const usedTokens = Number(usage?.totalTokens ?? Number(usage?.inputTokens ?? 0) + Number(usage?.cacheReadTokens ?? 0));
-					if (usedTokens > 0 && st.contextWindow > 0) {
-						const pressure = deps.contextPressure(usedTokens, st.contextWindow);
-						const level: "warn" | "critical" = pressure.level === "critical" ? "critical" : "warn";
-						if (pressure.level !== "ok" && deps.noticeOpen(st, "pressure")) {
-							void (async () => {
-								const saved = await deps.saveSessionMemory(sid);
-								deps.forceNotice(st, "pressure", deps.buildContextPressureDirective(level, pressure.ratio, saved));
-							})();
-						}
-					}
-					// 引用-证据对齐：回答里引用的「文件:行」如果这次没打开过，就摆事实（不训话）。
-					// 只在排除性/决策性措辞出现时才查——普通陈述句不值得每轮都核对。
-					const citations = deps.noticeOpen(st, "citation") ? deps.unsupportedCitations(st.agent.evidence, text) : [];
-					deps.setNotice(
-						st,
-						"citation",
-						deps.buildCitationDirective(citations, (key: string) => deps.formatWindows(st.agent.evidence, key)),
-					);
-					// 断言-证据对齐：没核实过的否定断言（「X 没映射」）同样要能顶回去
-					const claims = deps.noticeOpen(st, "claim") ? deps.unsupportedClaims(st.agent.evidence, st.agent.seenSymbols, text) : [];
-					deps.setNotice(st, "claim", deps.buildClaimDirective(claims));
-					// 提问核对：把"你抛了几个问题"摆出来（现场：4 条"待你定"里 3 条是自己造的疑问）
-					deps.setNotice(
-						st,
-						"question",
-						deps.noticeOpen(st, "question") ? deps.buildQuestionAuditDirective(deps.auditOpenQuestions(text)) : null,
-					);
-					st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
-					if (st.recentTurns.length > 12) st.recentTurns.shift();
-				}
+				if (!text) break;
+				st.assistantText = text;
+				collectAssistantFacts(sid, st, deps, text, event.data);
+				checkRequirementDrift(sid, st, deps, text);
+				checkContextPressure(sid, st, deps, event.data);
+				checkEvidenceNotices(st, deps, text);
+				st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
+				if (st.recentTurns.length > 12) st.recentTurns.shift();
 				break;
 			}
 			case "tool/call": {

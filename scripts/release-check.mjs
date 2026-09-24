@@ -156,7 +156,7 @@ const FILE_INVARIANTS = [
 		check: (text) => text.includes("EXECUTE_EXTRA_RE"),
 	},
 	{
-		files: ["lib/host/session-events.js", "lib/core/ledger.js"],
+		files: ["lib/host/session-events.js", "lib/core/ledger.js", "lib/host/inbound.js"],
 		id: "requirement-anchor",
 		what: "需求锚点由插件自动落账并逐字回显（renderRequirements）",
 		incident: "2026-09-23 现场：契约 0 次调用、用户原话没被固定 → 模型用自己的转述工作（新增字段→复用 create_id）",

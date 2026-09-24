@@ -73,17 +73,19 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		const key = projectKeyFor(sid, source);
 		if (!key) return;
 		const pending = st.pendingFacts.splice(0, st.pendingFacts.length);
-		void deps.stores.projectReady.then(async (store) => {
-			if (!store) return;
-			let saved = 0;
-			for (const fact of pending) {
-				const ok = await store.addFact(key, fact, (candidate, existing) =>
-					existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7),
-				);
-				if (ok) saved++;
-			}
-			deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
-		});
+		void deps.stores.projectReady
+			.then(async (store) => {
+				if (!store) return;
+				let saved = 0;
+				for (const fact of pending) {
+					const ok = await store.addFact(key, fact, (candidate, existing) =>
+						existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7),
+					);
+					if (ok) saved++;
+				}
+				deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
+			})
+			.catch((error) => deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘失败：${String(error)}`));
 	}
 
 	/**
@@ -122,10 +124,12 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		const evidence = realVerify
 			? `自动：${commandSummary(st.agent.lastToolArgs)} → ${firstLine.slice(0, 80)}`
 			: `自动：回读 ${readbackTarget} → ${firstLine.slice(0, 60)}`;
-		void deps.stores.projectReady.then(async (store) => {
-			const count = (await store?.verifyChanges(sid, { before: Date.now(), evidence, targets })) ?? 0;
-			if (count > 0) deps.ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账 ${count} 条 → verified（${evidence.slice(0, 60)}）`);
-		});
+		void deps.stores.projectReady
+			.then(async (store) => {
+				const count = (await store?.verifyChanges(sid, { before: Date.now(), evidence, targets })) ?? 0;
+				if (count > 0) deps.ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账 ${count} 条 → verified（${evidence.slice(0, 60)}）`);
+			})
+			.catch((error) => deps.ctx.logger?.warn?.(`lume: [${sid}] 自动推进台账失败：${String(error)}`));
 	}
 
 	function contractOf(sid: string) {

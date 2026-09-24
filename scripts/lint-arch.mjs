@@ -97,7 +97,7 @@ for (const raw of files) {
 		const text = readFileSync(f, "utf8");
 		for (const hit of text.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)) usage.add(hit[1]);
 		// 也认「解构」用法：const { a, b } = deps（rpc.ts 就是这么取 registry/distill 的）
-		for (const hit of text.matchAll(/const\s*\{([^}]*)\}\s*=\s*deps\b/g)) {
+		for (const hit of text.matchAll(/const\s*\{([^}]*)\}\s*=\s*deps\b/gs)) {
 			for (const part of hit[1].split(",")) {
 				const name = part.trim().split(":").pop().trim();
 				if (name) usage.add(name);
@@ -109,6 +109,7 @@ for (const raw of files) {
 	for (const file of allFiles) {
 		const lines = readFileSync(file, "utf8").split(/\r?\n/);
 		let inside = false;
+		let inFnType = false;
 		let depth = 0;
 		let current = "";
 		for (let i = 0; i < lines.length; i++) {
@@ -129,6 +130,10 @@ for (const raw of files) {
 			}
 			const member = line.match(/^\s{1,4}([A-Za-z_$][\w$]*)\s*[?:(]/);
 			if (!member) continue;
+			// 抗格式化：函数型成员（`fn: (a, b) => …`）被 prettier 拆行后，参数行会被误当成成员声明。
+			// 所以进入函数类型后，直到看见 `=>` 之前都不算成员。
+			if (/^\s*[A-Za-z_$][\w$]*\s*:\s*\(/.test(line) && !line.includes("=>")) { inFnType = true; continue; }
+			if (inFnType) { if (line.includes("=>")) inFnType = false; continue; }
 			declared++;
 			if (usage.has(member[1])) continue;
 			if (/lint-arch:\s*allow-unused/.test(lines[i - 1] ?? "") || /lint-arch:\s*allow-unused/.test(line)) continue;

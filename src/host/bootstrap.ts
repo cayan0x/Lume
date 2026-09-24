@@ -5,20 +5,21 @@
  * 句柄**必须用 getter 暴露**：这些 Promise 是异步兑现的，直接传值会让调用方永远拿到 null
  * （2026-09-23 现场：项目知识/台账整批静默失效就吃过这个形状的亏）。
  */
+import type { LumeHostContext } from "./host-context.js";
 import { IdentityStore, LUME_IDENTITY_SPEC } from "./identity.js";
 import { LUME_PROJECT_SPEC, ProjectStore } from "./project.js";
 import { LUME_REFLECTION_SPEC, ReflectionStore } from "./reflection.js";
 import { FilePersonaStore, PersonaStore } from "./store.js";
 
 export interface StoreInput {
-	ctx: any;
+	ctx: LumeHostContext;
 	legacyStatePath: string;
 	maxSessions: number;
 	projectMemoryOn: boolean;
 	/** 旧 assets/persona-state.json 迁移（index 侧实现，避免这里依赖 assets 路径解析）。 */
-	migrateLegacyState: (store: any, path: string) => Promise<unknown>;
+	migrateLegacyState: (store: PersonaStore, path: string) => Promise<unknown>;
 	/** 会话选择域 spec / 表名（目前声明在 index.ts，未导出）。 */
-	personaDomainSpec: any;
+	personaDomainSpec: unknown;
 	sessionPersonaTable: string;
 	describeError: (error: unknown) => string;
 }
@@ -33,7 +34,7 @@ export interface StoreHandles {
 	reflectionStore: () => any;
 	project: () => any;
 	/** fire-and-forget 的持久化：失败必须留痕（别再用 void xxx.then(...)）。 */
-	projectTask: (sid: string, label: string, run: (store: any) => any) => void;
+	projectTask: (sid: string, label: string, run: (store: ProjectStore) => unknown) => void;
 	ensureReady: () => Promise<void>;
 }
 

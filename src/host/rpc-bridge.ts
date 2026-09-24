@@ -103,11 +103,11 @@ export function makeRpcRoute(
 	channel: string,
 	dispatch: (endpoint: string, payload: unknown) => Promise<unknown>,
 	guard?: (req: unknown) => number | undefined,
-): { kind: "prefix"; path: string; handler: (req: any, res: any) => Promise<void> } {
+): { kind: "prefix"; path: string; handler: (req: HostPayload, res: HostPayload) => Promise<void> } {
 	return {
 		kind: "prefix",
 		path: channel,
-		handler: async (req: any, res: any) => {
+		handler: async (req: HostPayload, res: HostPayload) => {
 			const rejection = guard?.(req);
 			if (rejection !== undefined) {
 				res.writeHead(rejection);
@@ -141,4 +141,5 @@ export function makeRpcRoute(
 			res.end(connectionResponse(parsed.rpcId, result));
 		},
 	};
-}
+}import type { HostPayload } from "./host-context.js";
+

@@ -14,6 +14,10 @@
 import type { SessionRuntime } from "./session-runtime.js";
 import { noticeOpen, noticeText, setNotice } from "./notices.js";
 
+import type { HostPayload } from "./host-context.js";
+import type { ChangeItem, DesignDecision, Hypothesis, ProjectFact, RequirementAnchor, TaskContract } from "../core/ledger.js";
+import type * as coverageMod from "../core/coverage.js";
+
 export interface Block {
 	text: string | null;
 	droppable?: boolean;
@@ -25,19 +29,19 @@ export interface BlockDeps {
 	projectMemoryOn: boolean;
 	taskSignalRe: RegExp;
 	// ── store 选择器 ──
-	contractOf: (sid: string) => unknown;
-	changesOf: (sid: string) => Array<{ target: string; change: string; verify: string; status: string }>;
-	hypothesesOf: (sid: string) => unknown;
-	designOf: (sid: string) => unknown;
-	requirementsOf: (sid: string) => Array<{ text: string; at: number }>;
-	factsOf: (sid: string, context: unknown) => unknown;
+	contractOf: (sid: string) => TaskContract | null;
+	changesOf: (sid: string) => ChangeItem[];
+	hypothesesOf: (sid: string) => Hypothesis[];
+	designOf: (sid: string) => DesignDecision[];
+	requirementsOf: (sid: string) => RequirementAnchor[];
+	factsOf: (sid: string, context: unknown) => ProjectFact[];
 	// ── 渲染 ──
-	renderContract: (contract: any, delivery?: boolean) => string | null;
-	renderChangeLedger: (changes: any) => string | null;
-	renderHypotheses: (items: any) => string | null;
-	renderDesign: (items: any) => string | null;
-	renderRequirements: (items: any) => string | null;
-	renderProjectFacts: (facts: any) => string | null;
+	renderContract: (contract: TaskContract | null, delivery?: boolean) => string | null;
+	renderChangeLedger: (changes: ChangeItem[]) => string | null;
+	renderHypotheses: (items: Hypothesis[]) => string | null;
+	renderDesign: (items: DesignDecision[]) => string | null;
+	renderRequirements: (items: RequirementAnchor[]) => string | null;
+	renderProjectFacts: (facts: ProjectFact[]) => string | null;
 	// ── 方法块 ──
 	buildContractMethodDirective: () => string;
 	buildRequirementMethodDirective: (taskMethods: boolean) => string;
@@ -51,26 +55,26 @@ export interface BlockDeps {
 	buildTaskPhaseDirective: (phase: SessionRuntime["taskPhase"]) => string;
 	buildCasualDirective: (isTask: boolean) => string | null;
 	buildLongSessionGuard: (turnIndex: number) => string | null;
-	buildSessionAnchor: (turnIndex: number, mode: any, query: string | null, recentTurns: string[]) => string | null;
+	buildSessionAnchor: (turnIndex: number, mode: SessionRuntime["interactionMode"], query: string | null, recentTurns: string[]) => string | null;
 	buildCompactionNotice: (compaction: { turnIndex: number; shadowedItems: number; tokens: number }, turnIndex: number) => string | null;
 	// ── 文档能力 ──
 	/** 文档任务时的方法块指令（是否算文档任务、能力探测都在 index 侧完成）。 */
-	documentDirective: (query: string, context: any) => string | null;
+	documentDirective: (query: string, context: HostPayload) => string | null;
 	structureToolName: (context: unknown) => string | null;
 	/** 反思日志反馈（可空）。 */
 	reflectionFeedback: () => string | null;
 	// ── 覆盖核对（纯函数，直接引用也行；这里显式传出便于测试替身） ──
-	pickRequirementCorpus: (items: readonly { text: string }[]) => string;
-	splitRequirementItems: (text: string) => Array<{ index: number; label: string; text: string }>;
-	coverageRows: (items: any, artifact: string) => any;
-	hasFigureRefs: (text: unknown) => boolean;
-	danglingSectionRefs: (delivery: unknown, artifact: string) => string[];
-	buildRequirementCoverageDirective: (rows: any, opts: { figures?: boolean; danglingRefs?: readonly string[] }) => string | null;
+	pickRequirementCorpus: typeof coverageMod.pickRequirementCorpus;
+	splitRequirementItems: typeof coverageMod.splitRequirementItems;
+	coverageRows: typeof coverageMod.coverageRows;
+	hasFigureRefs: typeof coverageMod.hasFigureRefs;
+	danglingSectionRefs: typeof coverageMod.danglingSectionRefs;
+	buildRequirementCoverageDirective: (rows: ReturnType<typeof coverageMod.coverageRows>, opts: { figures?: boolean; danglingRefs?: readonly string[] }) => string | null;
 }
 
 export interface BlockInput {
 	sid: string;
-	context: any;
+	context: HostPayload;
 	st: SessionRuntime;
 	query: string;
 	mode: SessionRuntime["interactionMode"];

@@ -10,132 +10,150 @@
  */
 import type { SessionRuntime } from "./session-runtime.js";
 
-export interface SessionEventDeps {
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	ctx: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	appendLumeLog: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	forceNotice: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	setNotice: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	noticeOpen: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	noticeText: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	clearNotice: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
+
+import * as citationsMod from "../core/citations.js";
+import * as leakMod from "../core/leak-detector.js";
+import * as ledgerMod from "../core/ledger.js";
+import * as signalsMod from "../core/signals.js";
+import * as textMod from "../core/text.js";
+import * as compactionMod from "./compaction.js";
+import * as diagMod from "./diag.js";
+import * as extractionMod from "./extraction.js";
+import * as hostEventsMod from "./host-events.js";
+import * as methodsMod from "./methods.js";
+import * as noticesMod from "./notices.js";
+import * as protocolMod from "./protocol.js";
+import * as reflectionMod from "./reflection.js";
+import * as thinkingMod from "./thinking.js";
+import * as triggersMod from "./triggers.js";
+import type { ProjectStore } from "./project.js";
+import type { ProjectAccess, ProjectAccessDeps } from "./project-access.js";
+import type { AuxLlm } from "./llm-aux.js";
+import type { LlmRouteCell } from "./llm-route.js";
+import type { HostPayload, LumeHostContext } from "./host-context.js";
+import type { ReflectionStore } from "./reflection.js";
+import type { SessionRuntimeStore } from "./session-runtime.js";
+import type { TriggerThresholds } from "./triggers.js";
+
+/**
+ * 依赖按**域**分成七组（架构整理 ①：依赖边界类型化）。
+ *
+ * 为什么分组而不压成一个 68 项的清单：读代码时要能一眼看出「这一组是什么身份」——
+ * env 只在 apply 时确定、notices 是一组 API、carrier 是单一真值来源的读写入口、
+ * signal 是无状态判据、prompt 只产出字符串、tool 是宿主形状适配、agent 才是有状态的。
+ * 组合用 extends，**访问仍是扁平的**（deps.contractOf），所以分组不增加调用点噪音。
+ *
+ * 为什么不用 any：边界类型化后，改了被注入函数的签名，注入侧会立刻报错。
+ * 此前 68 项全是 any，等于把「接线条约」写成了注释。
+ */
+/** 宿主与配置：**会话内不变**。放在一组是因为它们只在插件 apply / 会话建立时确定，事件里只读。 */
+export interface SessionEnvDeps {
+	/** 宿主 ctx 的最小面（见 host/host-context.ts）。 */
+	ctx: LumeHostContext;
+	/** 统一日志落盘（宿主 logger 之外还有本地文件线索）。 */
+	appendLumeLog: typeof diagMod.appendLumeLog;
 	projectMemoryOn: boolean;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
 	behaviorTriggersOn: boolean;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	projectTask: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	flushPendingFacts: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	settleVerification: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	contractOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	changesOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	designOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	requirementsOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	projectKeyFor: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	normalizeProjectFact: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	renderContract: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	buildAlignmentCorrection: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	buildDriftDirective: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	buildCitationDirective: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	buildQuestionAuditDirective: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	buildUnverifiedDeliveryNotice: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	buildCarrierGapNotice: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	unsupportedCitations: any;
-	unsupportedClaims: any;
-	buildClaimDirective: any;
-	recordSymbols: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	formatWindows: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	auditOpenQuestions: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	unrequestedChangeWords: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	visibleText: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	messageText: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	classifyTool: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	summarizeToolChange: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	toolArtifactText: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	toolNameOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	toolArgsOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	toolTargetOf: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
+	reflectionEnabled: boolean;
+	/** 人设切换边界窗口长度（轮）。 */
+	boundaryTurns: number;
+	triggerThresholds: TriggerThresholds;
 	DOC_ARTIFACT_RE: RegExp;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	DESIGN_SIGNAL_RE: RegExp;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	TASK_SIGNAL_RE: RegExp;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	advancePhase: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	cooldownOk: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	evaluateToolTrigger: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	evaluateTurnTrigger: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	triggerThresholds: number | any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	boundaryTurns: number | any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	runtime: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	scheduleExtraction: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	detectLeak: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	isUserAuthored: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	isCompactionCheckpoint: any;
-	/** 从 index.ts 注入（见该文件里的 sessionEventDeps）。 */
-	isTaskQuery: any;
-	llmRoute: any;
-	applyToolSignal: any;
-	recordReadArgs: any;
-	readResultSignals: any;
-	applyVerifyOutcome: any;
-	recordResultText: any;
-	/** 项目存储句柄：**必须是 getter**——它在 index.ts 里是异步赋值，快照会拿到 undefined。 */
-	reflectionReady: any;
-	reflectionEnabled: any;
-	resolveAuxRoute: any;
-	buildReflectionPrompt: any;
-	callLlm: any;
-	parseReflectionScore: any;
-	projectOf: () => any;
+	DESIGN_SIGNAL_RE: typeof protocolMod.DESIGN_SIGNAL_RE;
+	TASK_SIGNAL_RE: typeof thinkingMod.TASK_SIGNAL_RE;
 }
 
+/** 提示槽：一组 API 而不是散字段（见 host/notices.ts，含每会话上限）。 */
+export interface SessionNoticeDeps {
+	forceNotice: typeof noticesMod.forceNotice;
+	setNotice: typeof noticesMod.setNotice;
+	noticeOpen: typeof noticesMod.noticeOpen;
+	noticeText: typeof noticesMod.noticeText;
+	clearNotice: typeof noticesMod.clearNotice;
+}
+
+/** 载具与项目知识：读写入口全部来自 project-access（单一真值来源），另加两个句柄。 */
+export interface SessionCarrierDeps {
+	projectTask: ProjectAccessDeps["projectTask"];
+	/** 项目存储句柄（异步兑现，所以是函数）。 */
+	projectOf: () => ProjectStore | null;
+	/** 读入口（类型直接取自工厂返回值，改一处两边同步）。 */
+	contractOf: ProjectAccess["contractOf"];
+	changesOf: ProjectAccess["changesOf"];
+	designOf: ProjectAccess["designOf"];
+	requirementsOf: ProjectAccess["requirementsOf"];
+	projectKeyFor: ProjectAccess["projectKeyFor"];
+	flushPendingFacts: ProjectAccess["flushPendingFacts"];
+	settleVerification: ProjectAccess["settleVerification"];
+}
+
+/** 判据纯函数（core/host 的纯逻辑）：事件里只调用、不改状态。 */
+export interface SessionSignalDeps {
+	auditOpenQuestions: typeof signalsMod.auditOpenQuestions;
+	unrequestedChangeWords: typeof signalsMod.unrequestedChangeWords;
+	classifyTool: typeof signalsMod.classifyTool;
+	summarizeToolChange: typeof signalsMod.summarizeToolChange;
+	toolArtifactText: typeof signalsMod.toolArtifactText;
+	readResultSignals: typeof signalsMod.readResultSignals;
+	unsupportedCitations: typeof citationsMod.unsupportedCitations;
+	unsupportedClaims: typeof citationsMod.unsupportedClaims;
+	recordSymbols: typeof citationsMod.recordSymbols;
+	formatWindows: typeof citationsMod.formatWindows;
+	recordReadArgs: typeof citationsMod.recordReadArgs;
+	recordResultText: typeof citationsMod.recordResultText;
+	visibleText: typeof textMod.visibleText;
+	messageText: typeof textMod.messageText;
+	buildAlignmentCorrection: typeof protocolMod.buildAlignmentCorrection;
+	isUserAuthored: typeof protocolMod.isUserAuthored;
+	advancePhase: typeof protocolMod.advancePhase;
+	cooldownOk: typeof triggersMod.cooldownOk;
+	evaluateToolTrigger: typeof triggersMod.evaluateToolTrigger;
+	evaluateTurnTrigger: typeof triggersMod.evaluateTurnTrigger;
+	applyToolSignal: typeof triggersMod.applyToolSignal;
+	applyVerifyOutcome: typeof triggersMod.applyVerifyOutcome;
+	isCompactionCheckpoint: typeof compactionMod.isCompactionCheckpoint;
+	detectLeak: typeof leakMod.detectLeak;
+	resolveAuxRoute: typeof extractionMod.resolveAuxRoute;
+	normalizeProjectFact: typeof ledgerMod.normalizeProjectFact;
+	renderContract: typeof ledgerMod.renderContract;
+}
+
+/** 提示文案（methods 层）：只产出字符串，不碰状态。 */
+export interface SessionPromptDeps {
+	buildDriftDirective: typeof methodsMod.buildDriftDirective;
+	buildCitationDirective: typeof methodsMod.buildCitationDirective;
+	buildQuestionAuditDirective: typeof methodsMod.buildQuestionAuditDirective;
+	buildUnverifiedDeliveryNotice: typeof methodsMod.buildUnverifiedDeliveryNotice;
+	buildCarrierGapNotice: typeof methodsMod.buildCarrierGapNotice;
+	buildClaimDirective: typeof methodsMod.buildClaimDirective;
+}
+
+/** 宿主工具形状适配（见 host/host-events.ts + 真机 fixtures）。 */
+export interface SessionToolDeps {
+	toolNameOf: typeof hostEventsMod.toolNameOf;
+	toolArgsOf: typeof hostEventsMod.toolArgsOf;
+	toolTargetOf: typeof hostEventsMod.toolTargetOf;
+}
+
+/** 会话态与辅助链路：这一组是**有状态**的（会话运行时、路由单元、辅助模型）。 */
+export interface SessionAgentDeps {
+	runtime: SessionRuntimeStore;
+	/** 共享可变单元：事件里写、提示装配与辅助调用读（见 host/llm-route.ts 的教训）。 */
+	llmRoute: LlmRouteCell;
+	callLlm: AuxLlm["callLlm"];
+	scheduleExtraction: (sid: string, st: SessionRuntime) => void;
+	/** 反思域句柄（异步兑现；null = 域不可用）。 */
+	reflectionReady: Promise<ReflectionStore | null> | null;
+	buildReflectionPrompt: typeof reflectionMod.buildReflectionPrompt;
+	parseReflectionScore: typeof reflectionMod.parseReflectionScore;
+	isTaskQuery: (st: SessionRuntime) => boolean;
+}
+
+/** 事件处理器与 disposed 处理器共用的全部依赖（既有的 sessionEventDeps 对象仍然扁平注入）。 */
+export interface SessionEventDeps extends SessionEnvDeps, SessionNoticeDeps, SessionCarrierDeps, SessionSignalDeps, SessionPromptDeps, SessionToolDeps, SessionAgentDeps {}
+
 export function createSessionEventHandler(deps: SessionEventDeps) {
-	return (session: any, event: any): void => {
+	return (session: HostPayload, event: HostPayload): void => {
 				const sid = String(session.id);
 				const st = deps.runtime.get(sid);
 				switch (event.type) {
@@ -145,8 +163,8 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						// reason}，拿不到 provider/model——v0.3.0 一直监听错了事件，提取从未跑通。
 						const data = event.data as { provider?: unknown; model?: unknown } | undefined;
 						if (typeof data?.provider === "string" && typeof data?.model === "string") {
-							deps.llmRoute = { provider: data.provider, model: data.model };
-							deps.ctx.logger?.warn?.(`lume: request/context 更新 deps.llmRoute → ${deps.llmRoute.provider}/${deps.llmRoute.model}`);
+							deps.llmRoute.current = { provider: data.provider, model: data.model };
+							deps.ctx.logger?.warn?.(`lume: request/context 更新 deps.llmRoute → ${deps.llmRoute.current?.provider}/${deps.llmRoute.current?.model}`);
 						} else {
 							deps.ctx.logger?.warn?.("lume: request/context 未携带 provider/model，保留 deps.llmRoute", data);
 						}
@@ -177,7 +195,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							// 需求锚点：**插件自己逐字记**，不依赖模型调用工具——实测「先量化后动手」被注入 14 次，
 							// 契约仍 0 次；而模型会用自己的转述工作（「新增字段」被转成「复用 create_id」）→ 必须锚定原话。
 							if (deps.projectMemoryOn && (deps.TASK_SIGNAL_RE.test(text) || deps.DESIGN_SIGNAL_RE.test(text))) {
-								deps.projectTask(sid, "需求锚点落账", (store: any) => store.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }));
+								deps.projectTask(sid, "需求锚点落账", (store) => store.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }));
 								st.requirementFresh = true;
 							}
 							deps.forceNotice(st, "align", explicitCorrection
@@ -202,13 +220,13 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							// 需求漂移（词法级、零成本）：只有模型把**需求没提的变更说成自己要做的**才顶一句。
 							// 语料取「用户侧原话」全集（锚点 + 最近问句 + 本轮原话）——用户自己提过的词不算脑补；
 							// 每会话限次、同词不重报：反复顶会让模型开始躲词而不是解决问题（2026-09-23 实测）。
-							const requirementText = [deps.requirementsOf(sid).map((item: any) => item.text).join("\n"), st.recentUserQueries.join("\n"), st.userText].join("\n");
+							const requirementText = [deps.requirementsOf(sid).map((item) => item.text).join("\n"), st.recentUserQueries.join("\n"), st.userText].join("\n");
 							const driftWords = requirementText && deps.noticeOpen(st, "drift") ? deps.unrequestedChangeWords(requirementText, text, st.driftWordsReported) : [];
 							if (deps.setNotice(st, "drift", deps.buildDriftDirective(driftWords))) st.driftWordsReported.push(...driftWords);
 							// 引用-证据对齐：回答里引用的「文件:行」如果这次没打开过，就摆事实（不训话）。
 							// 只在排除性/决策性措辞出现时才查——普通陈述句不值得每轮都核对。
 							const citations = deps.noticeOpen(st, "citation") ? deps.unsupportedCitations(st.agent.evidence, text) : [];
-							deps.setNotice(st, "citation", deps.buildCitationDirective(citations, (key: any) => deps.formatWindows(st.agent.evidence, key)));
+							deps.setNotice(st, "citation", deps.buildCitationDirective(citations, (key: string) => deps.formatWindows(st.agent.evidence, key)));
 				// 断言-证据对齐：没核实过的否定断言（「X 没映射」）同样要能顶回去
 				const claims = deps.noticeOpen(st, "claim") ? deps.unsupportedClaims(st.agent.evidence, st.agent.seenSymbols, text) : [];
 				deps.setNotice(st, "claim", deps.buildClaimDirective(claims));
@@ -256,7 +274,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 										deps.clearNotice(st, "coverage"); // 换了新产物 → 重新核一次
 									}
 								}
-								deps.projectTask(sid, "自动改动入账", (store: any) => store.upsertChange(sid, { target, change: `（自动）${toolName}：${summary}`, why: "", verify: "", status: "done", at: Date.now() }));
+								deps.projectTask(sid, "自动改动入账", (store) => store.upsertChange(sid, { target, change: `（自动）${toolName}：${summary}`, why: "", verify: "", status: "done", at: Date.now() }));
 							}
 							// 首改前的定位门槛：要改的文件本会话从没被读过就动手 → 顶一次（不改代码，只补定位）
 							if (st.triggerCounters.mutations === 1 && target && !st.agent.inspectedTargets.has(target)) {
@@ -294,7 +312,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 									isTask: deps.isTaskQuery(st),
 									diagnosing: st.interactionMode === "diagnosis",
 									hasContract: deps.contractOf(sid) !== null,
-									unverifiedChanges: deps.changesOf(sid).filter((item: any) => item.status !== "verified" && item.status !== "skipped").length,
+									unverifiedChanges: deps.changesOf(sid).filter((item) => item.status !== "verified" && item.status !== "skipped").length,
 									hasDesign: deps.designOf(sid).length > 0,
 									designSignal: deps.DESIGN_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? ""),
 									hypothesesTouched: st.hypothesesTouched,
@@ -305,10 +323,21 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 								st.triggerFiredAt[fire.id] = st.turnIndex;
 								deps.forceNotice(st, "trigger", fire.text);
 								deps.ctx.logger?.warn?.(`lume: [${sid}] 行为触发器 ${fire.id}（steps=${st.triggerCounters.steps}，inspect=${st.triggerCounters.inspectStreak}，mutate=${st.triggerCounters.mutateStreak}，verifyFail=${st.triggerCounters.verifyFailStreak}）`);
-								// 环境性死路自动落成项目知识：下次会话不必重踩。
-								if (fire.id === "dead-path" && signals.env && deps.projectOf()) {
+								// 死路落成项目知识：句柄取一次再收窄（可空），后台写失败留痕
+								const store = deps.projectOf();
+								if (fire.id === "dead-path" && signals.env && store) {
 									const key = deps.projectKeyFor(sid, session);
-									if (key) void deps.projectOf().addFact(key, deps.normalizeProjectFact({ kind: "deadend", text: `本环境验证受阻（${st.triggerCounters.verifyFailStreak} 次连续失败，环境/依赖类）：换降级阶梯，不要重复同一命令` }, Date.now())!, (candidate: any, existing: any) => existing.some((fact: any) => fact.text === candidate));
+									if (key) {
+										const fact = deps.normalizeProjectFact(
+											{ kind: "deadend", text: `本环境验证受阻（${st.triggerCounters.verifyFailStreak} 次连续失败，环境/依赖类）：换降级阶梯，不要重复同一命令` },
+											Date.now(),
+										);
+										if (fact) {
+											void store
+												.addFact(key, fact, (candidate, existing) => existing.some((f) => f.text === candidate))
+												.catch((error: unknown) => deps.ctx.logger?.warn?.(`lume: [${sid}] 死路知识落盘失败`, error));
+										}
+									}
 								}
 							}
 						}
@@ -402,7 +431,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							if (report.leaked && !inWindow) {
 								st.switchTurn = st.turnIndex;
 								st.leakEscalated = true;
-								deps.ctx.logger?.warn?.(`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h: any) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`);
+								deps.ctx.logger?.warn?.(`lume: [${sid}] 检测到旧人设风格泄漏（${report.hits.map((h) => `${h.word}×${h.count}`).join("、")}），重新注入升级版切换播报`);
 							} else if (!report.leaked) {
 								st.leakEscalated = false;
 							}
@@ -426,7 +455,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
  * 与事件处理器共用同一批依赖（sessionEventDeps）。
  */
 export function createSessionDisposedHandler(deps: SessionEventDeps) {
-	return (session: any): void => {
+	return (session: HostPayload): void => {
 				const sid = String(session.id);
 				const st = deps.runtime.get(sid);
 				const turns = [...st.recentTurns];
@@ -435,7 +464,7 @@ export function createSessionDisposedHandler(deps: SessionEventDeps) {
 				if (st.pendingFacts.length > 0) deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识未落盘（无法确定工作目录）：${st.pendingFacts.length} 条`);
 				deps.runtime.delete(sid);
 				// 任务载具是会话态：任务结束即无意义，清掉避免无界增长（项目知识在另一张表，不受影响）。
-				deps.projectTask(sid, "清空会话台账", (store: any) => store.clearSession(sid));
+				deps.projectTask(sid, "清空会话台账", (store) => store.clearSession(sid));
 				// 反思日志：会话结束后空闲时间跑一次小模型，零用户感知 token。
 				// 历史不够长（< 4 条消息）或路由不可用时静默跳过。
 				if (deps.reflectionEnabled && turns.length < 4) deps.ctx.logger?.warn?.(`lume: 反思跳过（${sid}）历史不足：${turns.length} < 4 条消息`);
@@ -444,7 +473,7 @@ export function createSessionDisposedHandler(deps: SessionEventDeps) {
 						const store = await deps.reflectionReady;
 						if (!store) { deps.ctx.logger?.warn?.(`lume: 反思跳过（${sid}）reflection 域不可用`); return; }
 						if (!store) return;
-						const route = deps.resolveAuxRoute({}, deps.llmRoute);
+						const route = deps.resolveAuxRoute({}, deps.llmRoute.current);
 						if (!route) { deps.ctx.logger?.warn?.(`lume: 反思跳过（${sid}）无可用小模型路由`); return; }
 						if (!route) return;
 						const prompt = deps.buildReflectionPrompt(turns);

@@ -10,6 +10,7 @@
  * 打包契约：本文件由 tsdown 包成 __ModuleLoader__ 工厂 bundle（见 tsdown.config.ts），
  * react 系与 primitives 为外部 require，由模块图解析。
  */
+import type { HostPayload } from "../host/host-context.js";
 import { Menu } from "@deepseek-ai/dsh-client-ui-primitives";
 import { Component, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -44,7 +45,7 @@ type Translate = (key: string, params?: Record<string, unknown>) => string;
 /** 客户端 cordis 上下文（只用到的面）。 */
 interface LumeClientCtx {
 	effect: (execute: () => unknown, label: string) => unknown;
-	inject: (services: string[], cb: (scope: any) => void) => void;
+	inject: (services: string[], cb: (scope: HostPayload) => void) => void;
 	locale: { register: (ns: string, dict: Record<string, Record<string, string>>) => unknown };
 }
 
@@ -207,7 +208,7 @@ const inject = ["connection", "locale", "slots"];
 function apply(ctx: LumeClientCtx) {
 	ctx.effect(() => ctx.locale.register(NS, { zh, en }), "lume: dictionaries");
 
-	ctx.inject(["slots", "connection"], (scope: any) => {
+	ctx.inject(["slots", "connection"], (scope: HostPayload) => {
 		const conn = scope.connection;
 
 		scope.slots.inject(

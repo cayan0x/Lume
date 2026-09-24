@@ -4,16 +4,20 @@
  * 与主对话分开：失败**不影响对话**，所以约定「路由不可用就返回 null，调用方静默降级」。
  * 路由由调用方解析后传入——会话还没建立时（首轮、静默状态）也要能用，见 resolveAuxRoute。
  */
+import type { LumeHostContext } from "./host-context.js";
 import { BlockAssembler, ReasoningEffortId, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { readFileSync, writeFileSync } from "node:fs";
 
 export interface AuxLlmDeps {
-	ctx: any;
+	ctx: LumeHostContext;
 	/** 小模型原始输出的诊断落盘路径（调试用；由 index 从 DSH_HOME 推导）。 */
 	llmDumpPath: string;
 	/** 主对话路由（request/context 事件更新，可能为 null）。 */
 	llmRoute: () => { provider: string; model: string } | null;
 }
+
+/** 工厂返回值：deps 边界复用它，避免把签名再抄一遍。 */
+export type AuxLlm = ReturnType<typeof createAuxLlm>;
 
 export function createAuxLlm(deps: AuxLlmDeps) {
 	/** 小模型单次调用（提取/蒸馏等辅助功能用）；路由由调用方解析后传入，不可用时返回 null。signal 中止时抛错。

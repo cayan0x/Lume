@@ -62,6 +62,8 @@ import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { initStores } from "./host/bootstrap.js";
 import { createAuxLlm } from "./host/llm-aux.js";
+import type { LumeConfig } from "./host/config.js";
+import { createLlmRouteCell } from "./host/llm-route.js";
 import { createProjectAccess } from "./host/project-access.js";
 import { installPromptSections } from "./host/sections.js";
 import { registerLumeTools } from "./host/tools.js";
@@ -132,45 +134,7 @@ export const name = "lume";
 /** 依赖的服务 */
 export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "agentDefaultModel", "settings"];
 
-export interface LumeConfig {
-	sampleCount?: number;
-	sampleMin?: number;
-	personaOrder?: number;
-	memoryInject?: number;
-	styleInject?: number;
-	injectionStrategy?: "topk" | "full";
-	extractionEnabled?: boolean;
-	extractionCooldownMs?: number;
-	/** 提取专用模型路由：不配置则逐项回落到主对话模型（provider/model 可只配其一）。 */
-	extractionProvider?: string;
-	extractionModel?: string;
-	/** 蒸馏专用模型路由：契约合成质量要求高，默认跟随主对话模型。 */
-	distillProvider?: string;
-	distillModel?: string;
-	/** 会话结束反思日志：空闲时间评估任务执行协议的四项能力，各打 0-2 分落盘。 */
-	reflectionEnabled?: boolean;
-	switchBoundaryTurns?: number;
-	/**
-	 * 分层注入（默认 true）：system 段只留会话恒定文本，易变内容走 runtime-context
-	 * 通道（对话尾部快照）。置为 false 退回旧行为——全部内容挤在 system 段，
-	 * 系统提示词每步改写、前缀缓存每步作废（保留该开关只为对照排查）。
-	 * 宿主不支持 `systemPrompt.context` 时自动退回旧行为（否则记忆注入会消失）。
-	 */
-	layeredInjection?: boolean;
-	/**
-	 * 项目知识（默认 true）：构建/测试命令、模块链路、仓库约定、死路记录，按工作目录
-	 * 归属并跨会话累积。它是「越用越强」那部分，与人格记忆分开存放。
-	 */
-	projectMemory?: boolean;
-	/** 行为触发器（默认 true）：撒网不收敛 / 连写不验 / 死路重撞 / 判据漂移提醒。 */
-	behaviorTriggers?: boolean;
-	/** 连续只读探查多少步后提醒收敛（默认 12）。 */
-	triggerInspectStreak?: number;
-	/** 连续改动多少步后提醒增量验证（默认 6）。 */
-	triggerChangeStreak?: number;
-	/** 同一验证连续失败多少次后判定死路（默认 3）。 */
-	triggerDeadPathFails?: number;
-}
+export type { LumeConfig } from "./host/config.js";
 
 /**
  * 插件入口。**外层只做兜底**：任何宿主 API 变更都不该让 DSH 起不来。
@@ -257,7 +221,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	const runtime = new SessionRuntimeStore();
 
 	// ── 模型路由缓存（request/context，会话过程中由 agent-loop 更新）──
-	let llmRoute: { provider: string; model: string } | null = null;
+	// 共享可变单元（不是快照）：会话事件在 request/context 里写它，读方都拿 .current
+	const llmRoute = createLlmRouteCell();
 
 	// ── 主动解析默认模型：会话开始前蒸馏/提取也要能用 ──
 	// request/context 事件只在对话路由变化时触发（delta event），静默状态下 llmRoute 恒为 null，
@@ -272,8 +237,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			if (agentDefaultModel) {
 				const selection = agentDefaultModel.currentSelection?.() as { provider?: unknown; model?: unknown } | undefined;
 				if (typeof selection?.provider === "string" && typeof selection?.model === "string") {
-					llmRoute = { provider: selection.provider, model: selection.model };
-					ctx.logger?.warn?.(`lume: llmRoute 从 agentDefaultModel 初始化 → ${llmRoute.provider}/${llmRoute.model}`);
+					llmRoute.current = { provider: selection.provider, model: selection.model };
+					ctx.logger?.warn?.(`lume: llmRoute 从 agentDefaultModel 初始化 → ${llmRoute.current.provider}/${llmRoute.current.model}`);
 					return;
 				}
 			}
@@ -286,8 +251,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			if (settings) {
 				const raw = settings.get("agent-default-model");
 				if (raw && typeof raw.provider === "string" && typeof raw.model === "string") {
-					llmRoute = { provider: raw.provider, model: raw.model };
-					ctx.logger?.warn?.(`lume: llmRoute 从 settings 初始化 → ${llmRoute.provider}/${llmRoute.model}`);
+					llmRoute.current = { provider: raw.provider, model: raw.model };
+					ctx.logger?.warn?.(`lume: llmRoute 从 settings 初始化 → ${llmRoute.current.provider}/${llmRoute.current.model}`);
 					return;
 				}
 			}
@@ -298,7 +263,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	})();
 
 	// ── 辅助模型调用（实现见 host/llm-aux.ts）──
-	const { callLlm } = createAuxLlm({ ctx, llmRoute: () => llmRoute, llmDumpPath: LLM_DUMP_PATH });
+	const { callLlm } = createAuxLlm({ ctx, llmRoute: () => llmRoute.current, llmDumpPath: LLM_DUMP_PATH });
 
 	// ── 载具与项目知识的读取入口（实现见 host/project-access.ts）──
 	const projectAccess = createProjectAccess({
@@ -353,7 +318,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			// 一条风格约定写回 style_rules（Jaccard 相似自动替换，不堆叠）。冷却与
 			// 记忆提取共用，避免同一轮双模型调用。
 			if (shouldConsiderCorrection(userText) && !isCoolingDown(st.lastExtractionAt, Date.now(), cooldownMs)) {
-				const route = resolveAuxRoute(extractionRouteOverride, llmRoute);
+				const route = resolveAuxRoute(extractionRouteOverride, llmRoute.current);
 				if (route) {
 					const prompt = buildCorrectionPrompt(userText, assistantText, stores.identity().getStyleRules(personaName).map((r: any) => r.rule));
 					const output = await callLlm(route, prompt.system, prompt.userText, 400);
@@ -383,7 +348,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				assistantText,
 				existing.map((f: any) => f.text),
 			);
-			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute), prompt.system, prompt.userText, 800);
+			const output = await callLlm(resolveAuxRoute(extractionRouteOverride, llmRoute.current), prompt.system, prompt.userText, 800);
 			if (output === null) { ctx.logger?.warn?.(`lume: 反思跳过（${sid}）模型无输出`); return; }
 			st.lastExtractionAt = Date.now();
 			const fresh = mergeNewFacts(parseFacts(output), stores.identity().getMemory(personaName));
@@ -404,7 +369,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 	/** 蒸馏任务 Runner：素材文本 → 角色卡（契约+语料）。路由可配专用档（distillProvider/Model），默认跟随主对话。 */
 	const distillRunner = new DistillJobRunner({
-		route: () => resolveAuxRoute(distillRouteOverride, llmRoute),
+		route: () => resolveAuxRoute(distillRouteOverride, llmRoute.current),
 		call: (route, system, userText, maxTokens, signal) => callLlm(route, system, userText, maxTokens, signal),
 		logger: ctx.logger,
 	});
@@ -417,7 +382,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			if (!oldCard.distillSource || (oldCard.distillVersion ?? 0) >= DISTILL_ALGORITHM_VERSION) continue;
 			try {
 				const upgraded = await runDistill({
-					route: () => resolveAuxRoute(distillRouteOverride, llmRoute),
+					route: () => resolveAuxRoute(distillRouteOverride, llmRoute.current),
 					call: (route, system, userText, maxTokens, signal) => callLlm(route, system, userText, maxTokens, signal),
 					logger: ctx.logger,
 				}, { text: oldCard.distillSource, hint: oldCard.distillHint });
@@ -595,6 +560,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		isDuplicateFact,
 		jaccard,
 		projectOf: () => stores.project(),
+		// 取用器：工具入口统一用它，不可用时给可读错误（省得每处判空）
+		projectStore: () => {
+			const store = stores.project();
+			if (!store) throw new Error("lume: 项目域未就绪（工具需要它来落账）");
+			return store;
+		},
 	};
 
 	// 工具定义本体在 host/tools.ts（调用点必须在 deps 声明之后）
@@ -656,7 +627,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		// 协议正文按模型能力冻结（不随 query 切变体）：切变体会让系统提示词每轮改写，
 		// 代价远超省下的几百 token。见 selectStableThinkingProtocol。
 		const thinkingStable = selectStableThinkingProtocol({
-			isReasoningModel: typeof llmRoute?.model === "string" && REASONING_MODEL_RE.test(llmRoute.model),
+			isReasoningModel: typeof llmRoute.current?.model === "string" && REASONING_MODEL_RE.test(llmRoute.current.model),
 		}).trim();
 		// 易变的任务指令：路由、阶段、闲聊声明、长会话护栏、目标锚点、即时对齐、
 		// 交付复核、压缩重锚、文档能力指引、失败纠偏、反思提醒——全部每步可变。

@@ -13,21 +13,40 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
  * 另有约定：列表类参数用字符串分隔（分号/换行），不引入数组 schema——省 schema token，
  * 也少一层校验风险；output schema 的 const 语义要求成功值恒为 `{ ok: true }`。
  */
+import type { HostPayload, LumeHostContext } from "./host-context.js";
+import type { SessionRuntimeStore } from "./session-runtime.js";
+import type { ProjectStore } from "./project.js";
+import type { ProjectAccess } from "./project-access.js";
+import type { IdentityStore } from "./identity.js";
+import type * as ledgerMod from "../core/ledger.js";
+import type * as extractionMod from "./extraction.js";
+import type * as retrievalMod from "../core/retrieval.js";
+
 export interface ToolDeps {
-	identity: any;
-	isDuplicateFact: any;
-	jaccard: any;
-	ctx: any;
-	runtime: any;
-	defaultName: any;
-	projectKeyFor: any;
-	normalizeContract: any;
-	normalizeChange: any;
-	normalizeHypothesis: any;
-	normalizeProjectFact: any;
-	normalizeDesign: any;
-	/** 项目存储句柄：必须是 getter（index.ts 里是异步赋值）。 */
-	projectOf: () => any;
+	/** 宿主 ctx 的最小面。 */
+	ctx: LumeHostContext;
+	/** 会话态（工具要读写当前会话的判据与计数）。 */
+	runtime: SessionRuntimeStore;
+	/** 角色缺省名（创建人设时用）。 */
+	/** 角色缺省名（未配置时为 null，创建人设时回落到内置名）。 */
+	defaultName: string | null;
+	/** 跨会话项目键：与事件处理器共用同一实现（project-access）。 */
+	projectKeyFor: ProjectAccess["projectKeyFor"];
+	/** 项目存储句柄（异步兑现，所以是函数）。 */
+	projectOf: () => ProjectStore | null;
+	/** 取用器：不可用时抛可读错误（工具入口统一用它，省得每处判空）。 */
+	projectStore: () => ProjectStore;
+	/** 身份域句柄（异步兑现，可能不可用）。 */
+	identity: IdentityStore | null;
+	/** 归一化：模型给什么形状都先过这一层（core/ledger）。 */
+	normalizeContract: typeof ledgerMod.normalizeContract;
+	normalizeChange: typeof ledgerMod.normalizeChange;
+	normalizeHypothesis: typeof ledgerMod.normalizeHypothesis;
+	normalizeProjectFact: typeof ledgerMod.normalizeProjectFact;
+	normalizeDesign: typeof ledgerMod.normalizeDesign;
+	/** 去重判据（与被动提取同一套）。 */
+	isDuplicateFact: typeof extractionMod.isDuplicateFact;
+	jaccard: typeof retrievalMod.jaccard;
 }
 
 export function registerLumeTools(deps: ToolDeps): void {
@@ -39,7 +58,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 		additionalProperties: false,
 		properties: { ok: { type: "boolean", const: true, required: true } },
 	} as const;
-	function dutyPersona(exec: any): string | null {
+	function dutyPersona(exec: HostPayload): string | null {
 		const sid = exec?.agent?.session?.id;
 		const st = sid !== undefined ? deps.runtime.get(String(sid)) : undefined;
 		return st?.lastInjected ?? deps.defaultName;
@@ -54,7 +73,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 					text: { type: "string", required: true, description: "要长期记住的事实，第三人称陈述句，≤40 字" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已保存" }] },
-				execute: async (args: { text: string }, exec: any) => {
+				execute: async (args: { text: string }, exec: HostPayload) => {
 					if (!deps.identity) throw new Error("lume deps.identity store is unavailable");
 					const personaName = dutyPersona(exec);
 					if (!personaName) throw new Error("lume_remember requires an active persona (当前没有当值人设)");
@@ -72,11 +91,11 @@ export function registerLumeTools(deps: ToolDeps): void {
 					rule: { type: "string", required: true, description: "风格约定，一句话祈使句" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已保存" }] },
-				execute: async (args: { rule: string }, exec: any) => {
+				execute: async (args: { rule: string }, exec: HostPayload) => {
 					if (!deps.identity) throw new Error("lume deps.identity store is unavailable");
 					const personaName = dutyPersona(exec);
 					if (!personaName) throw new Error("lume_update_style requires an active persona (当前没有当值人设)");
-					await deps.identity.addStyleRule(personaName, String(args.rule), (a: any, b: any) => deps.jaccard(a, b) >= 0.6);
+					await deps.identity.addStyleRule(personaName, String(args.rule), (a, b) => deps.jaccard(a, b) >= 0.6);
 					return { ok: true };
 				},
 			}),
@@ -133,7 +152,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 					open: { type: "string", description: "待确认：只列真正阻塞的（≤2 个），分号分隔" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已记录任务契约" }] },
-				execute: async (args: Record<string, unknown>, exec: any) => {
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_contract requires an active session");
@@ -151,7 +170,9 @@ export function registerLumeTools(deps: ToolDeps): void {
 						Date.now(),
 						st.turnIndex,
 					);
-					const existing = deps.projectOf().getContract(sid);
+					// 项目域可能还没兑现（异步）：统一走取用器，不可用时给出可读错误
+					const store = deps.projectStore();
+					const existing = store.getContract(sid);
 					if (existing) {
 						// 局部更新：未传的字段保持原值（回填数量时不该把判据清空）。
 						const patch: Record<string, unknown> = {};
@@ -162,10 +183,10 @@ export function registerLumeTools(deps: ToolDeps): void {
 						if (args.criteria !== undefined) patch.criteria = normalized.criteria;
 						if (args.nonGoals !== undefined) patch.nonGoals = normalized.nonGoals;
 						if (args.open !== undefined) patch.open = normalized.open;
-						await deps.projectOf().patchContract(sid, patch);
+						await store.patchContract(sid, patch);
 					} else {
 						if (!normalized.goal) throw new Error("lume_contract requires a goal on first write");
-						await deps.projectOf().setContract(sid, normalized);
+						await store.setContract(sid, normalized);
 					}
 					return { ok: true };
 				},
@@ -184,7 +205,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 					status: { type: "string", description: "planned | done | verified | skipped" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已更新改动台账" }] },
-				execute: async (args: Record<string, unknown>, exec: any) => {
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_change requires an active session");
@@ -193,13 +214,13 @@ export function registerLumeTools(deps: ToolDeps): void {
 					const status = args.status;
 					const allowed = status === "planned" || status === "done" || status === "verified" || status === "skipped" ? status : undefined;
 					if (args.change === undefined && allowed !== undefined) {
-						const hit = await deps.projectOf().setChangeStatus(sid, target, allowed);
+						const hit = await deps.projectStore().setChangeStatus(sid, target, allowed);
 						if (!hit) throw new Error(`lume_change: no ledger entry for ${target}`);
 						return { ok: true };
 					}
 					const item = deps.normalizeChange({ target, change: args.change, why: args.why, verify: args.verify, status: allowed }, Date.now());
 					if (!item) throw new Error("lume_change requires target and change");
-					await deps.projectOf().upsertChange(sid, item);
+					await deps.projectStore().upsertChange(sid, item);
 					return { ok: true };
 				},
 			}),
@@ -215,13 +236,13 @@ export function registerLumeTools(deps: ToolDeps): void {
 					status: { type: "string", description: "open | testing | confirmed | excluded" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已更新假设台账" }] },
-				execute: async (args: Record<string, unknown>, exec: any) => {
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_hypothesis requires an active session");
 					const item = deps.normalizeHypothesis({ text: args.text, evidence: args.evidence, status: args.status }, Date.now());
 					if (!item) throw new Error("lume_hypothesis requires text");
-					await deps.projectOf().upsertHypothesis(sid, item);
+					await deps.projectStore().upsertHypothesis(sid, item);
 					deps.runtime.get(sid).hypothesesTouched = true;
 					return { ok: true };
 				},
@@ -237,7 +258,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 					text: { type: "string", required: true, description: "事实本身，一句话，≤200 字" },
 				},
 				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已记入项目知识" }] },
-				execute: async (args: Record<string, unknown>, exec: any) => {
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
 					if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 					const sid = String(exec?.agent?.session?.id ?? "");
 					if (!sid) throw new Error("lume_project_note requires an active session");
@@ -253,7 +274,7 @@ export function registerLumeTools(deps: ToolDeps): void {
 							deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识已暂存（工作目录未知，共 ${rt.pendingFacts.length} 条），拿到 cwd 后补落盘`);
 							return { ok: true };
 						}
-						await deps.projectOf().addFact(projectKey, fact, (candidate: any, existing: any) => existing.some((entry: any) => deps.jaccard(entry.text, candidate) >= 0.7));
+						await deps.projectStore().addFact(projectKey, fact, (candidate, existing) => existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7));
 					return { ok: true };
 				},
 			}),
@@ -270,13 +291,13 @@ export function registerLumeTools(deps: ToolDeps): void {
 				impact: { type: "string", description: "影响面：会经过哪些既有路径（其它 tab/导出/导入/报表/外部同步）" },
 			},
 			output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已记录设计决策" }] },
-			execute: async (args: Record<string, unknown>, exec: any) => {
+			execute: async (args: Record<string, unknown>, exec: HostPayload) => {
 				if (!deps.projectOf()) throw new Error("lume deps.projectOf() store is unavailable");
 				const sid = String(exec?.agent?.session?.id ?? "");
 				if (!sid) throw new Error("lume_design requires an active session");
 				const item = deps.normalizeDesign({ point: args.point, choice: args.choice, rejected: args.rejected, impact: args.impact }, Date.now());
 				if (!item) throw new Error("lume_design requires point and choice");
-				await deps.projectOf().upsertDesign(sid, item);
+				await deps.projectStore().upsertDesign(sid, item);
 				return { ok: true };
 			},
 		}),

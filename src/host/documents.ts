@@ -68,11 +68,11 @@ export function hasDocumentCapability(caps: DocumentCapabilities): boolean {
 	return caps.word || caps.excel || caps.slides || caps.pdf;
 }
 
-function probeNames(tools: any, scope: unknown): DocumentCapabilities {
+function probeNames(tools: HostPayload, scope: unknown): DocumentCapabilities {
 	try {
 		const schemas = tools?.schemas?.(scope);
 		if (!Array.isArray(schemas)) return detectDocumentCapabilities([]);
-		return detectDocumentCapabilities(schemas.map((schema: any) => String(schema?.name ?? "")));
+		return detectDocumentCapabilities(schemas.map((schema) => String(schema?.name ?? "")));
 	} catch {
 		return detectDocumentCapabilities([]);
 	}
@@ -86,7 +86,7 @@ function probeNames(tools: any, scope: unknown): DocumentCapabilities {
  * 误判——那等于给模型一条与事实相反的边界声明。任何异常均按「没有文档工具」处理：
  * 宁可保守地如实说明边界，也不凭空承诺一项不存在的能力。
  */
-export function probeDocumentCapabilities(tools: any, scope?: unknown): DocumentCapabilities {
+export function probeDocumentCapabilities(tools: HostPayload, scope?: unknown): DocumentCapabilities {
 	const scoped = probeNames(tools, scope);
 	if (hasDocumentCapability(scoped) || scope === undefined) return scoped;
 	return probeNames(tools, undefined);
@@ -129,4 +129,5 @@ export function buildDocumentDirective(input: { query: string | null | undefined
 	if (!hasDocumentCapability(input.capabilities)) return officeIntent ? buildBoundary() : null;
 	const artifactIntent = officeIntent || (DOC_ACTION_RE.test(text) && DOC_ARTIFACT_RE.test(text));
 	return artifactIntent ? buildRouting(input.capabilities) : null;
-}
+}import type { HostPayload } from "./host-context.js";
+

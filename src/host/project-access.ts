@@ -4,27 +4,36 @@
  * 事件处理器、工具、提示装配三处共用这几个小函数，所以必须**只有一处真值来源**
  * （会话态在 runtime，跨会话知识在项目域）。全部经工厂注入依赖，不捕获 index 的闭包。
  */
+import type { HostPayload, LumeHostContext } from "./host-context.js";
+import type { LumeConfig } from "./config.js";
+import type { SessionRuntimeStore } from "./session-runtime.js";
+import type * as ledgerMod from "../core/ledger.js";
 import { DESIGN_SIGNAL_RE } from "./protocol.js";
 import { forceNotice, noticeText } from "./notices.js";
 import type { SessionRuntime } from "./session-runtime.js";
 import type { ResultSignals } from "../core/signals.js";
 
+import type { ProjectStore } from "./project.js";
+
 export interface ProjectAccessDeps {
-	ctx: any;
-	config: any;
-	runtime: any;
-	stores: { project: () => any; projectReady: Promise<any> };
+	ctx: LumeHostContext;
+	config: LumeConfig;
+	runtime: SessionRuntimeStore;
+	stores: { project: () => ProjectStore | null; projectReady: Promise<ProjectStore | null> };
 	/** fire-and-forget 的持久化（失败留痕，见 bootstrap.projectTask）。 */
-	projectTask: (sid: string, label: string, run: (store: any) => any) => void;
-	normalizeProjectFact: any;
+	projectTask: (sid: string, label: string, run: (store: ProjectStore) => unknown) => void;
+	normalizeProjectFact: typeof ledgerMod.normalizeProjectFact;
 	isRealVerifyCommand: (command: unknown) => boolean;
 	jaccard: (a: string, b: string) => number;
-	projectKeyOf: (source: any) => string | null;
+	projectKeyOf: (source: HostPayload) => string | null;
 }
+
+/** 工厂返回值：deps 边界直接复用它，避免把 20 多个签名再抄一遍。 */
+export type ProjectAccess = ReturnType<typeof createProjectAccess>;
 
 export function createProjectAccess(deps: ProjectAccessDeps) {
 	/** 项目键：优先取会话工作目录（跨会话共享同一仓库的知识）。 */
-	function projectKeyFor(sid: string, source: any): string | null {
+	function projectKeyFor(sid: string, source: HostPayload): string | null {
 		const st = deps.runtime.get(sid);
 		if (st.projectKey) return st.projectKey;
 		// 三种调用来源：提示词 context（{agent:{session}}）、工具 exec（{agent:{session}}）、
@@ -58,7 +67,7 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 	 * 现场代价（0.7.4）：模型主动调了 3 次 lume_project_note，全部因为"当时还不知道工作目录"
 	 * 被丢弃——facts 表里一条都没有。cwd 在同一轮稍后就能拿到，所以丢弃太早、太永久。
 	 */
-	function flushPendingFacts(sid: string, source: any): void {
+	function flushPendingFacts(sid: string, source: HostPayload): void {
 		const st = deps.runtime.get(sid);
 		if (st.pendingFacts.length === 0) return;
 		const key = projectKeyFor(sid, source);
@@ -69,7 +78,7 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 			if (!store) return;
 			let saved = 0;
 			for (const fact of pending) {
-				const ok = await store.addFact(key, fact, (candidate: any, existing: any) => existing.some((entry: any) => deps.jaccard(entry.text, candidate) >= 0.7));
+				const ok = await store.addFact(key, fact, (candidate, existing) => existing.some((entry) => deps.jaccard(entry.text, candidate) >= 0.7));
 				if (ok) saved++;
 			}
 			deps.ctx.logger?.warn?.(`lume: [${sid}] 项目知识补落盘 ${saved}/${pending.length} 条 → ${key}`);
@@ -98,7 +107,7 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		}
 		const changed = changesOf(sid);
 		const targets = realVerify ? undefined : [readbackTarget!];
-		if (!realVerify && !changed.some((item: any) => item.target === readbackTarget)) return;
+		if (!realVerify && !changed.some((item) => item.target === readbackTarget)) return;
 		const firstLine = resultText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
 		const evidence = realVerify
 			? `自动：${commandSummary(st.agent.lastToolArgs)} → ${firstLine.slice(0, 80)}`
@@ -122,9 +131,10 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		return deps.stores.project()?.getHypotheses(sid) ?? [];
 	}
 
-	function factsOf(sid: string, context: any) {
+	function factsOf(sid: string, context: HostPayload) {
 		const projectKey = projectKeyFor(sid, context);
-		return deps.stores.project() && projectKey ? deps.stores.project().getFacts(projectKey) : [];
+		const store = deps.stores.project();
+		return store && projectKey ? store.getFacts(projectKey) : [];
 	}
 
 	/** 环境里是否有符号级结构分析工具：有就让模型用它替代通篇 read。 */
@@ -143,7 +153,7 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		return mode !== "question" && DESIGN_SIGNAL_RE.test(query) && designOf(sid).length === 0;
 	}
 
-	function structureToolName(context: any): string | null {
+	function structureToolName(context: HostPayload): string | null {
 		try {
 			const schemas = deps.ctx.get("tools")?.schemas?.(context?.agent);
 			if (!Array.isArray(schemas)) return null;

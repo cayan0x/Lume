@@ -11,6 +11,7 @@
  * 纪律：只做**注意力加权**，不新增任何规矩；漏选不会让条款消失（完整版仍在系统提示里）。
  */
 import type { SessionRuntime } from "./session-runtime.js";
+import { ROUTE_CORRECTION_RE } from "./protocol.js";
 import { THINKING_TEXT } from "./thinking.js";
 
 export interface ProtocolClause {
@@ -99,6 +100,8 @@ export interface FocusInput {
 	hasContract?: boolean;
 	/** 本会话累计改动次数。 */
 	mutations?: number;
+	/** 各模式被用户纠正过的次数（度量采到的，用来闭环改选择：错得多的模式把「对齐」顶上来）。 */
+	correctionModes?: Record<string, number>;
 }
 
 /**
@@ -117,6 +120,23 @@ export function selectFocusClauses(input: FocusInput): ProtocolClause[] {
 
 /** 选中条款的稳定键（度量用：记录「这轮加权了哪三条」，才能回头看出效果）。 */
 export function focusClauseIds(input: FocusInput): string[] {
+	return applyCorrectionClosedLoop(input, baseClauseIds(input));
+}
+
+/**
+ * 闭环：度量里采到了「哪个模式在被纠正」就必须有人消费它（2026-09-24 审核指出：
+ * correctionsByMode 采了却没有任何消费方，等于白采）。
+ *
+ * 规则保守：**本模式**被纠正 ≥2 次才动，只把「对齐纠偏」插到最前面，条数上限不变。
+ * 注意它只改变加权顺序，不改模式判定——判错模式该修判定，不该靠加一条提醒掩盖。
+ */
+function applyCorrectionClosedLoop(input: FocusInput, ids: string[]): string[] {
+	const corrections = input.correctionModes?.[input.mode] ?? 0;
+	if (corrections < 2 || input.correction || ids[0] === "align") return ids;
+	return ["align", ...ids].slice(0, FOCUS_CLAUSE_LIMIT);
+}
+
+function baseClauseIds(input: FocusInput): string[] {
 	if (input.correction) return ["align", "question-discipline", "independent"];
 	if (input.compactionRecent) return ["context", "evidence-recency", "facts-first"];
 	switch (input.mode) {
@@ -165,6 +185,8 @@ export function buildFocusClauseDirective(input: FocusInput): string | null {
 export interface FocusState {
 	hasContract: boolean;
 	unverifiedChanges: number;
+	/** 各模式被纠正次数（来自度量）；装配与度量两侧都传同一份。 */
+	correctionModes?: Record<string, number>;
 }
 
 /**
@@ -190,17 +212,13 @@ export function focusIdsFor(st: SessionRuntime, mode: SessionRuntime["interactio
  * 契约/未验证条数由调用方（index，只有它拿得到 store）传入——`taskPhase` 当不了判据，
  * 因为模式一旦判成执行，阶段就已经是 execute 了。
  */
-export function focusInputFor(
-	st: SessionRuntime,
-	mode: SessionRuntime["interactionMode"],
-	query: string,
-	state: { hasContract: boolean; unverifiedChanges: number },
-): FocusInput {
+export function focusInputFor(st: SessionRuntime, mode: SessionRuntime["interactionMode"], query: string, state: FocusState): FocusInput {
 	return {
 		mode,
 		phase: st.taskPhase,
 		turnIndex: st.turnIndex,
-		correction: ROUTE_CORRECTION_HINT.test(String(query ?? "")),
+		correctionModes: state.correctionModes,
+		correction: ROUTE_CORRECTION_RE.test(String(query ?? "")),
 		compactionRecent: st.compaction !== null && st.turnIndex - st.compaction.turnIndex <= 1,
 		unverifiedChanges: state.unverifiedChanges,
 		hasContract: state.hasContract,
@@ -208,8 +226,6 @@ export function focusInputFor(
 	};
 }
 
-/**
- * 与 protocol.ROUTE_CORRECTION_RE 同源的粗判（只用于「这轮要不要把对齐条款顶上来」，
- * 判错代价只是多给一条加权条款）。真正决定重算模式的是 classifyWithTrajectory。
- */
-const ROUTE_CORRECTION_HINT = /不是让你|我没让你|我问的是|我是问|你理解错|答非所问|我说的是|我指的是/;
+// 纠正语用**直接复用** protocol 的那一份常量（曾经这里抄了一份，少了 9 个词——
+// 「谁说让你」能重算路由却选不出「对齐」条款，是典型的口径漂移）。
+// 判错代价只是多给/少给一条加权条款；真正决定重算模式的是 classifyWithTrajectory。

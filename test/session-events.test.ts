@@ -116,6 +116,8 @@ function setup() {
 		contextPressure: () => ({ level: "ok" as const, ratio: 0 }),
 		buildContextPressureDirective: () => "〔上下文接近上限〕",
 		settleVerification: vi.fn(),
+		// 真验证判定：默认「不是」（具体用例用 mockReturnValue 覆盖）
+		isRealVerifyCommand: vi.fn(() => false),
 		contractOf: () => null,
 		changesOf: () => [],
 		designOf: () => [],
@@ -339,6 +341,31 @@ describe("host/session-events：度量（外部结果信号）", () => {
 		st.interactionMode = "question";
 		handler({ id: "sid-1" }, { type: "tool/call", data: EDIT_CALL });
 		expect(deps.recordMetric).toHaveBeenCalledWith(expect.objectContaining({ kind: "outcome", event: "overreach", mode: "question" }));
+	});
+
+	it("真验证命令出现 → 落一条 verify-run（verify 类触发器效能判据，不用台账 verified）", () => {
+		const { handler, st, deps } = setup();
+		st.toolKind = "verify";
+		st.agent.lastToolArgs = JSON.stringify({ command: "npm test" });
+		vi.mocked(deps.isRealVerifyCommand).mockReturnValue(true);
+		vi.mocked(deps.readResultSignals).mockReturnValue({ failure: false, unknown: false, env: false });
+		handler(
+			{ id: "sid-1" },
+			{ type: "tool/result", data: { error: null, message: { content: [{ type: "text", text: "Tests 12 passed" }] } } },
+		);
+		expect(deps.recordMetric).toHaveBeenCalledWith(expect.objectContaining({ kind: "outcome", event: "verify-run", sid: "sid-1" }));
+	});
+
+	it("不是真验证命令就不记（普通命令不该被算成验证）", () => {
+		const { handler, st, deps } = setup();
+		st.toolKind = "verify";
+		st.agent.lastToolArgs = JSON.stringify({ command: "git status" });
+		vi.mocked(deps.readResultSignals).mockReturnValue({ failure: false, unknown: false, env: false });
+		handler(
+			{ id: "sid-1" },
+			{ type: "tool/result", data: { error: null, message: { content: [{ type: "text", text: "On branch main" }] } } },
+		);
+		expect(deps.recordMetric).not.toHaveBeenCalledWith(expect.objectContaining({ event: "verify-run" }));
 	});
 
 	it("问答轮的只读探查不算越权（问题本来就该查仓库事实）", () => {

@@ -117,7 +117,8 @@ describe("core/metrics：触发器命中后行为是否真的变了", () => {
 		const records: MetricRecord[] = [
 			state(1, 2, { counters: counters({ verifyFailStreak: 2 }) }),
 			fire("verify-as-you-go", 2, 2),
-			state(3, 3, { verified: 1, counters: counters({ verifyFailStreak: 0 }) }),
+			// verify 类的判据是「出现了真验证命令」（verify-run），不是台账 verified 增加
+			{ kind: "outcome", at: 3, sid: "s1", turn: 2, event: "verify-run", mode: "execute" },
 			fire("contract-missing", 4, 5),
 			state(5, 6, { hasContract: false }),
 			state(6, 7, { hasContract: true }),
@@ -125,6 +126,18 @@ describe("core/metrics：触发器命中后行为是否真的变了", () => {
 		const summary = summarizeMetrics(records);
 		expect(summary.triggers.find((t) => t.id === "verify-as-you-go")).toMatchObject({ fired: 1, improved: 1 });
 		expect(summary.triggers.find((t) => t.id === "contract-missing")).toMatchObject({ fired: 1, improved: 1 });
+	});
+
+	it("台账 verified 增加**不算**改善（它由 settleVerification 自动推进，拿来当判据就是自我表扬）", () => {
+		const records: MetricRecord[] = [
+			state(1, 2, { counters: counters({ verifyFailStreak: 2 }) }),
+			fire("verify-as-you-go", 2, 2),
+			state(3, 3, { verified: 9, counters: counters({ verifyFailStreak: 0 }) }),
+		];
+		expect(summarizeMetrics(records).triggers.find((t) => t.id === "verify-as-you-go")).toMatchObject({
+			fired: 1,
+			improved: 0,
+		});
 	});
 
 	it("窗口外才变化 = 不算（归因不清的样本宁可不用）", () => {
@@ -140,7 +153,7 @@ describe("core/metrics：触发器命中后行为是否真的变了", () => {
 		expect(summary.measuredTriggers).toBe(1); // converge 才有口径，criteria-drift 不算
 		expect(summary.improvedTriggers).toBe(1);
 		const text = formatMetricsSummary(summary);
-		expect(text).toContain("只算有机械口径的");
+		expect(text).toContain("按命中次数");
 		expect(text).toContain("无机械口径，未判定");
 	});
 });

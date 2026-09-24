@@ -81,9 +81,15 @@ export interface BlocksMetric extends MetricBase {
 	focus: string[];
 }
 
-export type OutcomeEvent = "user-correction" | "repeat-request" | "overreach" | "no-action";
+export type OutcomeEvent = "user-correction" | "repeat-request" | "overreach" | "no-action" | "verify-run";
 
-/** 外部结果信号：用户纠正 / 重复同一请求 / 问答轮却改了文件 / 执行轮一步没动。 */
+/**
+ * 外部结果信号：用户纠正 / 重复同一请求 / 问答轮却改了文件 / 执行轮一步没动。
+ *
+ * `verify-run` 是唯一一条**行为观测**（不是用户信号）：出现了一次「真验证命令」。
+ * 它是 verify 类触发器效能判定的判据——**不能用「台账 verified 增加」**：台账由
+ * project-access 的 settleVerification 自动推进，拿它当判据会让仪表盘自我表扬
+ * （2026-09-24 外部审核指出）。 */
 export interface OutcomeMetric extends MetricBase {
 	kind: "outcome";
 	event: OutcomeEvent;
@@ -96,7 +102,7 @@ export type MetricRecord = RouteMetric | TriggerMetric | StateMetric | BlocksMet
 
 /**
  * 触发器的预期行为变化（机械可判）：
- * - verify：出现一次「验证成功」（台账 verified 增加，或失败连击归零）
+ * - verify：窗口内出现一次「真验证命令」（`verify-run`；台账 verified 自动推进，不算证据）
  * - contract / design / ledger / hypothesis：对应载具从无到有
  * - none：**测不了**（判据漂移、知识采集这类没有机械口径），排除在比例外
  */
@@ -180,6 +186,9 @@ export interface MetricsSummary {
 	/** 有机械口径且命中过的触发器数（比例的分母）。 */
 	measuredTriggers: number;
 	improvedTriggers: number;
+	/** 有机械口径的**命中次数**合计（measuredTriggers 是「触发器类别数」，两者别混）。 */
+	measuredHits: number;
+	improvedHits: number;
 }
 
 function bump(map: Record<string, number>, key: string): void {
@@ -195,6 +204,15 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 	const window = opts.efficacyWindow ?? EFFICACY_WINDOW_TURNS;
 	const scoped = sid ? records.filter((record) => record.sid === sid) : records;
 	const sessions = new Set(scoped.map((record) => record.sid));
+	// 单趟建 sid → 记录 索引：效能判定只扫同会话的记录。
+	// 原来每个命中都全量重扫（叠加 baselineAt 再来一遍），ring 800 时最坏几十万次比较，
+	// lume_metrics 频繁手调会有可见延迟（2026-09-24 审核指出）。
+	const bySid = new Map<string, MetricRecord[]>();
+	for (const record of scoped) {
+		const list = bySid.get(record.sid);
+		if (list) list.push(record);
+		else bySid.set(record.sid, [record]);
+	}
 
 	const routes: RouteStats = { total: 0, byMode: {}, byMatched: {}, bySource: {} };
 	const outcomes: OutcomeStats = { corrections: 0, repeats: 0, overreach: 0, noAction: 0, correctionsByMode: {} };
@@ -231,7 +249,7 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 		const expect = record.expect ?? triggerExpect(record.id);
 		const entry = byId.get(record.id) ?? { id: record.id, expect, fired: 0, improved: 0 };
 		entry.fired++;
-		if (expect !== "none" && improvedAfter(scoped, { ...record, expect }, window)) entry.improved++;
+		if (expect !== "none" && improvedAfter(bySid.get(record.sid) ?? [record], { ...record, expect }, window)) entry.improved++;
 		byId.set(record.id, entry);
 	}
 	const triggers = [...byId.values()].sort((a, b) => b.fired - a.fired);
@@ -246,11 +264,27 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 		triggers,
 		measuredTriggers: measured.length,
 		improvedTriggers: measured.filter((entry) => entry.improved > 0).length,
+		measuredHits: measured.reduce((sum, entry) => sum + entry.fired, 0),
+		improvedHits: measured.reduce((sum, entry) => sum + entry.improved, 0),
 	};
 }
 
-/** 命中之后（同日会话、窗口轮内）是否出现过预期变化。 */
+/** 窗口内是否出现过「真验证命令」（机械可判，且不是台账自动推进的产物）。 */
+function hasVerifyRun(records: readonly MetricRecord[], fire: TriggerMetric, window: number): boolean {
+	for (const record of records) {
+		if (record.kind !== "outcome" || record.sid !== fire.sid || record.event !== "verify-run") continue;
+		// 验证常常就发生在命中的**同一轮**里，所以允许同轮但必须在命中之后。
+		if (record.turn < fire.turn || record.turn > fire.turn + window) continue;
+		if (record.at < fire.at) continue;
+		return true;
+	}
+	return false;
+}
+
+/** 命中之后（窗口轮内）是否出现过预期变化。 */
 function improvedAfter(records: readonly MetricRecord[], fire: TriggerMetric, window: number): boolean {
+	// verify 类只认「真验证命令」：台账 verified 由自动推进产生，拿它当判据等于自我表扬。
+	if (fire.expect === "verify") return hasVerifyRun(records, fire, window);
 	const base = baselineAt(records, fire);
 	if (!base) return false;
 	for (const record of records) {
@@ -258,10 +292,6 @@ function improvedAfter(records: readonly MetricRecord[], fire: TriggerMetric, wi
 		if (record.turn <= fire.turn || record.turn > fire.turn + window) continue;
 		if (record.at < fire.at) continue;
 		switch (fire.expect) {
-			case "verify":
-				if (record.verified > base.verified) return true;
-				if (base.counters.verifyFailStreak > 0 && record.counters.verifyFailStreak === 0) return true;
-				break;
 			case "contract":
 				if (record.hasContract && !base.hasContract) return true;
 				break;
@@ -333,8 +363,9 @@ export function formatMetricsSummary(summary: MetricsSummary, opts: { label?: st
 	if (summary.triggers.length === 0) lines.push("- 触发器：本区间没有命中记录");
 	else {
 		lines.push(
-			`- 触发器命中后行为是否变化（窗口 ${EFFICACY_WINDOW_TURNS} 轮，只算有机械口径的）：${ratio(summary.improvedTriggers, summary.measuredTriggers)}`,
+			`- 触发器效能（**观察性，不是因果**；窗口 ${EFFICACY_WINDOW_TURNS} 轮）：按命中次数 ${ratio(summary.improvedHits, summary.measuredHits)}；按类别 ${summary.improvedTriggers}/${summary.measuredTriggers} 类出现过改善`,
 		);
+		lines.push("  判据：窗口内出现「真验证命令」或对应载具（契约/设计/台账/假设）从无到有；没机械口径的类别标「未判定」、不计入分母。");
 		for (const entry of summary.triggers)
 			lines.push(
 				`  · ${entry.id}：命中 ${entry.fired} 次，改善 ${entry.improved}${entry.expect === "none" ? "（无机械口径，未判定）" : ""}`,

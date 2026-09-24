@@ -94,6 +94,8 @@ export interface SessionCarrierDeps {
 	saveSessionMemory: ProjectAccess["saveSessionMemory"];
 	taskMemoriesOf: ProjectAccess["taskMemoriesOf"];
 	settleVerification: ProjectAccess["settleVerification"];
+	/** 判定一条命令是不是「真验证」（度量要把它的出现次数记下来当效能判据）。 */
+	isRealVerifyCommand: (command: unknown) => boolean;
 	/** 学到 cwd 时把「会话目录名 → 工作目录」存下来（第一轮装配要靠它） */
 	rememberWorkspace: (sid: string, cwd: string) => void;
 	/** 需求线索（<cwd>/doc/<需求名>/ + 文档里的标识符）：知识作用域优先按它归属 */

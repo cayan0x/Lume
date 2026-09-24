@@ -85,6 +85,7 @@ import { coverageRows, danglingSectionRefs, hasFigureRefs, pickRequirementCorpus
 import type { AuxLlm } from "./llm-aux.js";
 import type { LlmRouteCell } from "./llm-route.js";
 import type { ChangeItem, ProjectFact } from "../core/ledger.js";
+import { isRealVerifyCommand } from "../core/signals.js";
 import { buildDocumentDirective, probeDocumentCapabilities } from "./documents.js";
 import type { DocumentCapabilities } from "./documents.js";
 import type { IdentityStore } from "./identity.js";
@@ -95,6 +96,7 @@ import type { SessionRuntime, SessionRuntimeStore } from "./session-runtime.js";
 import { focusDirectiveFor } from "./clauses.js";
 import type { BlockDeps, BlockInput } from "./prompt-blocks.js";
 import type { MetricRecord } from "../core/metrics.js";
+import type { MetricsHealth } from "./metrics-log.js";
 import type { SessionEventDeps } from "./session-deps.js";
 import type { ToolDeps } from "./tools.js";
 import type { TriggerThresholds } from "./triggers.js";
@@ -153,6 +155,8 @@ export interface WiringInput {
 	metrics: {
 		record: (record: MetricRecord) => void;
 		summary: (scope?: string) => string;
+		/** 本会话健康计数（纠正落点等）：装配侧的选择也要看它，才算闭环。 */
+		health: (sid: string) => MetricsHealth;
 	};
 	// ── 配置开关（index 解析完 config 后传入）──
 	projectMemoryOn: boolean;
@@ -191,6 +195,7 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		projectTask: input.projectTask,
 		flushPendingFacts: input.access.flushPendingFacts,
 		settleVerification: input.access.settleVerification,
+		isRealVerifyCommand,
 		rememberWorkspace: rememberSessionWorkspace,
 		requirementHintsOf,
 		saveSessionMemory: input.access.saveSessionMemory,

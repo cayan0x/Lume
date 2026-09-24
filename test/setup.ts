@@ -6,8 +6,17 @@
  * 的数据被自己的测试污染，度量就废了。指到临时目录后，测试仍然真的落盘（能断言文件内容），
  * 只是落在别处。
  */
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "lume-test-home-"));
+const home = mkdtempSync(join(tmpdir(), "lume-test-home-"));
+process.env.DSH_HOME = home;
+// 退出时清理（尽力而为）：不清理会在 %TEMP% 留一堆目录——跑一次全量就多一个（2026-09-24 审核指出）。
+process.once("exit", () => {
+	try {
+		rmSync(home, { recursive: true, force: true });
+	} catch {
+		/* 清理失败不影响测试结论（Windows 上文件句柄可能还没释放） */
+	}
+});

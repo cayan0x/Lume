@@ -632,6 +632,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		metrics: {
 			record: (record) => metricsLog.record(record),
 			summary: (scope) => metricsLog.summaryText(scope),
+			health: (sid) => metricsLog.health(sid),
 		},
 	};
 
@@ -669,7 +670,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	 * 同一步里提示词会被构建多次，所以状态快照按 (sid, turn) 去重——否则一次回复会记十几条。
 	 * 块装配不按轮去重：它记的是「这一步实际注入了什么」，逐步都要。
 	 */
-	const metricsTurnSeen = new Map<string, number>();
+	const metricsTurnSeen = new Map<string, string>();
 	function recordTurnMetrics(
 		sid: string,
 		st: SessionRuntime,
@@ -680,7 +681,13 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		if (!metricsLog.enabled) return;
 		const changes = changesOf(sid);
 		const unverified = changes.filter((item) => item.status !== "verified" && item.status !== "skipped").length;
-		const state = { hasContract: contractOf(sid) !== null, unverifiedChanges: unverified };
+		const health = metricsLog.health(sid);
+		const state = {
+			hasContract: contractOf(sid) !== null,
+			unverifiedChanges: unverified,
+			// 纠正闭环：本模式被纠正过的次数（与装配侧同一份数据，见 host/clauses.ts）
+			correctionModes: health.correctionsByMode,
+		};
 		metricsLog.record({
 			kind: "blocks",
 			at: Date.now(),
@@ -693,9 +700,13 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			budget: composed.budget,
 			focus: focusIdsFor(st, mode, query, state),
 		});
-		if (metricsTurnSeen.get(sid) === st.turnIndex) return;
-		if (metricsTurnSeen.size > 200) metricsTurnSeen.clear();
-		metricsTurnSeen.set(sid, st.turnIndex);
+		// 按**步**（而不是按轮）去重：一条长轮次里如果只记轮首快照，效能判定就没有分辨率
+		// （真机实测：一个跑了十几分钟的轮次只有 3 条记录）。步键取「轮号 + 本轮工具调用数」——
+		// 有工具动作才可能变，纯生成步骤不会灌水。
+		const stepKey = `${st.turnIndex}:${st.toolCalls}`;
+		if (metricsTurnSeen.get(sid) === stepKey) return;
+		if (metricsTurnSeen.size > 400) metricsTurnSeen.clear();
+		metricsTurnSeen.set(sid, stepKey);
 		metricsLog.record({
 			kind: "state",
 			at: Date.now(),

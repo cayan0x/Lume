@@ -196,6 +196,17 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				if (resultText) deps.recordSymbols(st.agent.seenSymbols, resultText);
 				// 验证结算：成功的真验证自动推进台账 / 失败立刻顶一句先修红——都不等模型调工具
 				if (deps.projectMemoryOn) deps.settleVerification(sid, st, resultText, signals);
+				// 度量：出现一次「真验证命令」就记一条。它是 verify 类触发器效能判定的判据——
+				// **不能**用「台账 verified 增加」：那是 settleVerification 自动推进的产物，会自我表扬。
+				if (st.toolKind === "verify" && deps.isRealVerifyCommand(st.agent.lastToolArgs ?? ""))
+					deps.recordMetric({
+						kind: "outcome",
+						at: Date.now(),
+						sid,
+						turn: st.turnIndex,
+						event: "verify-run",
+						mode: st.interactionMode,
+					});
 				// 自动沉淀项目知识：**不依赖模型自觉调工具**（实测 3 次 lume_project_note 全丢）。判据在
 				// core/knowledge.ts（宁窄勿宽 + 敏感词硬拦），每会话有上限，落盘统一走 pendingFacts → flush。
 				if (deps.projectMemoryOn && resultText && st.agent.autoFacts < AUTO_FACT_CAP) {

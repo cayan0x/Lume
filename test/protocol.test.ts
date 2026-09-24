@@ -131,6 +131,14 @@ describe("interaction protocol：轨迹路由与可归因", () => {
 		expect(classifyInteraction("这段代码能不能跑起来？")).toBe("question");
 	});
 
+	it("复核既有改动按诊断处理（真机实测：这句曾被判成 research）", () => {
+		expect(classifyInteractionDetailed("做了修改，你再重新检查一下代码")).toMatchObject({
+			mode: "diagnosis",
+			matched: "recheck",
+		});
+		expect(classifyInteractionDetailed("重新核对一下改动")).toMatchObject({ mode: "diagnosis" });
+	});
+
 	it("在问「怎么做」时不会因为句子里有动词就判成命令", () => {
 		expect(classifyInteraction("怎么整理这段数据比较好")).toBe("question");
 	});
@@ -156,6 +164,25 @@ describe("interaction protocol：轨迹路由与可归因", () => {
 			hadMutations: true,
 		});
 		expect(decision).toMatchObject({ mode: "execute", source: "sticky" });
+	});
+
+	it("带疑问特征的句子不许被轨迹抬档（「顺便说下 git 怎么配」不该判成动手）", () => {
+		const ask = classifyWithTrajectory({
+			text: "顺便说下 git 怎么配",
+			recentUserTexts: ["帮我改一下接口", "把列表页也改一下"],
+			prevMode: "execute",
+			prevPhase: "execute",
+			hadMutations: true,
+		});
+		expect(ask).toMatchObject({ mode: "question", source: "text" });
+		const meaning = classifyWithTrajectory({
+			text: "那这个字段是什么含义",
+			recentUserTexts: ["帮我改一下接口", "把列表页也改一下"],
+			prevMode: "execute",
+			prevPhase: "execute",
+			hadMutations: true,
+		});
+		expect(meaning).toMatchObject({ mode: "question", source: "text" });
 	});
 
 	it("任务型轨迹上的一句短话按轨迹判任务；证据不足时绝不猜", () => {

@@ -46,13 +46,28 @@ export function looksSensitive(text: unknown): boolean {
 const ANCHOR_RE =
 	/([A-Za-z]:\\|\/[\w.-]+\/)|[^\s/\\|，。；]+\.(java|xml|sql|yml|yaml|json|md|ts|tsx|js|py|go|cs|kt|properties|sh|ps1)\b|\b[A-Z][A-Z0-9_]{4,}\b|\b(mvn|gradle|npm|pnpm|yarn|docker|kubectl|psql|mysql|redis-cli|python|pip|dotnet|go|cargo|make|git|icacls|chmod|rsync|systemctl|curl)\b/;
 
+/**
+ * 死路判据：谓词 + 对象/证据。
+ *
+ * 为什么加锚点（2026-09-24 审核指出误报）：原来只要有「不可用」就算死路，于是我们自己的诊断文案
+ * ——「落点不可用：宿主没提供 DSH_HOME…」——被记成死路，污染了最值钱的一类知识。
+ * 现在：明确的「跑不了/行不通」表述照收；「不可用」要保留（「权限位不可用」是真死路），
+ * 但**排除紧跟在「落点/宿主/内存/环境变量」后面的那一种**——那是我们自己的诊断话术；
+ * 「不支持」类必须带具体对象（标识/版本/依赖/命令/报错）。
+ */
+const DEADEND_RE =
+	/(?:(?:行不通|跑不了|用不了|不可行|已经不行)[^。；\n]{0,40}|(?<!落点|宿主|内存|环境变量)(?:不可用)|(?:不支持|不再维护|unsupported|not supported)[^。；\n]{0,40}(?:[A-Za-z0-9_./\\-]{3,}|版本|依赖|命令|报错|平台))/i;
+
 /** 四类机械可判的事实。刻意写窄：宁可漏掉，也不要把建议/议论灌进知识库。 */
 const KIND_RULES: readonly { kind: ProjectFactKind; re: RegExp }[] = [
 	// 构建/测试：必须出现"命令"语义（否则"构建通过"这种临时结果不值得跨会话留）
 	{ kind: "build", re: /(构建|编译|打包|build)[^。；\n]{0,30}(命令|用\s*\S{2,30}\s*(执行|跑)|是\s*\S{2,30})/i },
 	{ kind: "test", re: /(测试|用例|单测|test)[^。；\n]{0,30}(命令|用\s*\S{2,30}\s*(执行|跑)|入口是)/i },
-	// 死路：说清"行不通"，这是最值钱的一类（避免重复踩）
-	{ kind: "deadend", re: /(不可用|不可行|不支持|跑不了|用不了|已经不行|行不通|not supported|unsupported|不再维护)/i },
+	// 死路：说清"行不通"，这是最值钱的一类（避免重复踩）。
+	// 判据 = 谓词 + 锚点（2026-09-24 审核指出误报）：
+	// 「不可用」太泛，我们自己的诊断文案就带它——「落点不可用：宿主没提供 DSH_HOME…」曾被记成死路，
+	// 直接污染了最值钱的一类。现在要么是明确的"跑不了/行不通"表述，要么「不支持」类必须带具体对象。
+	{ kind: "deadend", re: DEADEND_RE },
 	// 约定：只认"项目/仓库/团队 + 一律/必须/统一"这种规范性表述
 	{ kind: "convention", re: /(约定|规范|一律|统一|必须|禁止)[^。；\n]{0,60}/ },
 ];

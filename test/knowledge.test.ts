@@ -117,4 +117,19 @@ describe("core/knowledge：三个来源（tool / assistant / user）的判据差
 		).toHaveLength(0);
 		expect(extractKnowledgeCandidates("| `git status` | 复核：doc 那两行必须还是 ??（WTPF_X） |", { source: "assistant" })).toHaveLength(0);
 	});
+
+	it("死路判据要「谓词 + 对象」：我们自己的诊断文案不算项目死路（真机踩过）", () => {
+		// 负例：这句曾被记成死路（「不可用」太泛），污染了最值钱的一类知识
+		expect(
+			extractKnowledgeCandidates("落点不可用：宿主没提供 DSH_HOME / APPDATA，本次只有内存记录（重启即丢）。", {
+				source: "assistant",
+			}).some((candidate) => candidate.kind === "deadend"),
+		).toBe(false);
+		// 正例：明确的「跑不了」+ 具体对象 → 收
+		expect(
+			extractKnowledgeCandidates("jasypt 在 JDK17 下跑不了，报 UnsupportedClassVersionError（见 pom.xml）", {
+				source: "tool",
+			}).some((candidate) => candidate.kind === "deadend"),
+		).toBe(true);
+	});
 });

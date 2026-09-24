@@ -69,6 +69,10 @@ const CHANGE_OBJECT_RE = /优化|重构|重写|整理|清理|拆分|合并|迁�
 /** 能力/可行性询问：「看看这块能不能优化」→ 先给判断与办法（诊断），不是让人直接动手。 */
 const SOFT_CHANGE_RE = /能不能|能否|可不可以|是否可以|有没有办法|有没有可能|可否/;
 
+/** 复核既有改动：再/重新 + 检查/复核/验证 + 代码/改动/实现。 */
+const RECHECK_RE =
+	/(?:再|重新|从头|复核|复检|回归)[^。；\n]{0,12}(?:检查|看一下|看一遍|过一遍|核对|验证|确认)[^。；\n]{0,12}(?:代码|改动|修改|实现|产物|结果|逻辑)/;
+
 /**
  * 路由纠正语用：用户在说「你刚才理解错了这一轮要什么」。
  * 与 session-events 的通用纠偏词分开——那条管语气与表达，这条只管**模式判错**，
@@ -76,6 +80,15 @@ const SOFT_CHANGE_RE = /能不能|能否|可不可以|是否可以|有没有办�
  */
 export const ROUTE_CORRECTION_RE =
 	/不是让你|我没让你|谁说让你|我只是问|我只是想|我问的是|我是问|不是要你改|不是让你改|你理解错|答非所问|我说的是|我指的是|先别改|别改|不要动|你改错|搞错方向/;
+/**
+ * 当前句自带「新问题」特征：疑问代词/疑问语气/显式换话题。
+ *
+ * 为什么需要（2026-09-24 审核指出）：中文常不带问号，轨迹抬档只看「非 ? 结尾 + ≤120 字 + 近三轮任务型」，
+ * 于是「顺便说下 git 怎么配」会被抬成执行。带上这条反向条件：明显在问，就一律不抬档——
+ * 宁可少一次加权，也不要把「问一句」判成「动手」。
+ */
+const NEW_QUESTION_RE = /怎么|如何|为什么|为啥|什么|哪些|哪个|是否|吗\s*$|呢\s*$|换个话题|另一个问题|另外问|顺便问|新问题/;
+
 /** 承接式追问：没有新动词，但明显在上一件事上往下走。 */
 const FOLLOW_UP_RE = /^\s*(继续|接着|然后|还有|再|那|所以|顺便|下一步|再来|往下|then|接着来|继续吧|那这个|这样的话|那它)/i;
 
@@ -107,6 +120,9 @@ export function classifyInteractionDetailed(text: string | null | undefined): Ro
 	// 只有「没下命令、只在问能不能」的句子才落到诊断——诊断模式不改文件，但会给办法。
 	if (!howto && SOFT_CHANGE_RE.test(query) && CHANGE_OBJECT_RE.test(query))
 		return { mode: "diagnosis", matched: "capability-ask", source: "text" };
+	// 复核既有改动（真机实测：「做了修改，你再重新检查一下代码」被判成 research）：
+	// 「再/重新 + 检查/复核 + 代码/改动」要的是判断与结论，不是检索资料 → 诊断。
+	if (!howto && RECHECK_RE.test(query)) return { mode: "diagnosis", matched: "recheck", source: "text" };
 	if (DIAGNOSIS_RE.test(query)) return { mode: "diagnosis", matched: "diagnosis", source: "text" };
 	if (DISCUSSION_RE.test(query)) return { mode: "discussion", matched: "discussion", source: "text" };
 	if (RESEARCH_RE.test(query)) return { mode: "research", matched: "research", source: "text" };
@@ -159,14 +175,16 @@ export function classifyWithTrajectory(input: TrajectoryInput): RouteDecision {
 	}
 
 	const followUp = FOLLOW_UP_RE.test(query) && query.length <= 120;
+	// 自带疑问特征 → 不参与抬档（粘性也一样：追问可以，问新问题不行）
+	const asksNewQuestion = NEW_QUESTION_RE.test(query);
 	// ② 粘性：任务在途 + 承接式追问 + 单句判成问答（明显掉档）→ 保持上一轮模式。
 	// 只认「阶段已推进 / 已动过文件」的在途任务：否则一次误判会被无限继承。
 	const inFlight = input.hadMutations || input.prevPhase === "execute" || input.prevPhase === "verify" || input.prevPhase === "deliver";
-	if (followUp && base.mode === "question" && inFlight && input.prevMode !== "question")
+	if (followUp && !asksNewQuestion && base.mode === "question" && inFlight && input.prevMode !== "question")
 		return { mode: input.prevMode, matched: `sticky:${base.matched}`, source: "sticky", evidence: query };
 
 	// ③ 一致：最近三轮用户话里至少两轮是任务型，当前这句既没有疑问特征也不是新话题 → 按轨迹判任务。
-	if (base.mode === "question" && !followUp && query.length <= 120 && !/[?？]\s*$/.test(query)) {
+	if (base.mode === "question" && !followUp && !asksNewQuestion && query.length <= 120 && !/[?？]\s*$/.test(query)) {
 		const taskish = recent
 			.slice(-3)
 			.map((turn) => classifyInteractionDetailed(turn))

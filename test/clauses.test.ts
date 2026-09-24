@@ -94,6 +94,15 @@ describe("host/clauses：本轮重点（每轮最多三条）", () => {
 		}
 	});
 
+	it("纠正闭环：本模式被纠正 ≥2 次 → 把「对齐纠偏」顶上来（度量采到的纠正落点必须有人消费）", () => {
+		expect(focusClauseIds({ mode: "research", phase: "execute", turnIndex: 1 })[0]).toBe("evidence-source");
+		const looped = focusClauseIds({ mode: "research", phase: "execute", turnIndex: 1, correctionModes: { research: 2 } });
+		expect(looped[0]).toBe("align");
+		expect(looped).toHaveLength(FOCUS_CLAUSE_LIMIT);
+		// 只影响被纠正的那个模式，别的模式不受牵连
+		expect(focusClauseIds({ mode: "execute", phase: "execute", turnIndex: 1, correctionModes: { research: 5 } })[0]).not.toBe("align");
+	});
+
 	it("渲染写明「条款一条没少」——否则模型会以为协议被缩减，反而放宽行为", () => {
 		const text = buildFocusClauseDirective({
 			mode: "execute",

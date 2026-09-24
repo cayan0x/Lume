@@ -75,6 +75,52 @@ for (const raw of files) {
 	if (anyCount >= 20) hints.push(`as any × ${anyCount}：${file}`);
 }
 
+// ── 规则 8：依赖必须真的被使用（deps.<name>）─────────────────────────────
+// 现场教训（2026-09-24）：BlockDeps 加了 ensureSessionWorkspace、wiring 也接了线，
+// 但**装配处忘了调用** → 死代码 → 新会话第一轮缺〔项目知识〕，模型答"我这轮没接上上下文"。
+// 类型检查抓不到（声明 + 赋值都合法），只能靠"声明必须在某处真的用上"这条静态规则。
+// 豁免：在成员上一行写 "lint-arch: allow-unused <理由>"。
+{
+	const usage = new Set();
+	const allFiles = walk("src").filter((f) => /\.tsx?$/.test(f));
+	for (const f of allFiles) {
+		const text = readFileSync(f, "utf8");
+		for (const hit of text.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)) usage.add(hit[1]);
+		// 也认「解构」用法：const { a, b } = deps（rpc.ts 就是这么取 registry/distill 的）
+		for (const hit of text.matchAll(/const\s*\{([^}]*)\}\s*=\s*deps\b/g)) {
+			for (const part of hit[1].split(",")) {
+				const name = part.trim().split(":").pop().trim();
+				if (name) usage.add(name);
+			}
+		}
+	}
+	let declared = 0;
+	let unused = 0;
+	for (const file of allFiles) {
+		const lines = readFileSync(file, "utf8").split(/\r?\n/);
+		let inside = false;
+		let depth = 0;
+		let current = "";
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			if (!inside) {
+				const m = line.match(/interface\s+(\w*Deps\w*)[^\{]*\{/);
+				if (m) { inside = true; current = m[1]; depth = 1; }
+				continue;
+			}
+			depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+			if (depth <= 0) { inside = false; continue; }
+			const member = line.match(/^\s{1,4}([A-Za-z_$][\w$]*)\s*[?:(]/);
+			if (!member) continue;
+			declared++;
+			if (usage.has(member[1])) continue;
+			if (/lint-arch:\s*allow-unused/.test(lines[i - 1] ?? "") || /lint-arch:\s*allow-unused/.test(line)) continue;
+			unused++;
+			errors.push(file + ":" + (i + 1) + "  " + current + "." + member[1] + " 声明了依赖却没有任何 deps." + member[1] + " 调用（接线了但没被用上＝死代码）");
+		}
+	}
+	hints.push("依赖声明检查：共 " + declared + " 个声明，未使用 " + unused + " 个");
+}
 console.log("═══ 架构检查 ═══");
 if (errors.length === 0) console.log("✅ 分层 / ESM 扩展名 / 日志 / 静默失败 / 抑制理由 / 类型边界：全部通过");
 else {

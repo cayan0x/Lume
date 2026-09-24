@@ -34,6 +34,7 @@ export interface PersonaSelectionStore {
 }
 
 export interface LumeRpcDeps {
+	// lint-arch: allow-unused 历史遗留：personalities 目前没人读（同上，单独一批清理）
 	personalities: Record<string, Persona>;
 	store: PersonaSelectionStore;
 	registry: PersonaRegistry;

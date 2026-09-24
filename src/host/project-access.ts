@@ -18,6 +18,7 @@ import type { ProjectStore } from "./project.js";
 
 export interface ProjectAccessDeps {
 	ctx: LumeHostContext;
+	// lint-arch: allow-unused 历史遗留：config 目前没人读（删它要同时改装配与假宿主，单独一批做）
 	config: LumeConfig;
 	runtime: SessionRuntimeStore;
 	stores: { project: () => ProjectStore | null; projectReady: Promise<ProjectStore | null> };

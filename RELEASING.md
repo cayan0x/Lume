@@ -1,4 +1,5 @@
 > 注：`lib/` 是构建产物，**不入库**（只在磁盘上）。`release:check` 会先 `npm run build`，
+> 另外：**发布前必跑 `npm run verify:live`**（真机清单，只读：加载行 / 能力行 / RPC 两路 / 补蒸馏留痕 / 知识桶 / 注入块 / 客户端产物可解析）。
 > `install-local` / `npm pack` 也都从磁盘读 `lib/`——所以流程不变，只是产物不进版本库。
 
 # 发布流程（RELEASING）

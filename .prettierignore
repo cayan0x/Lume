@@ -7,3 +7,8 @@ CHANGELOG.md
 .goose/
 # prettier 会把里面的转义串改坏（试过一次：SyntaxError），所以排除
 scripts/publish.mjs
+package-lock.json
+docs/persona/
+docs/hub-pr/submit-api.mjs
+.prettierrc.json
+cordis.patch.yml

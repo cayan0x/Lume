@@ -83,3 +83,22 @@ describe("host/host-events：从运行时快照取工作目录", () => {
 		expect(workspaceFromSnapshotText('session workspace: "not-a-path"')).toBe(null);
 	});
 });
+
+describe("core/knowledge：三个来源（tool / assistant / user）的判据差异", () => {
+	it("用户来源只收「规范陈述」——需求描述与一次性动作不收", () => {
+		expect(extractKnowledgeCandidates("目录约定：数据脚本一律放 doc/<需求名>/*.sql（例 doc/x/08-数据割接（T）.sql）", { source: "user" })).toHaveLength(1);
+		expect(extractKnowledgeCandidates("把开发文档里 2.1.1 / 2.1.3 改成 AUTH_USER，并同步到 SQL 里", { source: "user" })).toHaveLength(0);
+		expect(extractKnowledgeCandidates("这个需求要新增一个权限人字段，按姓名展示（如图一）", { source: "user" })).toHaveLength(0);
+	});
+
+	it("助手来源收约定/结论，不收对话句与一次性动作", () => {
+		expect(extractKnowledgeCandidates("SERVICEURL_FLAG=NEW 的环境里必须用 NEW_SERVICEURL（见 server/index.js），要非空且以 http 开头", { source: "assistant" })).toHaveLength(1);
+		expect(extractKnowledgeCandidates("我们要不要把这个也过一遍构建？（server/index.js 是全局拦截器）", { source: "assistant" })).toHaveLength(0);
+		expect(extractKnowledgeCandidates("前端也过一遍构建（server/index.js 是全局拦截器，改动影响面比另两个文件大）", { source: "assistant" })).toHaveLength(0);
+	});
+
+	it("片段续写与清单/表格行不收（非工具来源）", () => {
+		expect(extractKnowledgeCandidates("同理列名 AUTH_USER 与同表既有风格（BUS_TYPE、OFFER_DESC，无 AUTH 前缀）必须一致", { source: "assistant" })).toHaveLength(0);
+		expect(extractKnowledgeCandidates("| `git status` | 复核：doc 那两行必须还是 ??（WTPF_X） |", { source: "assistant" })).toHaveLength(0);
+	});
+});

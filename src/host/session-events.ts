@@ -16,7 +16,7 @@ import { handleTurnEnd } from "./turn-boundary.js";
 import type { SessionEventDeps } from "./session-deps.js";
 
 /** 每会话自动沉淀的项目知识上限：宁可少记，也不要让知识库变垃圾桶。 */
-const AUTO_FACT_CAP = 4;
+const AUTO_FACT_CAP = 6;
 
 export type { SessionEventDeps };
 
@@ -79,7 +79,20 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 								deps.projectTask(sid, "需求锚点落账", (store) => store.appendRequirement(sid, { text: text.trim().slice(0, 800), at: Date.now() }));
 								st.requirementFresh = true;
 							}
-							deps.forceNotice(st, "align", explicitCorrection
+							// 用户的**规范陈述**（必须/一律/唯一约定…）是最权威的跨会话知识：不靠工具、不靠提醒也能沉淀。
+						if (deps.projectMemoryOn && st.agent.autoFacts < AUTO_FACT_CAP) {
+							for (const candidate of deps.extractKnowledgeCandidates(text, { source: "user" })) {
+								if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
+								const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now());
+								if (!fact || deps.looksSensitive(fact.text)) continue;
+								st.pendingFacts.push(fact);
+								if (st.pendingFacts.length > 8) st.pendingFacts.shift();
+								st.agent.autoFacts++;
+								deps.ctx.logger?.warn?.(`lume: [${sid}] 自动沉淀候选（用户规范·${fact.kind}）：${fact.text.slice(0, 60)}`);
+							}
+							deps.flushPendingFacts(sid, event.data);
+						}
+						deps.forceNotice(st, "align", explicitCorrection
 								? deps.buildAlignmentCorrection("user-correction")
 								: repeatedRequest
 									? deps.buildAlignmentCorrection("repeated-request")
@@ -98,6 +111,21 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						const text = deps.visibleText((event.data as { message?: unknown } | undefined)?.message);
 						if (text) {
 							st.assistantText = text;
+						// 助手可见回答里的**项目约定/结论**也是一条沉淀来源：它不在工具输出里、也不是需求原话，
+						// 却常常就是「这个仓库怎么干活」的关键（例如某开关环境下必须用另一个服务地址变量）。
+						// 判据与工具来源同源，另加"非对话句/非一次性动作"过滤（见 core/knowledge.ts）。
+						if (deps.projectMemoryOn && text.length > 40 && st.agent.autoFacts < AUTO_FACT_CAP) {
+							for (const candidate of deps.extractKnowledgeCandidates(text, { source: "assistant", userText: st.userText ?? "" })) {
+								if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
+								const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now());
+								if (!fact) continue;
+								st.pendingFacts.push(fact);
+								if (st.pendingFacts.length > 8) st.pendingFacts.shift();
+								st.agent.autoFacts++;
+								deps.ctx.logger?.warn?.(`lume: [${sid}] 自动沉淀候选（助手结论·${fact.kind}）：${fact.text.slice(0, 60)}`);
+							}
+							deps.flushPendingFacts(sid, event.data);
+						}
 							// 需求漂移（词法级、零成本）：只有模型把**需求没提的变更说成自己要做的**才顶一句。
 							// 语料取「用户侧原话」全集（锚点 + 最近问句 + 本轮原话）——用户自己提过的词不算脑补；
 							// 每会话限次、同词不重报：反复顶会让模型开始躲词而不是解决问题（2026-09-23 实测）。
@@ -188,7 +216,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						// 自动沉淀项目知识：**不依赖模型自觉调工具**（实测 3 次 lume_project_note 全丢）。判据在
 						// core/knowledge.ts（宁窄勿宽 + 敏感词硬拦），每会话有上限，落盘统一走 pendingFacts → flush。
 						if (deps.projectMemoryOn && resultText && st.agent.autoFacts < AUTO_FACT_CAP) {
-							for (const candidate of deps.extractKnowledgeCandidates(resultText, { userText: st.userText ?? "" })) {
+							for (const candidate of deps.extractKnowledgeCandidates(resultText, { source: "tool", userText: st.userText ?? "" })) {
 								if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
 								const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now());
 								if (!fact || deps.looksSensitive(fact.text)) continue;

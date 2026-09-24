@@ -223,3 +223,20 @@ describe("host/session-events：项目知识的落地链路（0.8.0）", () => {
 		expect(st.pendingFacts.length).toBe(0);
 	});
 });
+
+describe("host/session-events：三个来源都能自动沉淀（不依赖模型调工具）", () => {
+	it("用户的规范陈述就沉淀（不需要工具调用）", () => {
+		const { handler, st, deps } = setup();
+		handler({ id: "sid-1" }, { type: "user/message", data: { content: [{ type: "text", text: "目录约定：数据脚本一律放 doc/<需求名>/*.sql（例 doc/x/08-数据割接（T）.sql）" }] } });
+		expect(st.agent.autoFacts).toBe(1);
+		expect(st.pendingFacts.length).toBe(1);
+		expect(deps.flushPendingFacts).toHaveBeenCalled();
+	});
+
+	it("助手的项目结论也沉淀", () => {
+		const { handler, st } = setup();
+		handler({ id: "sid-1" }, { type: "assistant/message", data: { message: { content: [{ type: "text", text: "SERVICEURL_FLAG=NEW 的环境里必须用 NEW_SERVICEURL（见 server/index.js），否则网关拦不到" }] } } });
+		expect(st.agent.autoFacts).toBe(1);
+		expect(st.pendingFacts.length).toBe(1);
+	});
+});

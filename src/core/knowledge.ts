@@ -17,6 +17,14 @@ export interface KnowledgeCandidate {
 }
 
 /**
+ * 候选来源：不同来源的判据略有差异（用户的"规范陈述"是一等公民，助手结论要防自夸）。
+ * - `tool`：命令/构建/死路这类**被执行验证过**的事实；
+ * - `assistant`：助手给出的**项目约定/结论**（不采建议与提问）；
+ * - `user`：用户的**规范陈述**（必须/一律/唯一…）——它往往比会话里任何推断都权威。
+ */
+export type KnowledgeSource = "tool" | "assistant" | "user";
+
+/**
  * 明面上要拒绝的内容：**带值的**密钥/密码/令牌/连接串，以及"某密钥可解"这类结论。
  *
  * 刻意区分「凭证名」与「凭证值」：`-Djasypt.encryptor.password` 只是参数名（正当约定，该留），
@@ -87,11 +95,14 @@ const MAX_LEN = 200;
  */
 export function extractKnowledgeCandidates(
 	text: unknown,
-	options: { userText?: string; max?: number } = {},
+	options: { userText?: string; max?: number; source?: KnowledgeSource } = {},
 ): KnowledgeCandidate[] {
 	const raw = String(text ?? "");
 	if (!raw || raw.length < MIN_LEN) return [];
 	const max = options.max ?? 2;
+	const source = options.source ?? "tool";
+	// 用户的规范陈述判据：比工具/助手更严——它会被当成权威跨会话复用，收错了代价最大
+	const USER_RULE_RE = /(必须|一律|统一|禁止|不要|别用|不能|唯一|按\s*\S{2,20}\s*(做|来|办)|约定|规范|标准是)/;
 	const userText = String(options.userText ?? "");
 	const out: KnowledgeCandidate[] = [];
 	const seen = new Set<string>();
@@ -110,6 +121,20 @@ export function extractKnowledgeCandidates(
 		// 用户自己说过的话不算沉淀（那是锚点该管的）
 		if (userText && userText.includes(sentence.slice(0, 40))) continue;
 		const rule = KIND_RULES.find((item) => item.re.test(sentence));
+		// 来源分流：用户来源只收「规范陈述」（否则会把需求描述当成项目知识）；
+		// 助手来源不采对话性句子（「我们/你要不要」那是交互，不是项目事实）。
+		if (source === "user" && !USER_RULE_RE.test(sentence)) continue;
+		if (source === "assistant" && /(我们|咱|你我|请问|要不要)/.test(sentence)) continue;
+		// 非工具来源额外降噪（真机精度循环结果：这两类最容易混进片段与"一次性动作"）：
+		// - 一次性动作（改成/补一句/过一遍/复核/同步到）是任务步骤，不是可复用知识；
+		// - 片段续写词（同理/另外/同时/还有）与引用符号（§、连续 →、✅、L\d+-\d+）说明它不是完整句子；
+		// - 表格行/清单行不是知识。
+		if (source !== "tool") {
+			if (/(改成|改为|补一句|补上|加一句|过一遍|复核|同步到|替换成|写成|落库到)/.test(sentence)) continue;
+			if (/^(同理|另外|同时|还有|以及|此外|且)/.test(sentence)) continue;
+			if (/(§|\u2705|L\d{2,}-\d{2,}|→.*→)/.test(sentence)) continue;
+			if (/^\s*(\||-\s|\*\s|\d+[.)]\s)/.test(sentence)) continue;
+		}
 		if (!rule) continue;
 		const key = sentence.slice(0, 60);
 		if (seen.has(key)) continue;

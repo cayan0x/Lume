@@ -67,7 +67,7 @@ import { createLlmRouteCell } from "./host/llm-route.js";
 import { createProjectAccess } from "./host/project-access.js";
 import { installPromptSections } from "./host/sections.js";
 import { registerLumeTools } from "./host/tools.js";
-import { assembleBlockDeps, assembleSessionEventDeps, assembleToolDeps } from "./host/wiring.js";
+import { assembleBlockDeps, assembleSessionEventDeps, assembleToolDeps, startSessionBackfill } from "./host/wiring.js";
 import type { HostPayload } from "./host/host-context.js";
 import type { WiringInput } from "./host/wiring.js";
 import { createSessionDisposedHandler, createSessionEventHandler } from "./host/session-events.js";
@@ -501,7 +501,26 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		reflectionEnabled,
 	};
 
-	const sessionEventDeps = assembleSessionEventDeps(wiring);
+		// 会话补蒸馏：把最近 7 天的会话（**含已经撑满、聊不动的那些**）榨成跨会话知识。
+	// 为什么必须在这里做：上下文撑满 → 宿主压缩会失败（现场：compaction/end error=context overflow）→
+	// 会话再也产不出事件 → 期间没沉淀的知识会永久丢；但会话记录还躺在硬盘上。
+	// 分片执行（每片一个会话）以免阻塞宿主同进程的事件循环；幂等来自 addFact 的相似度去重。
+	ctx.effect(() => {
+		let stopBackfill: (() => void) | null = null;
+		void stores.projectReady
+			.then((store) => {
+				if (!store) return;
+				stopBackfill = startSessionBackfill({
+					dsHome: String(process.env.DSH_HOME ?? ""),
+					log: appendLumeLog,
+					addFact: (key, fact) => store.addFact(key, fact, isDuplicateFact),
+				});
+			})
+			.catch((error) => ctx.logger?.warn?.(`lume: 会话补蒸馏启动失败：${describeError(error)}`));
+		return () => stopBackfill?.();
+	});
+
+const sessionEventDeps = assembleSessionEventDeps(wiring);
 	const toolDeps = assembleToolDeps(wiring);
 	const blockDeps: BlockDeps = assembleBlockDeps(wiring);
 

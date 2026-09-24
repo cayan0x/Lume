@@ -64,7 +64,7 @@ const KIND_RULES: readonly { kind: ProjectFactKind; re: RegExp }[] = [
  * - **宿主运行时快照**（它经 user/message 通道投递，里面全是 policy 文本与路径）。
  */
 /** 工具输出里的脚手架行：不是事实，是检索/回显的格式（`63: …`、`Line 164: …`、`Found 3 of 9 matches`）。 */
-const SCAFFOLD_RE = /(Found \d+ of \d+ matches|^\s*Line\s*\d+\s*[:：]|\b\d{1,5}\s*[:：]\s)/;
+const SCAFFOLD_RE = /(Found \d+ of \d+ matches|^\s*Line\s*\d+\s*[:：]|^\s*L\d{2,}\s*[:：]|\b\d{1,5}\s*[:：]\s)/;
 
 /** 纯路径 / 纯标识符行：只有定位信息、没有事实内容（现场噪音最大的一类）。 */
 const PATH_ONLY_RE = /^[\w\\./:\-()（）<>@$\u4e00-\u9fa5]+$/;

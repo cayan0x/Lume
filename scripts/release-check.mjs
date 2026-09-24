@@ -192,6 +192,16 @@ const FILE_INVARIANTS = [
 		incident: "现场实测：方法块/提醒不点名工具时，模型不会调用（lume_change 零调用）",
 		check: (text) => text.includes("lume_change") && text.includes("lume_project_note"),
 	},
+		// 会话补蒸馏：已经撑满的会话也能补出知识（记录在硬盘上，压缩失败不等于内容丢失）。
+		// 反例价值：上下文溢出 → 宿主 compaction 失败 → 会话再产不出事件，期间没沉淀的知识会永久丢。
+		{
+			id: "session-backfill",
+			file: "lib/host/backfill.js",
+			what: "补蒸馏：扫最近 7 天会话文件（含已撑满的），机械提炼后写进跨会话知识",
+			incident: "2026-09-24 现场：compaction/end 报 context overflow，会话聊不动；该会话 1711 个事件里的知识只能靠离线补",
+			check: (text) => text.includes("recentSessionFiles") && text.includes("startBackfill") && text.includes("session.v3.jsonl.zstd"),
+		},
+
 ];
 
 const BUNDLE_INVARIANTS = [

@@ -219,7 +219,7 @@ Lume 每轮都会往对话里加东西：当前模式、需求原话、台账、
 
 ```bash
 npm install --legacy-peer-deps   # DSH 生态包与若干 rc 存在 peer 冲突，需要这个开关
-npm test                         # 620 个用例（以当场输出为准）
+npm test                         # 跑全量用例（条数以当场输出为准）
 npm run lint                     # 架构规则 + 类型检查 + 机制覆盖 + 格式检查
 npm run build                    # 产出 lib/（构建产物不入库）
 npm run release:check            # 发布门禁：对着产物断言，每条绑一个历史事故

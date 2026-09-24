@@ -132,8 +132,14 @@ for (const raw of files) {
 			if (!member) continue;
 			// 抗格式化：函数型成员（`fn: (a, b) => …`）被 prettier 拆行后，参数行会被误当成成员声明。
 			// 所以进入函数类型后，直到看见 `=>` 之前都不算成员。
-			if (/^\s*[A-Za-z_$][\w$]*\s*:\s*\(/.test(line) && !line.includes("=>")) { inFnType = true; continue; }
-			if (inFnType) { if (line.includes("=>")) inFnType = false; continue; }
+			if (/^\s*[A-Za-z_$][\w$]*\s*:\s*\(/.test(line) && !line.includes("=>")) {
+				inFnType = true;
+				continue;
+			}
+			if (inFnType) {
+				if (line.includes("=>")) inFnType = false;
+				continue;
+			}
 			declared++;
 			if (usage.has(member[1])) continue;
 			if (/lint-arch:\s*allow-unused/.test(lines[i - 1] ?? "") || /lint-arch:\s*allow-unused/.test(line)) continue;

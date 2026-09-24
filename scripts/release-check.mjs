@@ -440,7 +440,8 @@ async function main() {
 	};
 	run(HOST_INVARIANTS, indexJs);
 	// rpc-bridge 的检查并入宿主产物检查
-	for (const item of [...SCRIPT_PARSE_INVARIANTS, 
+	for (const item of [
+		...SCRIPT_PARSE_INVARIANTS,
 		{
 			id: "error-details",
 			what: "错误信封补 details（客户端要求是对象，缺失会抛 invalid server-response failure）",

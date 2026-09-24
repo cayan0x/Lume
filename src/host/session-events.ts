@@ -29,7 +29,6 @@ import {
 
 /** 每会话自动沉淀的项目知识上限：宁可少记，也不要让知识库变垃圾桶。 */
 
-
 export type { SessionEventDeps };
 
 export function createSessionEventHandler(deps: SessionEventDeps) {

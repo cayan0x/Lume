@@ -1,9 +1,0 @@
-# release publish npm workflow lume
-Lume（lume-dsh-plugin）项目：改完不要直接发布。完成改动后只做到「提交 / 停在待确认」为止，必须先等用户确认，才执行 tag + push + npm publish（commit 也建议先问）。用户明确要求过一次。
-
-# npm publish release windows pitfall
-npm 发布的两个真实坑（2026-09-23 v0.7.4 首发踩到）：
-1) **传播是异步的**：`npm publish` 打印 `+ pkg@ver` 只代表受理（PUT 202），registry 出该版本实测需要 1.5~9 分钟（0.7.2≈1.5min、0.7.3≈4min、0.7.4≈7min）。发布脚本的轮询窗口必须 ≥10 分钟，且**「尚未出现」绝不能当成「产物不合格」做破坏性操作**（弃用/改 dist-tag）——否则会误伤刚发布的版本。
-2) **`execFileSync("npm.cmd", args, { shell: true })` 在 Windows 上会静默空跑**（args 被 shell 拼接后 npm 什么都没做、退出码 0、无输出）。要发就**直接在 shell 里跑 `npm publish`**，或显式走 `cmd /c`。同理 `npx`/`npm exec` 在这台机器上因 Node 垫片问题不可用——脚本里一律用 `process.execPath` 直接跑 node。
-另：发布前门禁（scripts/release-check.mjs）要读多个产物文件，本地采集的 files 映射必须包含它们，否则检查恒失败。
-

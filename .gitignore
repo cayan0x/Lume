@@ -23,3 +23,9 @@ sync-to-dsh.mjs
 # 本地临时脚本与提交信息（.goose/memory 与 state.md 是有意入库的项目记忆，保留跟踪）
 .goose/tmp-*
 .goose/commit-msg.txt
+
+# 构建产物：只在磁盘上（发布/装机都从磁盘读），不入库
+lib/
+
+# 本地记忆与交接状态（goose 的 .goose 目录）
+.goose/

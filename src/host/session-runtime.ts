@@ -90,6 +90,8 @@ export interface SessionRuntime {
 		lastToolArgs: string | null;
 		/** 最近一次工具调用的目标路径（回读验证与定位门槛都要用）。 */
 		lastToolTarget: string | null;
+		/** 本会话自动沉淀的项目知识条数（防灌垃圾：每会话有上限） */
+		autoFacts: number;
 	};
 	/**
 	 * cwd 未就绪时暂存的项目知识。
@@ -168,6 +170,7 @@ function defaultRuntime(): SessionRuntime {
 			lastToolName: null,
 			lastToolArgs: null,
 			lastToolTarget: null,
+			autoFacts: 0,
 		},
 		pendingFacts: [],
 		projectKey: null,

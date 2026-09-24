@@ -89,7 +89,7 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 	});
 
 	it("文档产物 + 需求原文 → 覆盖核对生成一次；产物更新后再生成一次；上限 2 次后不再生成", () => {
-		const runtime = st({ agent: { evidence: new Map(), artifactText: "x".repeat(300), inspectedTargets: new Set(), seenSymbols: new Set(), lastToolName: null, lastToolArgs: null, lastToolTarget: null } });
+		const runtime = st({ agent: { evidence: new Map(), artifactText: "x".repeat(300), inspectedTargets: new Set(), seenSymbols: new Set(), lastToolName: null, lastToolArgs: null, lastToolTarget: null, autoFacts: 0 } });
 		const first = carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });
 		expect(texts(first).join("\n")).toContain("需求覆盖核对");
 		carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });

@@ -19,6 +19,7 @@ import type { ProjectStore } from "./project.js";
 import type { ProjectAccess } from "./project-access.js";
 import type { IdentityStore } from "./identity.js";
 import type * as ledgerMod from "../core/ledger.js";
+import type * as knowledgeMod from "../core/knowledge.js";
 import type * as extractionMod from "./extraction.js";
 import type * as retrievalMod from "../core/retrieval.js";
 
@@ -43,6 +44,8 @@ export interface ToolDeps {
 	normalizeChange: typeof ledgerMod.normalizeChange;
 	normalizeHypothesis: typeof ledgerMod.normalizeHypothesis;
 	normalizeProjectFact: typeof ledgerMod.normalizeProjectFact;
+	/** 敏感内容硬拦：项目知识是明文跨会话存储 */
+	looksSensitive: typeof knowledgeMod.looksSensitive;
 	normalizeDesign: typeof ledgerMod.normalizeDesign;
 	/** 去重判据（与被动提取同一套）。 */
 	isDuplicateFact: typeof extractionMod.isDuplicateFact;
@@ -264,6 +267,8 @@ export function registerLumeTools(deps: ToolDeps): void {
 					if (!sid) throw new Error("lume_project_note requires an active session");
 					const fact = deps.normalizeProjectFact({ kind: args.kind, text: args.text }, Date.now());
 					if (!fact) throw new Error("lume_project_note requires text");
+				if (deps.looksSensitive(fact.text))
+					throw new Error("lume_project_note 拒绝含密钥/连接串/凭证的内容：项目知识是**明文跨会话**存储；请改记「存在某类配置，细节见 <文件:行>」");
 					const projectKey = deps.projectKeyFor(sid, { agent: exec?.agent });
 						if (!projectKey) {
 							// 拿不到工作目录时**暂存**而不是丢弃——现场代价：模型主动记的 3 条硬知识全丢了。

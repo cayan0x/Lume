@@ -254,6 +254,15 @@ export function renderHypotheses(list: Hypothesis[], limit = 8): string | null {
 	return `〔假设台账〕\n${lines.join("\n")}${foot}`;
 }
 
+/** 知识新鲜度：跨会话知识必须一眼看出是多久前记的（过时的事实比没有更危险）。 */
+function ageLabel(at: number, now = Date.now()): string {
+	const hours = (now - at) / 3_600_000;
+	if (!Number.isFinite(hours) || hours < 0) return "";
+	if (hours < 1) return "（刚记）";
+	if (hours < 48) return `（${Math.round(hours)} 小时前）`;
+	return `（${Math.round(hours / 24)} 天前）`;
+}
+
 /** 渲染项目知识：按类别归组；死路单独成节（它最省时间）。 */
 export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | null {
 	if (facts.length === 0) return null;
@@ -264,7 +273,7 @@ export function renderProjectFacts(facts: ProjectFact[], limit = 14): string | n
 		const group = picked.filter((fact) => fact.kind === kind);
 		if (group.length === 0) continue;
 		lines.push(`${FACT_LABEL[kind]}：`);
-		for (const fact of group) lines.push(`- ${fact.text}`);
+		for (const fact of group) lines.push(`- ${fact.text}${ageLabel(fact.at)}`);
 	}
 	return `〔项目知识｜本目录，跨会话累积〕\n${lines.join("\n")}`;
 }

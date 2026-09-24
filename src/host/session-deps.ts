@@ -12,6 +12,7 @@ import * as leakMod from "../core/leak-detector.js";
 import * as ledgerMod from "../core/ledger.js";
 import * as signalsMod from "../core/signals.js";
 import * as textMod from "../core/text.js";
+import * as knowledgeMod from "../core/knowledge.js";
 import * as compactionMod from "./compaction.js";
 import * as diagMod from "./diag.js";
 import * as extractionMod from "./extraction.js";
@@ -101,6 +102,12 @@ export interface SessionSignalDeps {
 	recordResultText: typeof citationsMod.recordResultText;
 	visibleText: typeof textMod.visibleText;
 	messageText: typeof textMod.messageText;
+	/** 从运行时快照文本里取工作目录（这台宿主唯一可靠的 cwd 来源） */
+	workspaceFromSnapshotText: typeof hostEventsMod.workspaceFromSnapshotText;
+	/** 机械判定哪些句子值得跨会话沉淀（宁窄勿宽） */
+	extractKnowledgeCandidates: typeof knowledgeMod.extractKnowledgeCandidates;
+	/** 敏感内容硬拦：密钥/连接串一律不入跨会话知识 */
+	looksSensitive: typeof knowledgeMod.looksSensitive;
 	buildAlignmentCorrection: typeof protocolMod.buildAlignmentCorrection;
 	isUserAuthored: typeof protocolMod.isUserAuthored;
 	advancePhase: typeof protocolMod.advancePhase;

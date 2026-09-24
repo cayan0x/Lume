@@ -3,10 +3,12 @@ import { createSessionEventHandler } from "../src/host/session-events.js";
 import type { SessionEventDeps } from "../src/host/session-deps.js";
 import type { SessionRuntime } from "../src/host/session-runtime.js";
 import { clearNotice, forceNotice, noticeOpen, noticeText, setNotice } from "../src/host/notices.js";
-import { toolArgsOf, toolNameOf, toolTargetOf } from "../src/host/host-events.js";
+import { toolArgsOf, toolNameOf, toolTargetOf, workspaceFromSnapshotText } from "../src/host/host-events.js";
 import { applyToolSignal, applyVerifyOutcome } from "../src/host/triggers.js";
 import { classifyTool, summarizeToolChange, toolArtifactText } from "../src/core/signals.js";
 import { messageText, visibleText } from "../src/core/text.js";
+import { extractKnowledgeCandidates, looksSensitive } from "../src/core/knowledge.js";
+import { normalizeProjectFact } from "../src/core/ledger.js";
 import { DESIGN_SIGNAL_RE } from "../src/host/protocol.js";
 import { TASK_SIGNAL_RE } from "../src/host/thinking.js";
 import { createLlmRouteCell } from "../src/host/llm-route.js";
@@ -40,7 +42,7 @@ function setup() {
 		toolUnknown: 0,
 		toolKind: "other" as const,
 		triggerCounters: { steps: 0, inspectStreak: 0, mutateStreak: 0, verifyFailStreak: 0, mutations: 0, codeInspects: 0 } as never,
-		agent: { evidence: new Map(), inspectedTargets: new Set<string>(), seenSymbols: new Set<string>(), artifactText: "", lastToolName: null, lastToolArgs: null, lastToolTarget: null } as never,
+		agent: { evidence: new Map(), inspectedTargets: new Set<string>(), seenSymbols: new Set<string>(), artifactText: "", lastToolName: null, lastToolArgs: null, lastToolTarget: null, autoFacts: 0 } as never,
 		recentUserQueries: [] as string[],
 		recentTurns: [] as string[],
 		requirementFresh: false,
@@ -81,6 +83,7 @@ function setup() {
 		scheduleExtraction: vi.fn(),
 		callLlm: vi.fn(async () => null),
 		access: {},
+		normalizeProjectFact,
 		projectTask: (sid: string, label: string) => { projectTasks.push([sid, label]); },
 		flushPendingFacts: vi.fn(),
 		settleVerification: vi.fn(),
@@ -104,6 +107,10 @@ function setup() {
 		unrequestedChangeWords: () => [],
 		visibleText,
 		messageText,
+		// 这三个用真实现：stub 会把被测分支整段跳过（本项目踩过假绿）
+		workspaceFromSnapshotText,
+		extractKnowledgeCandidates,
+		looksSensitive,
 		classifyTool,
 		summarizeToolChange,
 		toolArtifactText,
@@ -186,5 +193,33 @@ describe("host/session-events：事件流行为", () => {
 	it("未知事件类型不抛错（宿主加新事件时插件不能被带崩）", () => {
 		const { handler } = setup();
 		expect(() => handler({ id: "sid-1" }, { type: "some/future/event", data: {} })).not.toThrow();
+	});
+});
+
+describe("host/session-events：项目知识的落地链路（0.8.0）", () => {
+	it("运行时快照给出会话工作目录 → 学到 cwd 并立刻补落盘暂存的项目知识", () => {
+		const { handler, st, deps } = setup();
+		st.pendingFacts = [normalizeProjectFact({ kind: "convention", text: "启动必须带 --spring.profiles.active=xc（见 Dockerfile-xc）" }, Date.now())!];
+		const snapshot = 'Current runtime context.\n\nCurrent DSH file policy: workspace-write. Any available operation may modify files under the session workspace: "D:\\\\Projects\\\\zjhc\\\\b2i-all".\n';
+		handler({ id: "sid-1" }, { type: "user/message", data: { source: { kind: "plugin:dsh-system-prompt" }, content: [{ type: "text", text: snapshot }] } });
+		expect(st.cwd).toBe("D:\\Projects\\zjhc\\b2i-all");
+		expect(deps.flushPendingFacts).toHaveBeenCalled();
+	});
+
+	it("tool/result 里的可复用事实自动进暂存（不依赖模型主动调 lume_project_note）", () => {
+		const { handler, st, deps } = setup();
+		handler({ id: "sid-1" }, { type: "tool/call", data: READ_CALL });
+		handler({ id: "sid-1" }, { type: "tool/result", data: { message: { content: [{ type: "text", text: "构建命令用 mvn -q -DskipTests package（模块 wtpf-order-bss-service/pom.xml）" }] } } });
+		expect(st.agent.autoFacts).toBe(1);
+		expect(st.pendingFacts.length).toBe(1);
+		expect(deps.flushPendingFacts).toHaveBeenCalled();
+	});
+
+	it("敏感内容不进项目知识（明文跨会话存储：密钥/连接串一律不落）", () => {
+		const { handler, st } = setup();
+		handler({ id: "sid-1" }, { type: "tool/call", data: READ_CALL });
+		handler({ id: "sid-1" }, { type: "tool/result", data: { message: { content: [{ type: "text", text: "数据库密码 password=ENC(abc123) 写在 application-xc.yml 里" }] } } });
+		expect(st.agent.autoFacts).toBe(0);
+		expect(st.pendingFacts.length).toBe(0);
 	});
 });

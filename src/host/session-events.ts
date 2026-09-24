@@ -15,6 +15,9 @@ import type { HostPayload, LumeHostContext } from "./host-context.js";
 import { handleTurnEnd } from "./turn-boundary.js";
 import type { SessionEventDeps } from "./session-deps.js";
 
+/** 每会话自动沉淀的项目知识上限：宁可少记，也不要让知识库变垃圾桶。 */
+const AUTO_FACT_CAP = 4;
+
 export type { SessionEventDeps };
 
 
@@ -51,6 +54,18 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						// 只有真实用户消息能定义本轮意图。宿主快照（@deepseek-ai/dsh-system-prompt）、
 						// 工作区指令（agent-instructions）、技能目录（skill-catalog）都经这条通道投递，
 						// 曾被当成用户发言：覆盖真实请求，并把模式从「执行」冲成「问答」。
+						// 运行时快照里带会话工作目录——这台宿主（0.9.1）的 request/context、request/header、tool/call 都**不带 cwd**，
+						// exec/context 的 agent.session 也没有 cwd 字段。实测代价：模型主动记的 3 条项目知识全部因
+						// 「拿不到工作目录」被丢在暂存里，facts 表只剩历史的 unknown 键。
+						// 必须在 isUserAuthored 之前看：快照不是用户发言，但它是唯一能拿到 cwd 的地方。
+						if (!st.cwd) {
+							const snapshotWorkspace = deps.workspaceFromSnapshotText(deps.messageText(event.data));
+							if (snapshotWorkspace) {
+								st.cwd = snapshotWorkspace;
+								deps.ctx.logger?.warn?.(`lume: [${sid}] 工作目录已解析（来源：运行时快照）→ ${snapshotWorkspace}`);
+								if (deps.projectMemoryOn) deps.flushPendingFacts(sid, event.data);
+							}
+						}
 						if (!deps.isUserAuthored(event.data)) break;
 						const text = deps.messageText(event.data);
 						if (text) {
@@ -170,6 +185,20 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				if (resultText) deps.recordSymbols(st.agent.seenSymbols, resultText);
 						// 验证结算：成功的真验证自动推进台账 / 失败立刻顶一句先修红——都不等模型调工具
 						if (deps.projectMemoryOn) deps.settleVerification(sid, st, resultText, signals);
+						// 自动沉淀项目知识：**不依赖模型自觉调工具**（实测 3 次 lume_project_note 全丢）。判据在
+						// core/knowledge.ts（宁窄勿宽 + 敏感词硬拦），每会话有上限，落盘统一走 pendingFacts → flush。
+						if (deps.projectMemoryOn && resultText && st.agent.autoFacts < AUTO_FACT_CAP) {
+							for (const candidate of deps.extractKnowledgeCandidates(resultText, { userText: st.userText ?? "" })) {
+								if (st.agent.autoFacts >= AUTO_FACT_CAP) break;
+								const fact = deps.normalizeProjectFact({ kind: candidate.kind, text: candidate.text }, Date.now());
+								if (!fact || deps.looksSensitive(fact.text)) continue;
+								st.pendingFacts.push(fact);
+								if (st.pendingFacts.length > 8) st.pendingFacts.shift();
+								st.agent.autoFacts++;
+								deps.ctx.logger?.warn?.(`lume: [${sid}] 自动沉淀候选（${fact.kind}）：${fact.text.slice(0, 60)}`);
+							}
+							deps.flushPendingFacts(sid, event.data);
+						}
 						if (deps.behaviorTriggersOn) {
 							const fire = deps.evaluateToolTrigger(
 								st.triggerCounters,

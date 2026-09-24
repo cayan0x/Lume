@@ -15,10 +15,11 @@ const st = (over: Partial<SessionRuntime> = {}): SessionRuntime =>
 		taskPhase: "answer",
 		requirementFresh: false,
 		recentTurns: [],
-		artifactText: "",
 		assistantText: "",
 		compaction: null,
 		notices: {},
+		// 工具与证据已收进 agent 组（session-runtime 的分组约定）
+		agent: { evidence: new Map(), artifactText: "", inspectedTargets: new Set(), seenSymbols: new Set(), lastToolName: null, lastToolArgs: null, lastToolTarget: null },
 		...over,
 	}) as SessionRuntime;
 
@@ -88,7 +89,7 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 	});
 
 	it("文档产物 + 需求原文 → 覆盖核对生成一次；产物更新后再生成一次；上限 2 次后不再生成", () => {
-		const runtime = st({ artifactText: "x".repeat(300) });
+		const runtime = st({ agent: { evidence: new Map(), artifactText: "x".repeat(300), inspectedTargets: new Set(), seenSymbols: new Set(), lastToolName: null, lastToolArgs: null, lastToolTarget: null } });
 		const first = carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });
 		expect(texts(first).join("\n")).toContain("需求覆盖核对");
 		carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });

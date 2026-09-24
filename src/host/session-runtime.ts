@@ -72,14 +72,25 @@ export interface SessionRuntime {
 	notices: Record<string, NoticeSlot>;
 	/** 漂移提示里已经报过的词（同词不重报）。 */
 	driftWordsReported: string[];
-	/** 本会话证据索引（引用核对用）：文件 → 读过的行窗口 / grep 命中的行。 */
-	evidence: EvidenceIndex;
-	/** 本会话写出的文档正文（覆盖核对要把需求原句与交付物句子并列）。 */
-	artifactText: string;
-	/** 首改前的定位门槛：本会话摸过（read/grep 命中）的目标路径。 */
-	inspectedTargets: Set<string>;
-	/** 本会话在工具结果里见过的代码符号（否定断言的核实底线）。 */
-	seenSymbols: Set<string>;
+	/**
+	 * 工具与证据：本会话「看过/改过什么」——引用核对、否定断言核对、自动台账、覆盖核对都靠它。
+	 * 单独成组的原因：这几个字段一起被清空、一起被读取，散在 45 个字段里读代码时看不出它们是一件事。
+	 */
+	agent: {
+		/** 文件 → 读过的行窗口 / grep 命中的行（引用核对）。 */
+		evidence: EvidenceIndex;
+		/** 本会话写出的文档正文（覆盖核对要把需求原句与交付物句子并列）。 */
+		artifactText: string;
+		/** 首改前的定位门槛：本会话摸过（read/grep 命中）的目标路径。 */
+		inspectedTargets: Set<string>;
+		/** 本会话在工具结果里见过的代码符号（否定断言的核实底线）。 */
+		seenSymbols: Set<string>;
+		/** 最近一次工具调用（判定「这次是不是真验证」要用命令行文本）。 */
+		lastToolName: string | null;
+		lastToolArgs: string | null;
+		/** 最近一次工具调用的目标路径（回读验证与定位门槛都要用）。 */
+		lastToolTarget: string | null;
+	};
 	/**
 	 * cwd 未就绪时暂存的项目知识。
 	 *
@@ -88,11 +99,6 @@ export interface SessionRuntime {
 	 * 所以改成暂存 + 补落盘。
 	 */
 	pendingFacts: ProjectFact[];
-	/** 最近一次工具调用的名字与参数（C1/C2 判定"这次是不是真验证"要用命令行文本）。 */
-	lastToolName: string | null;
-	lastToolArgs: string | null;
-	/** 最近一次工具调用的目标路径（回读验证与定位门槛都要用）。 */
-	lastToolTarget: string | null;
 	projectKey: string | null;
 	/** 最近一次工具调用的行为类别（成败要到结果阶段才判定，需要它配对）。 */
 	toolKind: ToolKind;
@@ -153,15 +159,17 @@ function defaultRuntime(): SessionRuntime {
 		cwd: null,
 		requirementFresh: false,
 		driftWordsReported: [],
-		evidence: new Map(),
-		artifactText: "",
 		notices: {},
-		inspectedTargets: new Set(),
-		seenSymbols: new Set(),
+		agent: {
+			evidence: new Map(),
+			artifactText: "",
+			inspectedTargets: new Set(),
+			seenSymbols: new Set(),
+			lastToolName: null,
+			lastToolArgs: null,
+			lastToolTarget: null,
+		},
 		pendingFacts: [],
-		lastToolName: null,
-		lastToolArgs: null,
-		lastToolTarget: null,
 		projectKey: null,
 		toolKind: "other",
 		triggerCounters: newTriggerCounters(),

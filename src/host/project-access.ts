@@ -86,13 +86,13 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 	 */
 	function settleVerification(sid: string, st: SessionRuntime, resultText: string, signals: ResultSignals): void {
 		if (st.toolKind !== "verify" && st.toolKind !== "inspect") return;
-		const realVerify = st.toolKind === "verify" && deps.isRealVerifyCommand(st.lastToolArgs ?? "");
-		const readbackTarget = st.toolKind === "inspect" ? st.lastToolTarget : null;
+		const realVerify = st.toolKind === "verify" && deps.isRealVerifyCommand(st.agent.lastToolArgs ?? "");
+		const readbackTarget = st.toolKind === "inspect" ? st.agent.lastToolTarget : null;
 		if (!realVerify && !readbackTarget) return;
 		if (signals.failure || signals.unknown) {
 			if (realVerify) {
-				if (!noticeText(st, "trigger")) forceNotice(st, "trigger", `〔验证失败〕刚才那条验证没过（${commandSummary(st.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`);
-				deps.ctx.logger?.warn?.(`lume: [${sid}] 真验证失败：${commandSummary(st.lastToolArgs)}`);
+				if (!noticeText(st, "trigger")) forceNotice(st, "trigger", `〔验证失败〕刚才那条验证没过（${commandSummary(st.agent.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`);
+				deps.ctx.logger?.warn?.(`lume: [${sid}] 真验证失败：${commandSummary(st.agent.lastToolArgs)}`);
 			}
 			return;
 		}
@@ -101,7 +101,7 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		if (!realVerify && !changed.some((item: any) => item.target === readbackTarget)) return;
 		const firstLine = resultText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
 		const evidence = realVerify
-			? `自动：${commandSummary(st.lastToolArgs)} → ${firstLine.slice(0, 80)}`
+			? `自动：${commandSummary(st.agent.lastToolArgs)} → ${firstLine.slice(0, 80)}`
 			: `自动：回读 ${readbackTarget} → ${firstLine.slice(0, 60)}`;
 		void deps.stores.projectReady
 		.then(async (store) => {

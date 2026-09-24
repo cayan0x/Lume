@@ -207,10 +207,10 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							if (deps.setNotice(st, "drift", deps.buildDriftDirective(driftWords))) st.driftWordsReported.push(...driftWords);
 							// 引用-证据对齐：回答里引用的「文件:行」如果这次没打开过，就摆事实（不训话）。
 							// 只在排除性/决策性措辞出现时才查——普通陈述句不值得每轮都核对。
-							const citations = deps.noticeOpen(st, "citation") ? deps.unsupportedCitations(st.evidence, text) : [];
-							deps.setNotice(st, "citation", deps.buildCitationDirective(citations, (key: any) => deps.formatWindows(st.evidence, key)));
+							const citations = deps.noticeOpen(st, "citation") ? deps.unsupportedCitations(st.agent.evidence, text) : [];
+							deps.setNotice(st, "citation", deps.buildCitationDirective(citations, (key: any) => deps.formatWindows(st.agent.evidence, key)));
 				// 断言-证据对齐：没核实过的否定断言（「X 没映射」）同样要能顶回去
-				const claims = deps.noticeOpen(st, "claim") ? deps.unsupportedClaims(st.evidence, st.seenSymbols, text) : [];
+				const claims = deps.noticeOpen(st, "claim") ? deps.unsupportedClaims(st.agent.evidence, st.agent.seenSymbols, text) : [];
 				deps.setNotice(st, "claim", deps.buildClaimDirective(claims));
 							// 提问核对：把"你抛了几个问题"摆出来（现场：4 条"待你定"里 3 条是自己造的疑问）
 							deps.setNotice(st, "question", deps.noticeOpen(st, "question") ? deps.buildQuestionAuditDirective(deps.auditOpenQuestions(text)) : null);
@@ -234,12 +234,12 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						// 记成"整文件读过"会把没看的行洗白（宁可少记，也不要给假证据）。
 						const callName = deps.toolNameOf(event.data);
 						const callArgs = deps.toolArgsOf(event.data);
-						st.lastToolName = callName || null;
-						st.lastToolArgs = callArgs ? JSON.stringify(callArgs) : null;
-						st.lastToolTarget = deps.toolTargetOf(event.data);
+						st.agent.lastToolName = callName || null;
+						st.agent.lastToolArgs = callArgs ? JSON.stringify(callArgs) : null;
+						st.agent.lastToolTarget = deps.toolTargetOf(event.data);
 						if (st.toolKind === "inspect") {
-							if (/read|view|cat|open|head|tail/i.test(callName)) deps.recordReadArgs(st.evidence, callArgs);
-							if (st.lastToolTarget) st.inspectedTargets.add(st.lastToolTarget);
+							if (/read|view|cat|open|head|tail/i.test(callName)) deps.recordReadArgs(st.agent.evidence, callArgs);
+							if (st.agent.lastToolTarget) st.agent.inspectedTargets.add(st.agent.lastToolTarget);
 						}
 							if (deps.projectMemoryOn && st.toolKind === "mutate") {
 							const target = deps.toolTargetOf(event.data);
@@ -252,15 +252,15 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 								if (deps.DOC_ARTIFACT_RE.test(target)) {
 									const content = deps.toolArtifactText(args);
 									if (content) {
-										st.artifactText = (st.artifactText + "\n" + content).slice(-60000);
+										st.agent.artifactText = (st.agent.artifactText + "\n" + content).slice(-60000);
 										deps.clearNotice(st, "coverage"); // 换了新产物 → 重新核一次
 									}
 								}
 								deps.projectTask(sid, "自动改动入账", (store: any) => store.upsertChange(sid, { target, change: `（自动）${toolName}：${summary}`, why: "", verify: "", status: "done", at: Date.now() }));
 							}
 							// 首改前的定位门槛：要改的文件本会话从没被读过就动手 → 顶一次（不改代码，只补定位）
-							if (st.triggerCounters.mutations === 1 && target && !st.inspectedTargets.has(target)) {
-								const seen = [...st.inspectedTargets].slice(-3).join("、") || "（本会话还没读过任何文件）";
+							if (st.triggerCounters.mutations === 1 && target && !st.agent.inspectedTargets.has(target)) {
+								const seen = [...st.agent.inspectedTargets].slice(-3).join("、") || "（本会话还没读过任何文件）";
 								if (!deps.noticeText(st, "trigger")) deps.forceNotice(st, "trigger", `〔先定位〕你要改 ${target}，但本会话还没有读过它——已经摸过的是：${seen}。先打开要改的那段（含调用方与配置/SQL 绑定），确认现有实现再动手；改完立刻回读或跑最小验证。`);
 								deps.ctx.logger?.warn?.(`lume: [${sid}] 首改未定位：${target}`);
 							}
@@ -281,9 +281,9 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						const signals = deps.readResultSignals(resultText, explicitError);
 						deps.applyVerifyOutcome(st.triggerCounters, st.toolKind, signals);
 						// 引用-证据对齐：结果里出现过的「路径:行」也算"看到过"（grep 命中即证据）
-						if (st.toolKind === "inspect" && resultText) deps.recordResultText(st.evidence, resultText);
+						if (st.toolKind === "inspect" && resultText) deps.recordResultText(st.agent.evidence, resultText);
 				// 所有工具结果都算「见过」：否定断言只能用见过的东西支撑
-				if (resultText) deps.recordSymbols(st.seenSymbols, resultText);
+				if (resultText) deps.recordSymbols(st.agent.seenSymbols, resultText);
 						// 验证结算：成功的真验证自动推进台账 / 失败立刻顶一句先修红——都不等模型调工具
 						if (deps.projectMemoryOn) deps.settleVerification(sid, st, resultText, signals);
 						if (deps.behaviorTriggersOn) {

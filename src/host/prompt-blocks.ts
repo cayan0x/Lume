@@ -120,7 +120,7 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 	const docDirective = deps.documentDirective(query, context);
 	// 需求覆盖核对：文档产物一写出来，就把「需求原句」与「交付物里的句子」并列，
 	// 替代模型的自证式「N 条全有落点」（2026-09-23 现场：自证全绿，实际藏着三处硬伤）。
-	if (!noticeText(st, "coverage") && noticeOpen(st, "coverage") && st.artifactText.length > 200) {
+	if (!noticeText(st, "coverage") && noticeOpen(st, "coverage") && st.agent.artifactText.length > 200) {
 		// 只对着**需求原文**做覆盖核对：表里混着闲聊与评审粘贴，挑不出来就整段跳过（宁可不做也不做错）
 		const requirementText = deps.pickRequirementCorpus(deps.requirementsOf(sid));
 		const items = deps.splitRequirementItems(requirementText);
@@ -128,9 +128,9 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 			setNotice(
 				st,
 				"coverage",
-				deps.buildRequirementCoverageDirective(deps.coverageRows(items, st.artifactText), {
-					figures: deps.hasFigureRefs(requirementText) && !deps.hasFigureRefs(st.artifactText),
-					danglingRefs: deps.danglingSectionRefs(st.assistantText, st.artifactText),
+				deps.buildRequirementCoverageDirective(deps.coverageRows(items, st.agent.artifactText), {
+					figures: deps.hasFigureRefs(requirementText) && !deps.hasFigureRefs(st.agent.artifactText),
+					danglingRefs: deps.danglingSectionRefs(st.assistantText, st.agent.artifactText),
 				}),
 			);
 		}

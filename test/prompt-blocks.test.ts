@@ -39,6 +39,8 @@ const deps = (over: Partial<BlockDeps> = {}): BlockDeps =>
 		renderDesign: () => null,
 		renderRequirements: () => "〔需求锚点〕…",
 		renderProjectFacts: () => null,
+		isColdStart: () => false,
+		renderTaskMemory: () => null,
 		buildContractMethodDirective: () => "〔先量化后动手〕写契约",
 		buildRequirementMethodDirective: () => "〔需求解读〕三条",
 		buildDesignMethodDirective: () => "〔设计三问〕…",
@@ -125,5 +127,44 @@ describe("host/prompt-blocks：项目知识在任何轮次都要可见（0.8.0�
 			{ sid: "s", context: {}, st: runtime, query: "你知道优惠视图需求吗", mode: "question" },
 		);
 		expect(texts(blocks).join("\n")).toContain("LOCAL_METHOD_NAME");
+	});
+});
+
+describe("host/prompt-blocks：冷启动注入「上次会话记忆」（0.8.0）", () => {
+	/**
+	 * 上下文撑满时宿主压缩会失败（现场：context overflow），那个会话再也聊不动——
+	 * 所以新会话必须能一眼看到上次的目标/已拍板/未决/关键定位，否则进度就断了。
+	 */
+	const memory = {
+		sid: "session-old",
+		title: "B2I 优惠视图新增字段",
+		turn: 42,
+		goal: "给优惠列表加权限人字段",
+		requirement: [],
+		decided: ["列名 PERMISSION_NAME"],
+		changed: ["[已改未验]list.vue：查询条件加权限人"],
+		open: ["分页 total 是否沿用原接口"],
+		deadends: [],
+		locate: ["WtpfGoodsPrepertyDefServiceImpl.java:526-534"],
+		at: Date.now() - 3600000,
+	};
+	it("冷启动 + 本目录有上次记忆 → 注入里带上目标与续接指令", () => {
+		const runtime = st({ taskMemories: [memory] });
+		const blocks = carrierBlocks(
+			deps({
+				isColdStart: () => true,
+				renderTaskMemory: (value: { title: string } | null) => (value ? "〔上次会话记忆｜" + value.title + "〕\n目标：给优惠列表加权限人字段\n要继续就说「继续 " + value.title + "」" : null),
+			}),
+			{ sid: "s", context: {}, st: runtime, query: "继续做优惠视图", mode: "execute" },
+		);
+		const text = texts(blocks).join("\n");
+		expect(text).toContain("〔上次会话记忆");
+		expect(text).toContain("继续 B2I 优惠视图新增字段");
+	});
+
+	it("不是冷启动 → 不注入（会话有自己的契约与台账，避免噪音）", () => {
+		const runtime = st({ taskMemories: [memory] });
+		const blocks = carrierBlocks(deps({ isColdStart: () => false }), { sid: "s", context: {}, st: runtime, query: "接着改", mode: "execute" });
+		expect(texts(blocks).join("\n")).not.toContain("上次会话记忆");
 	});
 });

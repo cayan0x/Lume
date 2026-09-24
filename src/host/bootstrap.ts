@@ -130,6 +130,7 @@ export function initStores(input: StoreInput): StoreHandles {
 				facts: domain.table("facts"),
 			design: domain.table("design"),
 			requirements: domain.table("requirements"),
+			taskMemory: domain.table("task_memory"),
 			});
 		} catch (error) {
 			input.ctx.logger?.warn?.("lume: 项目域不可用，任务契约/台账/项目知识降级", error);

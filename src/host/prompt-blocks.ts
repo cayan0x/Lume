@@ -17,6 +17,7 @@ import { noticeOpen, noticeText, setNotice } from "./notices.js";
 import type { HostPayload } from "./host-context.js";
 import type { ChangeItem, DesignDecision, Hypothesis, ProjectFact, RequirementAnchor, TaskContract } from "../core/ledger.js";
 import type * as coverageMod from "../core/coverage.js";
+import * as taskMemoryMod from "../core/task-memory.js";
 
 export interface Block {
 	text: string | null;
@@ -42,6 +43,9 @@ export interface BlockDeps {
 	renderDesign: (items: DesignDecision[]) => string | null;
 	renderRequirements: (items: RequirementAnchor[]) => string | null;
 	renderProjectFacts: (facts: ProjectFact[]) => string | null;
+	/** 会话记忆：冷启动判定 + 注入渲染（纯函数，来自 core/task-memory） */
+	isColdStart: typeof taskMemoryMod.isColdStart;
+	renderTaskMemory: typeof taskMemoryMod.renderTaskMemory;
 	// ── 方法块 ──
 	buildContractMethodDirective: () => string;
 	buildRequirementMethodDirective: (taskMethods: boolean) => string;
@@ -156,6 +160,17 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		{ text: deps.renderRequirements(deps.requirementsOf(sid)) },
 		// 需求覆盖核对：需求原句 vs 交付物句子（只在有文档产物时出现）
 		{ text: noticeText(st, "coverage") },
+		// 会话记忆：只在**冷启动**（没有契约/台账/需求锚点）时顶上来。
+		// 这是「换个窗口接着干」的入口：上下文撑满时宿主压缩会失败，那个会话再也聊不动，
+		// 所以新会话必须能一眼看到上次的目标、已拍板、未决与关键定位。
+		{
+			text: deps.isColdStart({ hasContract: Boolean(deps.contractOf(sid)), changes: deps.changesOf(sid).length, requirements: deps.requirementsOf(sid).length })
+				? deps.renderTaskMemory((st.taskMemories?.[0] as never) ?? null, {
+					recent: (st.taskMemories ?? []).slice(0, 4).map((item) => ({ title: String((item as { title?: string }).title ?? ""), at: Number((item as { at?: number }).at ?? 0) })),
+				})
+				: null,
+			droppable: true,
+		},
 		// 项目知识：**任何轮次都渲染**——它是事实（跨会话累积的约定/命令/死路），不是方法指引。
 		// 现场教训：曾只在非问答轮渲染，于是「新开会话先问一句『你知道 X 需求吗』」这种最自然的开场白
 		// 恰好看不到知识，用户会以为沉淀没生效。事实类回显与需求锚点同等处理（可丢块，成本可控）。

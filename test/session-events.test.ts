@@ -86,6 +86,10 @@ function setup() {
 		normalizeProjectFact,
 		projectTask: (sid: string, label: string) => { projectTasks.push([sid, label]); },
 		flushPendingFacts: vi.fn(),
+		saveSessionMemory: async () => true,
+		taskMemoriesOf: async () => [],
+		contextPressure: () => ({ level: "ok" as const, ratio: 0 }),
+		buildContextPressureDirective: () => "〔上下文接近上限〕",
 		settleVerification: vi.fn(),
 		contractOf: () => null,
 		changesOf: () => [],
@@ -238,5 +242,15 @@ describe("host/session-events：三个来源都能自动沉淀（不依赖模型
 		handler({ id: "sid-1" }, { type: "assistant/message", data: { message: { content: [{ type: "text", text: "SERVICEURL_FLAG=NEW 的环境里必须用 NEW_SERVICEURL（见 server/index.js），否则网关拦不到" }] } } });
 		expect(st.agent.autoFacts).toBe(1);
 		expect(st.pendingFacts.length).toBe(1);
+	});
+});
+
+describe("host/session-events：会话记忆每轮导出（0.8.0）", () => {
+	it("turn/end 触发 saveSessionMemory（上下文不能当记忆载体，所以每轮都要搬出来）", () => {
+		const { handler, deps } = setup();
+		const spy = vi.fn(async () => true);
+		(deps as unknown as { saveSessionMemory: typeof spy }).saveSessionMemory = spy;
+		handler({ id: "sid-1" }, { type: "turn/end", data: { turn: 1 } });
+		expect(spy).toHaveBeenCalled();
 	});
 });

@@ -41,6 +41,12 @@ export interface SessionRuntime {
 	lastExchange: { user: string; assistant: string } | null;
 	/** 近期对话缓冲（反思日志用）：每轮 user/assistant 各推一条，上限 12 条。 */
 	recentTurns: string[];
+	/** 会话标题（宿主 session/title 给；用于会话记忆的标识与续接指令） */
+	sessionTitle: string;
+	/** 本工作目录下最近的会话记忆（开局注入用；null = 还没取过） */
+	taskMemories: unknown[] | null;
+	/** 上下文窗口大小（宿主 request/context 给）；0 = 未知，不预警 */
+	contextWindow: number;
 	lastFailureQuery: string | null;
 	failureStreak: number;
 	/** 当前用户请求的行为类型；每轮重算，避免把上一轮的执行意图带入下一轮。 */
@@ -153,6 +159,9 @@ function defaultRuntime(): SessionRuntime {
 		lastExtractionAt: undefined,
 		lastExchange: null,
 		recentTurns: [],
+		sessionTitle: "",
+		taskMemories: null,
+		contextWindow: 0,
 		lastFailureQuery: null,
 		failureStreak: 0,
 		interactionMode: "question",

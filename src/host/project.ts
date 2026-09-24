@@ -38,10 +38,14 @@ import {
 	type ProjectFact,
 	type TaskContract,
 } from "../core/ledger.js";
+import type { TaskMemory } from "../core/task-memory.js";
 import { zodLike, type IdentityTable } from "./identity.js";
 
 /** 存储里用 -1 表示「未估/未回填」：schemastery 的 number 不接受 null，避免为它引入联合类型。 */
 const UNSET = -1;
+
+/** 每个项目键保留的会话记忆条数（够了；只用于「接着上次干」）。 */
+const TASK_MEMORY_CAP = 10;
 
 export const LUME_PROJECT_SPEC = defineDomain({
 	name: "lume_project",
@@ -72,6 +76,26 @@ export const LUME_PROJECT_SPEC = defineDomain({
 		/** 项目知识（键 = projectKey，跨会话共享）。 */
 		/** 设计决策（键 = sessionId）：功能型任务的设计 pass 产出，跨轮/跨压缩保留。 */
 	/** 需求锚点（键 = sessionId）：用户原话逐字保留，每轮回显——治「用自己的转述替代需求」。 */
+	/** 会话记忆（键 = projectKey）：结构化导出会话状态，供下次开新会话续接——上下文不能当记忆载体。 */
+	task_memory: domainTable(
+		zodLike(
+			z.array(
+				z.object({
+					sid: z.string(),
+					title: z.string(),
+					turn: z.number(),
+					goal: z.string(),
+					requirement: z.array(z.string()),
+					decided: z.array(z.string()),
+					changed: z.array(z.string()),
+					open: z.array(z.string()),
+					deadends: z.array(z.string()),
+					locate: z.array(z.string()),
+					at: z.number(),
+				}),
+			),
+		),
+	),
 	requirements: domainTable(zodLike(z.array(z.object({ text: z.string(), at: z.number() })))),
 	design: domainTable(zodLike(z.array(z.object({ point: z.string(), choice: z.string(), rejected: z.string(), impact: z.string(), at: z.number() })))),
 	facts: domainTable(zodLike(z.array(z.object({ kind: z.string(), text: z.string(), at: z.number() })))),
@@ -128,6 +152,7 @@ export class ProjectStore {
 	readonly #factTable: IdentityTable;
 	readonly #designTable: IdentityTable;
 	readonly #requirementTable: IdentityTable;
+	readonly #taskMemoryTable: IdentityTable;
 
 	constructor(tables: {
 		contract: IdentityTable;
@@ -136,6 +161,7 @@ export class ProjectStore {
 		facts: IdentityTable;
 		design: IdentityTable;
 		requirements: IdentityTable;
+		taskMemory: IdentityTable;
 	}) {
 		this.#contractTable = tables.contract;
 		this.#ledgerTable = tables.ledger;
@@ -143,6 +169,7 @@ export class ProjectStore {
 		this.#factTable = tables.facts;
 		this.#designTable = tables.design;
 		this.#requirementTable = tables.requirements;
+		this.#taskMemoryTable = tables.taskMemory;
 	}
 
 	// ── 契约 ──
@@ -262,6 +289,23 @@ export class ProjectStore {
 	/** 一轮内至少更新过假设状态——触发器据此判断「有没有在维护假设」。 */
 	lastHypothesisAt(sid: string): number {
 		return this.getHypotheses(sid).reduce((max, item) => Math.max(max, item.at), 0);
+	}
+
+	// ── 会话记忆（按项目键，跨会话续接）──
+
+	/** 读最近的会话记忆（新的在前）。 */
+	getTaskMemories(projectKey: string, limit = 5): TaskMemory[] {
+		const value = this.#taskMemoryTable.get(projectKey);
+		if (!Array.isArray(value)) return [];
+		return (value as TaskMemory[]).slice(-limit).reverse();
+	}
+
+	/** 写会话记忆：同 sid 覆盖，保留最近 10 条（免得桶里全是陈年会话）。 */
+	async saveTaskMemory(projectKey: string, memory: TaskMemory): Promise<boolean> {
+		const list = this.getTaskMemories(projectKey, TASK_MEMORY_CAP).filter((item) => item.sid !== memory.sid);
+		list.push(memory);
+		await this.#taskMemoryTable.put(projectKey, list.slice(-TASK_MEMORY_CAP));
+		return true;
 	}
 
 	// ── 项目知识（跨会话）──

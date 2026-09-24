@@ -17,6 +17,7 @@ import { formatWindows, recordReadArgs, recordResultText, recordSymbols, unsuppo
 import { auditOpenQuestions, classifyTool, readResultSignals, summarizeToolChange, toolArtifactText, unrequestedChangeWords } from "../core/signals.js";
 import { messageText, visibleText } from "../core/text.js";
 import { extractKnowledgeCandidates, looksSensitive } from "../core/knowledge.js";
+import { buildContextPressureDirective, contextPressure, renderTaskMemory, isColdStart } from "../core/task-memory.js";
 import { toolArgsOf, toolNameOf, toolTargetOf, workspaceFromSnapshotText } from "./host-events.js";
 import { startBackfill } from "./backfill.js";
 import { TASK_SIGNAL_RE } from "./thinking.js";
@@ -55,7 +56,7 @@ export interface WiringInput {
 		reflectionReady: Promise<ReflectionStore | null>;
 	};
 	/** 载具/项目知识的读写入口（单一真值来源，见 project-access.ts）。 */
-	access: Pick<ProjectAccess, "contractOf" | "changesOf" | "designOf" | "requirementsOf" | "hypothesesOf" | "factsOf" | "projectKeyFor" | "flushPendingFacts" | "settleVerification" | "needsDesignPass" | "structureToolName">;
+	access: Pick<ProjectAccess, "contractOf" | "changesOf" | "designOf" | "requirementsOf" | "hypothesesOf" | "factsOf" | "projectKeyFor" | "flushPendingFacts" | "settleVerification" | "saveSessionMemory" | "taskMemoriesOf" | "needsDesignPass" | "structureToolName">;
 	/** fire-and-forget 持久化（失败留痕；来自 bootstrap，不属于 ProjectAccess）。 */
 	projectTask: (sid: string, label: string, run: (store: ProjectStore) => unknown) => void;
 	/** 模型路由共享单元（会话事件里会更新 .current）。 */
@@ -98,6 +99,8 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		noticeOpen,
 		noticeText,
 		clearNotice,
+		contextPressure,
+		buildContextPressureDirective,
 		workspaceFromSnapshotText,
 		extractKnowledgeCandidates,
 		looksSensitive,
@@ -106,6 +109,8 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		projectTask: input.projectTask,
 		flushPendingFacts: input.access.flushPendingFacts,
 		settleVerification: input.access.settleVerification,
+		saveSessionMemory: input.access.saveSessionMemory,
+		taskMemoriesOf: input.access.taskMemoriesOf,
 		contractOf: input.access.contractOf,
 		changesOf: input.access.changesOf,
 		designOf: input.access.designOf,
@@ -203,6 +208,8 @@ export function assembleBlockDeps(input: WiringInput): BlockDeps {
 		renderDesign,
 		renderRequirements,
 		renderProjectFacts,
+		isColdStart,
+		renderTaskMemory,
 		buildContractMethodDirective,
 		buildRequirementMethodDirective,
 		buildDesignMethodDirective,

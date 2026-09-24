@@ -11,6 +11,7 @@ import type * as ledgerMod from "../core/ledger.js";
 import { DESIGN_SIGNAL_RE } from "./protocol.js";
 import { forceNotice, noticeText } from "./notices.js";
 import type { SessionRuntime } from "./session-runtime.js";
+import { buildTaskMemory, type TaskMemory } from "../core/task-memory.js";
 import type { ResultSignals } from "../core/signals.js";
 
 import type { ProjectStore } from "./project.js";
@@ -170,12 +171,56 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 
 
 	// ── 人设五段式注入 + 切换播报 ──
+	/**
+	 * 导出**会话记忆**（零 token、机械）：把会话的结构化状态（目标/需求原话/已拍板/改动/未决/死路/定位）
+	 * 落成可跨会话续接的一份记忆。上下文撑满时宿主的压缩会失败（现场：context overflow），
+	 * 会话再也聊不动——**上下文不能当记忆载体**，所以每轮都得把记忆搬出来。
+	 */
+	async function saveSessionMemory(sid: string): Promise<boolean> {
+		try {
+			const store = await deps.stores.projectReady;
+			const key = projectKeyFor(sid, {});
+			if (!store || !key) return false;
+			const st = deps.runtime.get(sid);
+			const memory = buildTaskMemory({
+				sid,
+				title: st?.sessionTitle ?? "",
+				turn: st?.turnIndex ?? 0,
+				goal: contractOf(sid)?.goal ?? "",
+				requirement: requirementsOf(sid),
+				design: designOf(sid),
+				changes: changesOf(sid),
+				hypotheses: hypothesesOf(sid),
+				deadends: factsOf(sid, {}).filter((fact) => fact.kind === "deadend"),
+				locate: [...(st?.agent.inspectedTargets ?? [])].slice(-5),
+			});
+			if (!memory) return false;
+			return await store.saveTaskMemory(key, memory);
+		} catch (error) {
+			deps.ctx.logger?.warn?.(`lume: [${sid}] 会话记忆导出失败：${String(error).slice(0, 80)}`);
+			return false;
+		}
+	}
+
+	/** 本项目键下最近的会话记忆（新的在前）；新会话开局用它接上上一个会话。 */
+	async function taskMemoriesOf(sid: string, limit = 3): Promise<TaskMemory[]> {
+		try {
+			const store = await deps.stores.projectReady;
+			const key = projectKeyFor(sid, {});
+			if (!store || !key) return [];
+			return store.getTaskMemories(key, limit);
+		} catch {
+			return [];
+		}
+	}
 	return {
 		projectKeyFor,
 		commandSummary,
 		flushPendingFacts,
 		settleVerification,
 		contractOf,
+		saveSessionMemory,
+		taskMemoriesOf,
 		changesOf,
 		hypothesesOf,
 		factsOf,

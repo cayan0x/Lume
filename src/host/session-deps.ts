@@ -19,6 +19,7 @@ import * as extractionMod from "./extraction.js";
 import * as hostEventsMod from "./host-events.js";
 import * as methodsMod from "./methods.js";
 import * as noticesMod from "./notices.js";
+import * as taskMemoryMod from "../core/task-memory.js";
 import * as protocolMod from "./protocol.js";
 import * as reflectionMod from "./reflection.js";
 import * as thinkingMod from "./thinking.js";
@@ -69,6 +70,9 @@ export interface SessionNoticeDeps {
 	noticeOpen: typeof noticesMod.noticeOpen;
 	noticeText: typeof noticesMod.noticeText;
 	clearNotice: typeof noticesMod.clearNotice;
+	/** 上下文压力分档与预警文案（纯函数）：接近上限时先保记忆、再劝换窗口 */
+	contextPressure: typeof taskMemoryMod.contextPressure;
+	buildContextPressureDirective: typeof taskMemoryMod.buildContextPressureDirective;
 }
 
 /** 载具与项目知识：读写入口全部来自 project-access（单一真值来源），另加两个句柄。 */
@@ -83,6 +87,9 @@ export interface SessionCarrierDeps {
 	requirementsOf: ProjectAccess["requirementsOf"];
 	projectKeyFor: ProjectAccess["projectKeyFor"];
 	flushPendingFacts: ProjectAccess["flushPendingFacts"];
+	/** 会话记忆：每轮导出 + 新会话开局读取（上下文不能当记忆载体） */
+	saveSessionMemory: ProjectAccess["saveSessionMemory"];
+	taskMemoriesOf: ProjectAccess["taskMemoriesOf"];
 	settleVerification: ProjectAccess["settleVerification"];
 }
 

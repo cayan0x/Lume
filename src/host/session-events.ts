@@ -30,7 +30,9 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						// 路由缓存的真正来源：agent-loop 在路由变化时 append 的 request/context
 						// （{provider, model, contextWindow}）。request/header 的载荷是 {header,
 						// reason}，拿不到 provider/model——v0.3.0 一直监听错了事件，提取从未跑通。
-						const data = event.data as { provider?: unknown; model?: unknown } | undefined;
+						const data = event.data as { provider?: unknown; model?: unknown; contextWindow?: unknown } | undefined;
+						// 上下文窗口：预警要用（0/未知就不预警）
+						st.contextWindow = Number(data?.contextWindow) || st.contextWindow;
 						if (typeof data?.provider === "string" && typeof data?.model === "string") {
 							deps.llmRoute.current = { provider: data.provider, model: data.model };
 							deps.ctx.logger?.warn?.(`lume: request/context 更新 deps.llmRoute → ${deps.llmRoute.current?.provider}/${deps.llmRoute.current?.model}`);
@@ -39,7 +41,13 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						}
 						break;
 					}
-					case "user/message": {
+					case "session/title": {
+			// 会话标题：会话记忆的标识 + 新会话的「继续 X」指令依赖它。
+			st.sessionTitle = String((event.data as { title?: unknown } | undefined)?.title ?? "").slice(0, 60);
+			break;
+		}
+
+		case "user/message": {
 						// 压缩检查点：宿主把被压缩的历史替换成一条摘要消息，必须与真实
 						// 用户消息区分——否则摘要会被当成「用户当前说的话」，污染协议
 						// 路由所依赖的 lastQuery 与对话缓冲。这是兜底识别：同一轮里
@@ -64,6 +72,12 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 								st.cwd = snapshotWorkspace;
 								deps.ctx.logger?.warn?.(`lume: [${sid}] 工作目录已解析（来源：运行时快照）→ ${snapshotWorkspace}`);
 								if (deps.projectMemoryOn) deps.flushPendingFacts(sid, event.data);
+								// 工作目录已知 → 预取本目录的会话记忆（提示块是同步装配的，先落到缓存）：
+								// 新会话开局要靠它接上「上一个会话干了什么」——上下文撑满时那边已经聊不动了。
+								if (st.taskMemories === null) {
+									st.taskMemories = [];
+									void deps.taskMemoriesOf(sid, 4).then((list) => { st.taskMemories = list; });
+								}
 							}
 						}
 						if (!deps.isUserAuthored(event.data)) break;
@@ -132,6 +146,21 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							const requirementText = [deps.requirementsOf(sid).map((item) => item.text).join("\n"), st.recentUserQueries.join("\n"), st.userText].join("\n");
 							const driftWords = requirementText && deps.noticeOpen(st, "drift") ? deps.unrequestedChangeWords(requirementText, text, st.driftWordsReported) : [];
 							if (deps.setNotice(st, "drift", deps.buildDriftDirective(driftWords))) st.driftWordsReported.push(...driftWords);
+
+					// 上下文压力预警：宿主给了 contextWindow 与用量。
+					// 上下文不能当记忆载体，所以接近上限时**先把记忆落盘**，再劝换窗口（换窗口不等于丢进度）。
+					const usage = (event.data as { usage?: { totalTokens?: number; inputTokens?: number; cacheReadTokens?: number } } | undefined)?.usage;
+					const usedTokens = Number(usage?.totalTokens ?? Number(usage?.inputTokens ?? 0) + Number(usage?.cacheReadTokens ?? 0));
+					if (usedTokens > 0 && st.contextWindow > 0) {
+						const pressure = deps.contextPressure(usedTokens, st.contextWindow);
+						const level: "warn" | "critical" = pressure.level === "critical" ? "critical" : "warn";
+						if (pressure.level !== "ok" && deps.noticeOpen(st, "pressure")) {
+							void (async () => {
+								const saved = await deps.saveSessionMemory(sid);
+								deps.forceNotice(st, "pressure", deps.buildContextPressureDirective(level, pressure.ratio, saved));
+							})();
+						}
+					}
 							// 引用-证据对齐：回答里引用的「文件:行」如果这次没打开过，就摆事实（不训话）。
 							// 只在排除性/决策性措辞出现时才查——普通陈述句不值得每轮都核对。
 							const citations = deps.noticeOpen(st, "citation") ? deps.unsupportedCitations(st.agent.evidence, text) : [];
@@ -277,6 +306,10 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 						break;
 					}
 					case "turn/end": {
+			// 每轮把会话记忆搬出来（零 token、机械）：上下文不能当记忆载体——
+			// 它撑满时宿主压缩会失败（现场：context overflow），之后会话再也产不出事件。
+			void deps.saveSessionMemory(sid);
+
 						handleTurnEnd(deps, sid, st, session);
 						break;
 					}

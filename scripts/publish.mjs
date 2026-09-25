@@ -95,6 +95,7 @@ try {
 	process.exit(1);
 }
 
+	}
 console.log("②b registry 确认（命令返回 0 不算发出去）");
 let landed = false;
 for (let attempt = 1; attempt <= 12; attempt++) {

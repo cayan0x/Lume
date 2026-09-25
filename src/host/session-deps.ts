@@ -63,6 +63,8 @@ export interface SessionEnvDeps {
 	triggerThresholds: TriggerThresholds;
 	DOC_ARTIFACT_RE: RegExp;
 	DESIGN_SIGNAL_RE: typeof protocolMod.DESIGN_SIGNAL_RE;
+	/** 机械替换类小改判据（协议层集中一份）：用于豁免契约提醒。 */
+	isSmallMechanicalEdit: typeof protocolMod.isSmallMechanicalEdit;
 	TASK_SIGNAL_RE: typeof thinkingMod.TASK_SIGNAL_RE;
 }
 
@@ -75,6 +77,11 @@ export interface SessionNoticeDeps {
 	clearNotice: typeof noticesMod.clearNotice;
 	/** 上下文压力分档与预警文案（纯函数）：接近上限时先保记忆、再劝换窗口 */
 	contextPressure: typeof taskMemoryMod.contextPressure;
+	/**
+	 * 上下文事实（可选）：优先用宿主 `tokenMeter` 的投影值，拿不到就回落到 `usage` 估算。
+	 * 见 `host/context-facts.ts`——**不碰宿主的压缩决策**，只管我们自己怎么预警。
+	 */
+	contextFacts?: (session: unknown) => import("./context-facts.js").ContextFacts;
 	buildContextPressureDirective: typeof taskMemoryMod.buildContextPressureDirective;
 }
 

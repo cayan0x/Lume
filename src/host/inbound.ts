@@ -114,12 +114,29 @@ export function checkRequirementDrift(sid: string, st: SessionRuntime, deps: Ses
 	if (deps.setNotice(st, "drift", deps.buildDriftDirective(driftWords))) st.driftWordsReported.push(...driftWords);
 }
 
-/** 上下文压力预警：接近上限时先把会话记忆落盘，再劝换窗口。 */
-export function checkContextPressure(sid: string, st: SessionRuntime, deps: SessionEventDeps, data: unknown): void {
+/**
+ * 压力输入：**事实优先**（宿主 tokenMeter 的投影），拿不到才回落到 provider 上报的 usage。
+ * 抽成纯函数是为了可测——`st` 只用到 `contextWindow`。
+ */
+export function pressureInputs(
+	st: { contextWindow: number },
+	deps: SessionEventDeps,
+	data: unknown,
+	session?: unknown,
+): { usedTokens: number; contextWindow: number; source: "tokenMeter" | "usage" } {
+	const facts = session === undefined ? undefined : deps.contextFacts?.(session);
 	const usage = (data as { usage?: { totalTokens?: number; inputTokens?: number; cacheReadTokens?: number } } | undefined)?.usage;
-	const usedTokens = Number(usage?.totalTokens ?? Number(usage?.inputTokens ?? 0) + Number(usage?.cacheReadTokens ?? 0));
-	if (usedTokens > 0 && st.contextWindow > 0) {
-		const pressure = deps.contextPressure(usedTokens, st.contextWindow);
+	const reported = Number(usage?.totalTokens ?? Number(usage?.inputTokens ?? 0) + Number(usage?.cacheReadTokens ?? 0));
+	const usedTokens = facts?.usedTokens ?? reported;
+	const contextWindow = facts?.contextWindow ?? st.contextWindow;
+	return { usedTokens, contextWindow, source: facts?.usedTokens === null || facts?.usedTokens === undefined ? "usage" : "tokenMeter" };
+}
+
+/** 上下文压力预警：接近上限时先把会话记忆落盘，再劝换窗口。 */
+export function checkContextPressure(sid: string, st: SessionRuntime, deps: SessionEventDeps, data: unknown, session?: unknown): void {
+	const { usedTokens, contextWindow } = pressureInputs(st, deps, data, session);
+	if (usedTokens > 0 && contextWindow > 0) {
+		const pressure = deps.contextPressure(usedTokens, contextWindow);
 		const level: "warn" | "critical" = pressure.level === "critical" ? "critical" : "warn";
 		if (pressure.level !== "ok" && deps.noticeOpen(st, "pressure")) {
 			void (async () => {

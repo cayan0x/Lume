@@ -129,6 +129,8 @@ export interface ToolTriggerContext {
 	hasDesign: boolean;
 	/** 这条需求是不是「要动数据/接口」的设计型任务 */
 	designSignal: boolean;
+	/** 机械替换类小改：豁免〔载具缺失〕提醒（判据集中在 protocol.ts，避免各处各写一条）。 */
+	smallEdit?: boolean;
 	/** 本轮是否更新过假设台账（更新过就不再提醒）。 */
 	hypothesesTouched: boolean;
 	/** 最近一次「未读就改」的目标路径（决策分档要指名道姓，模型才知道该核实哪一份）。 */
@@ -177,7 +179,7 @@ export function evaluateToolTrigger(
 			text: `〔增量验证〕已连续 ${counters.mutateStreak} 次改动、台账里还有 ${ctx.unverifiedChanges} 项未验证。改一处验一处：现在先跑一次最小验证（编译 / 语法检查 / 回读改动区域），确认前一批改动真的生效；验完用 lume_change 把对应条目推进到 verified（只传 target + status 即可）。一大批改完再验，失败时无法定位是哪一处的问题。`,
 		};
 	}
-	if (!ctx.hasContract && ctx.isTask && counters.mutations > 0) {
+	if (!ctx.hasContract && ctx.isTask && counters.mutations > 0 && ctx.smallEdit !== true) {
 		return {
 			id: "contract-missing",
 			text: "〔载具缺失〕你已经动手改动，但还没写下任务契约。花一次调用写清：目标（可观察的结果）、范围（精确到路径/模块/章节）、预计数量、完成判据（可执行）、非目标（明确不动什么）、待确认（≤2 个）。之后每步以契约为准，交付时按它逐项对账——用 lume_contract。",

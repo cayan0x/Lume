@@ -1,0 +1,111 @@
+{
+	"generatedAt": "2026-09-25T01:39:13.217Z",
+	"head": "c2c9807",
+	"howto": "每个任务：在干净 worktree 里铺出 base 版本 → 让 agent 按 subject 的意思改 → 与 `git show <id>` 的 diff 比对判定",
+	"tasks": [
+		{
+			"id": "f830989e13e1ac117cb8eaddbc1f2a8fd60ffc46",
+			"date": "2026-09-24",
+			"subject": "chore(diag): ensureSessionWorkspace 无条件留痕（dsHome/slug/映射/st.cwd）——两次查「第一轮为何没知识」都只能靠猜",
+			"type": "S",
+			"files": [
+				"src/host/wiring.ts"
+			],
+			"insertions": 7,
+			"deletions": 7,
+			"base": "f830989e13e1ac117cb8eaddbc1f2a8fd60ffc46^"
+		},
+		{
+			"id": "e82bab15c6a8d672fb96a7d8e54fbc71431f1cce",
+			"date": "2026-09-24",
+			"subject": "fix(scope): 作用域修正只许升不许降（没有需求线索时不得把已归好的 task 标签改回 repo；现场 22 条被冲掉，已从备份恢复）",
+			"type": "S",
+			"files": [
+				"src/host/project.ts"
+			],
+			"insertions": 4,
+			"deletions": 1,
+			"base": "e82bab15c6a8d672fb96a7d8e54fbc71431f1cce^"
+		},
+		{
+			"id": "7d27b9089c3be4c107c754c24181a7230cf3a8f5",
+			"date": "2026-09-24",
+			"subject": "fix: carrierBlocks 漏调用 ensureSessionWorkspace（声明了依赖却没调用＝死代码，第一轮仍缺项目知识）",
+			"type": "S",
+			"files": [
+				"src/host/prompt-blocks.ts"
+			],
+			"insertions": 4,
+			"deletions": 0,
+			"base": "7d27b9089c3be4c107c754c24181a7230cf3a8f5^"
+		},
+		{
+			"id": "369d15fd1d13a938a5632cb804d4a7c7f3c97947",
+			"date": "2026-09-24",
+			"subject": "fix(knowledge): 形状闸 —— 真机噪音驱动的根因修复（测试名/注释/表格/代码不许进知识库）",
+			"type": "M",
+			"files": [
+				"src/core/knowledge.ts"
+			],
+			"insertions": 29,
+			"deletions": 2,
+			"base": "369d15fd1d13a938a5632cb804d4a7c7f3c97947^"
+		},
+		{
+			"id": "15d655bd1e265557b038d83be119499e89ce26c0",
+			"date": "2026-09-24",
+			"subject": "perf(metrics): 度量改攒批落盘；install-local 自检标记换成当前符号",
+			"type": "M",
+			"files": [
+				"src/host/metrics-log.ts"
+			],
+			"insertions": 29,
+			"deletions": 1,
+			"base": "15d655bd1e265557b038d83be119499e89ce26c0^"
+		},
+		{
+			"id": "c54a8a855b6dcf6b4210e248e3cb57a8676ef959",
+			"date": "2026-09-24",
+			"subject": "fix(tools): 度量工具单开 effect + try/catch —— 注册失败不许连累 apply",
+			"type": "M",
+			"files": [
+				"src/host/tools.ts"
+			],
+			"insertions": 40,
+			"deletions": 27,
+			"base": "c54a8a855b6dcf6b4210e248e3cb57a8676ef959^"
+		},
+		{
+			"id": "521875e70f4be1f2864799acbaf31be0e6f9bf82",
+			"date": "2026-09-24",
+			"subject": "fix(第五轮): 决策分档精度 + 效能判据二选一 + 裁决门禁引用识别 + 形状闸补类",
+			"type": "L",
+			"files": [
+				"src/core/knowledge.ts",
+				"src/core/ledger.ts",
+				"src/core/metrics.ts",
+				"src/host/session-events.ts",
+				"src/host/tools.ts"
+			],
+			"insertions": 80,
+			"deletions": 17,
+			"base": "521875e70f4be1f2864799acbaf31be0e6f9bf82^"
+		},
+		{
+			"id": "8c32bff1a47196798ed4ec7702540e612adab6e1",
+			"date": "2026-09-24",
+			"subject": "feat(决策): 决策分档触发器 + 结论级裁决门禁 —— 让它更少想错的两条机制",
+			"type": "L",
+			"files": [
+				"src/core/metrics.ts",
+				"src/host/session-events.ts",
+				"src/host/session-runtime.ts",
+				"src/host/tools.ts",
+				"src/host/triggers.ts"
+			],
+			"insertions": 69,
+			"deletions": 5,
+			"base": "8c32bff1a47196798ed4ec7702540e612adab6e1^"
+		}
+	]
+}

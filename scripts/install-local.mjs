@@ -7,8 +7,15 @@
  * 所以只打一遍；每次覆盖前整包备份到 %TEMP%。
  *
  * 用法：
- *   node scripts/install-local.mjs             # 覆盖所有 lume-dsh-plugin+0.* 的 live generation
+ *   node scripts/install-local.mjs             # **只装 profile 投影的那一个 generation（默认）**
+ *   node scripts/install-local.mjs --all       # 覆盖所有 lume-dsh-plugin+0.* 的 live generation（旧行为，慎用）
  *   node scripts/install-local.mjs --dry-run   # 只看会动哪些目录
+ *
+ * ★2026-09-25 血的教训（用户体感"重启特别慢"就是它）：
+ * 旧实现每次**改写 20 个 generation**，而 profile 的 generationProjection 只指向其中一个——
+ * 19 个是白改的。多出来的变更会让宿主在下次启动时重算这批包，实测就绪耗时：
+ * 未安装的启动 7.9s / 8.3s，安装后的第一次启动 22.7s / 28.3s，最坏一次 **148s 且被 SIGTERM 杀掉**。
+ * 所以默认改成"只动被投影的那一个"：把冷启动代价从 20 份降到 1 份。
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +24,29 @@ import process from "node:process";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DRY = process.argv.includes("--dry-run");
+const ALL = process.argv.includes("--all");
 const ROOTS = ["D:\\DSH-Data\\dsh-desktop\\harness", path.join(process.env.APPDATA ?? "", "dsh-desktop", "harness")];
+
+/**
+ * profile 投影到哪个 generation：这就是**重启后真正跑的那一个**。
+ * 只装它，冷启动代价才是 1 份；装 20 份会把宿主的插件重算成本放大 20 倍（见文件头教训）。
+ */
+function projectedGeneration() {
+	for (const root of new Set(ROOTS.filter(Boolean))) {
+		const profile = path.join(root, "profiles", "web", "package.json");
+		if (!existsSync(profile)) continue;
+		try {
+			const pkg = JSON.parse(readFileSync(profile, "utf8"));
+			const plugins = pkg?.dsh?.desktop?.generationProjection?.plugins ?? {};
+			const key = Object.keys(plugins).find((name) => /lume/i.test(name));
+			const id = key ? plugins[key]?.generationId : null;
+			if (id) return { key, id, dependency: pkg?.dependencies?.["lume-dsh-plugin"] ?? "?" };
+		} catch {
+			/* 读不到就继续找下一个根 */
+		}
+	}
+	return null;
+}
 /**
  * 装完之后自检：这几条必须能在**被读的两个文件**（lib/index.js、lib/host/protocol.js）里找到。
  *
@@ -43,11 +72,24 @@ console.log(`\n═══ 装到本机 DSH  仓库版本 ${version}${DRY ? "（dr
 
 const seen = new Set();
 let patched = 0;
+const projection = projectedGeneration();
+if (!ALL && !projection) {
+	console.log("❗读不到 profile 的 generationProjection（不知道重启后跑哪一个）。");
+	console.log("  要么确认 profiles/web/package.json 存在，要么显式用 --all（代价：下次启动会重算全部 lume generation）。\n");
+	process.exit(2);
+}
+console.log(
+	ALL
+		? "  模式：--all → 覆盖所有 lume generation（下次启动会重算，慎用）\n"
+		: `  模式：只装被投影的那一个 → ${projection.id}　（profile 依赖 ${projection.dependency}）\n`,
+);
 for (const root of new Set(ROOTS.filter(Boolean))) {
 	const live = path.join(root, "profiles", ".generations", "live");
 	if (!existsSync(live)) continue;
 	for (const dir of readdirSync(live).filter((name) => name.startsWith("lume-dsh-plugin+"))) {
 		if (seen.has(dir)) continue;
+		seen.add(dir);
+		if (!ALL && dir !== projection.id) continue;
 		seen.add(dir);
 		const pkg = path.join(live, dir, "node_modules", "lume-dsh-plugin");
 		if (!existsSync(path.join(pkg, "lib", "index.js"))) continue;
@@ -89,4 +131,5 @@ for (const root of new Set(ROOTS.filter(Boolean))) {
 	}
 }
 console.log(`\n${DRY ? "（dry-run）" : `已覆盖 ${patched} 个 generation；备份：${backup}`}`);
-console.log("下一步：完全重启 DSH（含托盘进程）。\n");
+console.log("下一步：完全重启 DSH（含托盘进程）。");
+console.log("重启后若仍慢，用 `node scripts/boot-timing.mjs --last 2` 量就绪耗时（别靠体感）。\n");

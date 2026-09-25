@@ -88,7 +88,7 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 	};
 	const sections: Record<string, HarnessSection> = {};
 	const contexts: Record<string, HarnessSection> = {};
-	const eventHandlers = new Map<string, (session: any, event: any) => void>();
+	const eventHandlers = new Map<string, Array<(session: any, event: any) => void>>();
 	const registeredTools = new Map<string, { name?: string; execute?: (args: unknown, exec: unknown) => Promise<unknown> }>();
 	let rpc: ((endpoint: string, payload: unknown) => Promise<{ ok: boolean; value?: unknown }>) | null = null;
 
@@ -159,8 +159,15 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 				: {}),
 		},
 		on: (type: string, handler: (session: any, event: any) => void) => {
-			eventHandlers.set(type, handler);
-			return () => {};
+			// 多监听：真机 cordis 允许同一事件挂多个监听；替身若只留一个，
+			// 后来者会**静默顶掉**先注册的处理器（2026-09-25 探针就是这样打红了 33 条 apply 用例）。
+			const list = eventHandlers.get(type) ?? [];
+			list.push(handler);
+			eventHandlers.set(type, list);
+			return () => {
+				const at = list.indexOf(handler);
+				if (at >= 0) list.splice(at, 1);
+			};
 		},
 		tools: {
 			register: (definition: { name?: string; execute?: (args: unknown, exec: unknown) => Promise<unknown> }) => {
@@ -191,7 +198,7 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 		table: (name) => tableFor(name),
 		toolDefinition: (name) => registeredTools.get(name) as Record<string, any> | undefined,
 		emit: (type, session, event) => {
-			eventHandlers.get(type)?.(session, event);
+			for (const handler of eventHandlers.get(type) ?? []) handler(session, event);
 		},
 		registeredRoutes: () => registeredRoutes,
 		loggerErrors,
@@ -203,10 +210,10 @@ export function makeLumeHarness(options: HarnessOptions = {}): LumeHarness {
 			return tool.execute(args, { agent: { session: { id: sid, cwd } } });
 		},
 		fire: (sid, type, data) => {
-			eventHandlers.get("session/event")?.({ id: sid, cwd: "D:\\Projects\\demo" }, { type, data });
+			for (const handler of eventHandlers.get("session/event") ?? []) handler({ id: sid, cwd: "D:\\Projects\\demo" }, { type, data });
 		},
 		fireTurnEnd: (sid) => {
-			eventHandlers.get("session/event")?.({ id: sid, cwd: "D:\\Projects\\demo" }, { type: "turn/end" });
+			for (const handler of eventHandlers.get("session/event") ?? []) handler({ id: sid, cwd: "D:\\Projects\\demo" }, { type: "turn/end" });
 		},
 		systemText: (sid, part) => callSection(sections, part === "persona" ? "lume:persona" : "lume:thinking", sid),
 		runtimeText: (sid, part) => {

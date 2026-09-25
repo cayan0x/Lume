@@ -26,6 +26,7 @@ import {
 } from "../core/ledger.js";
 import {
 	DESIGN_SIGNAL_RE,
+	isSmallMechanicalEdit,
 	advancePhase,
 	buildAlignmentCorrection,
 	buildCasualDirective,
@@ -101,6 +102,7 @@ import type { SessionEventDeps } from "./session-deps.js";
 import type { ToolDeps } from "./tools.js";
 import type { TriggerThresholds } from "./triggers.js";
 import type { HostPayload, LumeHostContext } from "./host-context.js";
+import { createContextFacts } from "./context-facts.js";
 
 export interface WiringInput {
 	/** 宿主 ctx（装配点传入）。 */
@@ -187,6 +189,8 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		clearNotice,
 		contextPressure,
 		buildContextPressureDirective,
+		// 事实优先：宿主 tokenMeter 的投影值（拿不到就回落 usage 估算，行为与改动前一致）
+		contextFacts: createContextFacts({ ctx: input.ctx }),
 		workspaceFromSnapshotText,
 		extractKnowledgeCandidates,
 		looksSensitive,
@@ -230,6 +234,7 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		toolTargetOf,
 		DOC_ARTIFACT_RE: input.docArtifactRe,
 		DESIGN_SIGNAL_RE,
+		isSmallMechanicalEdit,
 		TASK_SIGNAL_RE,
 		advancePhase,
 		cooldownOk,

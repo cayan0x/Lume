@@ -9,7 +9,7 @@ import { classifyTool, summarizeToolChange, toolArtifactText } from "../src/core
 import { messageText, visibleText } from "../src/core/text.js";
 import { extractKnowledgeCandidates, looksSensitive } from "../src/core/knowledge.js";
 import { normalizeProjectFact } from "../src/core/ledger.js";
-import { DESIGN_SIGNAL_RE } from "../src/host/protocol.js";
+import { DESIGN_SIGNAL_RE, isSmallMechanicalEdit } from "../src/host/protocol.js";
 import { TASK_SIGNAL_RE } from "../src/host/thinking.js";
 import { createLlmRouteCell } from "../src/host/llm-route.js";
 
@@ -159,6 +159,7 @@ function setup() {
 		toolTargetOf,
 		DOC_ARTIFACT_RE: /\.(md|markdown|txt)$/i,
 		DESIGN_SIGNAL_RE,
+		isSmallMechanicalEdit,
 		TASK_SIGNAL_RE, // 用真规则：锚点门槛就靠它（stub 写窄了会假绿）
 		advancePhase: (_p: string, s: string) => s,
 		cooldownOk: () => true,

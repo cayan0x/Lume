@@ -13,6 +13,7 @@
  */
 import type { SessionRuntime } from "./session-runtime.js";
 import { noticeOpen, noticeText, setNotice } from "./notices.js";
+import { isSmallMechanicalEdit } from "./protocol.js";
 
 import type { HostPayload } from "./host-context.js";
 import type { ChangeItem, DesignDecision, Hypothesis, ProjectFact, RequirementAnchor, TaskContract } from "../core/ledger.js";
@@ -142,6 +143,8 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 	const taskMethods = mode !== "question";
 	// 契约是"动手前的产出"：讨论轮问的是取舍，塞"开工前先写任务契约"只会稀释它（实测噪音）。
 	const contractMethods = mode === "execute" || mode === "diagnosis";
+	// 机械替换类小改不立契约（A/B 实测：连"把域名全部替换掉"都写了契约，4/8 条会话有 lume_contract）。
+	const smallEdit = isSmallMechanicalEdit(query);
 	const contract = deps.contractOf(sid);
 	const changes = deps.changesOf(sid);
 	const docDirective = deps.documentDirective(query, context);
@@ -165,7 +168,7 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 	return [
 		// 契约：有就回显（交付轮切成对账口径），没有且是任务轮就先教它写一份。
 		{ text: deps.renderContract(contract, st.taskPhase === "deliver") },
-		{ text: !contract && contractMethods ? deps.buildContractMethodDirective() : null, droppable: true },
+		{ text: !contract && contractMethods && !smallEdit ? deps.buildContractMethodDirective() : null, droppable: true },
 		// 设计三问：设计型任务且还没写下设计时反复顶（实测一次提示会被忽略）
 		{ text: deps.needsDesignPass(sid, st, query, mode) ? deps.buildDesignMethodDirective() : null, droppable: true },
 		// 需求解读三条硬规则：用户刚给/改了需求时顶

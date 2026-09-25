@@ -132,6 +132,14 @@ describe("evaluateToolTrigger", () => {
 		expect(evaluateToolTrigger(counters, { ...CTX, hasContract: true })).toBeNull();
 	});
 
+	it("机械替换类小改不催契约（豁免〔载具缺失〕）", () => {
+		// A/B 实测：连「把域名全部替换掉」都被催着写契约，纯开销 → 由 smallEdit 豁免
+		const counters = feed("mutate", 1);
+		expect(evaluateToolTrigger(counters, { ...CTX, smallEdit: true })).toBeNull();
+		// 但真·多步任务（判据不成立）仍然要催——豁免不能顺手放过正经任务
+		expect(evaluateToolTrigger(counters, { ...CTX, smallEdit: false })?.id).toBe("contract-missing");
+	});
+
 	it("同一验证连续失败 → 死路提醒；环境故障占多数时给降级阶梯", () => {
 		const retry = feed("verify", 3, newTriggerCounters(), { failure: true, unknown: false, env: false });
 		expect(evaluateToolTrigger(retry, CTX)?.text).toContain("归因");

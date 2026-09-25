@@ -1,0 +1,2 @@
+{"round":2,"task":"t4","type":"L","arm":"lume_patch","outcome":"F0","tokens":29041,"coldStart":20028,"cacheRead":26240,"toolCalls":10,"tools":"glob,grep,read,read,read,lume_patch,read,read,read,grep","lumeCalls":0,"retries":0,"misplaced":0,"note":"记账调用 0 次（第一轮 5 次）；三文件一次 lume_patch 改完；结果仍全对"}
+{"round":2,"task":"t2","type":"M","arm":"lume_patch","outcome":"F0","tokens":25233,"coldStart":19849,"cacheRead":24960,"toolCalls":4,"tools":"read,grep,lume_patch,read","lumeCalls":0,"retries":0,"misplaced":0,"note":"记账调用 0 次（第一轮 3 次）；三处改名+常量一次改对"}

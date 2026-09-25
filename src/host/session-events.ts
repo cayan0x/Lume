@@ -122,7 +122,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				st.assistantText = text;
 				collectAssistantFacts(sid, st, deps, text, event.data);
 				checkRequirementDrift(sid, st, deps, text);
-				checkContextPressure(sid, st, deps, event.data);
+				checkContextPressure(sid, st, deps, event.data, session);
 				checkEvidenceNotices(st, deps, text);
 				st.recentTurns.push(`助手: ${text.slice(0, 300)}`);
 				if (st.recentTurns.length > 12) st.recentTurns.shift();
@@ -270,6 +270,8 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							unverifiedChanges: deps.changesOf(sid).filter((item) => item.status !== "verified" && item.status !== "skipped").length,
 							hasDesign: deps.designOf(sid).length > 0,
 							designSignal: deps.DESIGN_SIGNAL_RE.test(st.intent?.text ?? st.userText ?? ""),
+							// 机械替换类小改：豁免〔载具缺失〕——见 protocol.ts 的 isSmallMechanicalEdit
+							smallEdit: deps.isSmallMechanicalEdit(st.intent?.text ?? st.userText ?? ""),
 							hypothesesTouched: st.hypothesesTouched,
 							blindTarget: st.agent.lastBlindTarget ?? null,
 						},

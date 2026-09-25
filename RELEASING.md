@@ -90,3 +90,21 @@ npm deprecate lume-dsh-plugin@<坏版本> "…"                 # 并给坏版�
    lume: RPC 通道 /lume = rpc.handle 失败(…) | webServer.register 失败(…) | shapes: …  ← 把这一行发出来
    ```
 3. 确认人设菜单可用、`lume_contract` 等载具工具出现在工具列表里
+
+## 发布顺序纪律（2026-09-25 起，用户要求）
+
+**先在 GitHub 侧改干净并验证通过，再发 npm。** 顺序不能反。
+
+理由（真机教训）：0.8.2 那次我先把包装发上 npm，之后才去修 `scripts/publish.mjs` 的语法错误——
+虽然该文件**不在 npm 包里**（`files` 只含 `lib`/资产/CHANGELOG，实测 tarball 里 0 个 `scripts/` 条目），
+但"npm 已发布、仓库里还躺着坏代码"本身就是不可接受的发布姿态：**npm 发出去就撤不回来**。
+
+落地要求：
+1. 先把改动 commit + push 到 GitHub，工作区干净、门禁全绿；
+2. **发版脚本本身也要先被验证**：`node scripts/publish.mjs --verify-only <已发布版本>` 必须退出 0（只读复检，不发布任何东西）；
+3. 以上都过了，才执行 `npm run release:publish`；
+4. 发布窗口内不要夹带任何仓库改动（尤其 `scripts/` —— 那是发版工具，坏了会让下一次发布假成功）。
+
+同一批事故的另一条教训：**`publish.mjs` 的 `run()` 曾因一个"字面量 \\n"把函数体连注释一起吃掉了**，导致
+"npm publish 退出码 0 但什么都没发出去"（0.8.1 / 0.8.2 两次）。现在假成功路径会打印 npm 的输出，
+并且 registry 确认走直连 HTTP。**任何涉及发版的脚本改动，都必须用 `--verify-only` 实测一次。**

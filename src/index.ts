@@ -22,8 +22,6 @@ import { buildPersonaContractSection, buildPersonaRuntimeSection } from "./host/
 import { loadPersonalities, NONE_PERSONA } from "./host/personalities.js";
 import { createLumeRpcHandler } from "./host/rpc.js";
 import { installProbe } from "./host/probe.js";
-import { registerPatchTool } from "./host/patch-tool.js";
-import { installGate } from "./host/gate.js";
 import { makeRpcRoute } from "./host/rpc-bridge.js";
 import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
 import { IdentityStore, LUME_IDENTITY_SPEC, zodLike } from "./host/identity.js";
@@ -206,12 +204,10 @@ export const name = "lume";
 /** 依赖的服务 */
 /**
  * 声明的宿主服务面。
- * `fs` 是探针真机实测后加的：未经声明的服务访问会**抛异常**（不是返回 undefined），
- * `lume_patch` 需要 fs seam 才能走宿主的 read-before-edit + 版本守卫（见 docs/design/lume-patch-and-delivery-gate.md §1.1）。
- * `tokenMeter` 同理：**只读事实**（`measure(session)` 的压力/占用投影），用来把 Lume 自己的注入预算
+ * `tokenMeter`：**只读事实**（`measure(session)` 的压力/占用投影），用来把 Lume 自己的注入预算
  * 从"猜着预警"改成"按事实管"，**不碰宿主的压缩方向盘**（压缩由 dsh-compaction-basic 自己判阈值）。
  */
-export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "agentDefaultModel", "settings", "fs", "tokenMeter"];
+export const inject = ["systemPrompt", "connection", "storageDomain", "tools", "llm", "agentDefaultModel", "settings", "tokenMeter"];
 
 export type { LumeConfig } from "./host/config.js";
 
@@ -534,32 +530,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			}
 		};
 	}, "lume: 只读探针");
-
-	// lume_patch：结构化补丁工具。写路径走宿主 fs seam（edit-intent → stat → readText → writeText(replaceIfVersion)）。
-	// 注册新工具会改**工具 schema** → 触发一次前缀冷启动，所以只在启动时注册、不做热插拔。
-	// 单开 effect + try/catch：注册失败只损失这个工具，绝不连累 apply 的其余部分。
-	ctx.effect(() => {
-		try {
-			if (registerPatchTool({ ctx, report: (message) => ctx.logger?.warn?.(`lume: ${message}`) }))
-				ctx.logger?.warn?.("lume: lume_patch 已注册");
-		} catch (error) {
-			ctx.logger?.warn?.(`lume: lume_patch 注册异常（不影响其它功能）：${describeError(error)}`);
-		}
-	}, "lume: lume_patch");
-
-	// 交付门槛 + 不可逆操作闸：guard（同步 deny：npm publish / git reset --hard）
-	// + tools/pre-execute（唯一能 ask 的地方：递归删除粗匹配 / push --force / present 无验证证据）。
-	// 分工是源码核实过的（dsh-tools:2809 "a returned string denies"，没有 ask）；装不上只少一层提醒。
-	ctx.effect(() => {
-		try {
-			const report = installGate({ ctx, report: (message) => ctx.logger?.warn?.(`lume: ${message}`) });
-			ctx.logger?.warn?.(
-				`lume: 闸已装载（guard=${report.guardInstalled ? "on" : "off"} · pre-execute=${report.preExecuteInstalled ? "on" : "off"}）`,
-			);
-		} catch (error) {
-			ctx.logger?.warn?.(`lume: 闸装载异常（不影响其它功能）：${describeError(error)}`);
-		}
-	}, "lume: 交付与不可逆闸");
 
 	// ── 载具与项目知识的读取入口（事件处理器 / 工具 / 注入三处共用）──
 	/**

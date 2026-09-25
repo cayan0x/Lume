@@ -267,7 +267,7 @@ export function classifyTool(name: unknown): ToolKind {
 
 /** 通用失败迹象：工具结果里出现这些词，就当这一步没成功。 */
 const FAILURE_RE =
-	/失败|报错|错误|异常|无法|找不到|不存在|没找到|\berror\b|\bfailed\b|\bfailure\b|\bexception\b|traceback|\bpanic\b|\bcannot\b|\bunable\b|permission denied|timed out|timeout|超时/i;
+	/失败|报错|错误|异常|无法|找不到|不存在|没找到|\berror\b|\bfailed\b|\bfailure\b|\bexception\b|traceback|\bpanic\b|\bcannot\b|\bunable\b|permission denied|timed out|timeout|超时|AssertionError|ERR_ASSERTION|assertion failed|exit code [1-9]|exited with code [1-9]|non-zero exit|✗/i;
 const UNKNOWN_RE = /结果未知|outcome unknown|tool_not_started|tool_outcome_unknown|仍在运行|still running|no output/i;
 /**
  * 环境故障迹象（区别于「代码写错了」）：依赖解析不了、命令不存在、离线仓库、

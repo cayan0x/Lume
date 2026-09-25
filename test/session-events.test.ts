@@ -60,7 +60,6 @@ function setup() {
 			verifyFailStreak: 0,
 			mutations: 0,
 			codeInspects: 0,
-			unfoundedChanges: 0,
 		} as never,
 		agent: {
 			evidence: new Map(),
@@ -168,6 +167,7 @@ function setup() {
 		applyToolSignal,
 		applyVerifyOutcome,
 		recordReadArgs: vi.fn(),
+		unexplainedCodes: () => [],
 		readResultSignals: vi.fn(),
 		recordResultText: vi.fn(),
 		buildAlignmentCorrection: () => null,
@@ -375,23 +375,6 @@ describe("host/session-events：度量（外部结果信号）", () => {
 			{ type: "tool/result", data: { error: null, message: { content: [{ type: "text", text: "On branch main" }] } } },
 		);
 		expect(deps.recordMetric).not.toHaveBeenCalledWith(expect.objectContaining({ event: "verify-run" }));
-	});
-
-	it("改一个本会话没读过的目标 → 记一次「未读就改」并留下目标名（决策分档的机械判据）", () => {
-		const { handler, st } = setup();
-		// ① 已存在 + 本会话没读过 → 记一次盲改
-		handler({ id: "sid-1" }, { type: "tool/call", data: { name: "edit", args: { path: "src/index.ts" } } });
-		expect(st.triggerCounters.unfoundedChanges).toBe(1);
-		expect(st.agent.lastBlindTarget).toBe("src/index.ts");
-		// ② 本会话读过（证据索引或摸过的目标任一） → 不算盲改，并清掉上一次的目标名
-		st.agent.inspectedTargets.add("src/seen.ts");
-		handler({ id: "sid-1" }, { type: "tool/call", data: { name: "edit", args: { path: "src/seen.ts" } } });
-		expect(st.triggerCounters.unfoundedChanges).toBe(1);
-		expect(st.agent.lastBlindTarget).toBeNull();
-		// ③ **新建**文件（还不存在）→ 不记：对它喊「先读一次」是错话（外部审核指出的误报）
-		handler({ id: "sid-1" }, { type: "tool/call", data: { name: "write", args: { path: "src/brand-new-file.ts" } } });
-		expect(st.triggerCounters.unfoundedChanges).toBe(1);
-		expect(st.agent.lastBlindTarget).toBeNull();
 	});
 
 	it("问答轮的只读探查不算越权（问题本来就该查仓库事实）", () => {

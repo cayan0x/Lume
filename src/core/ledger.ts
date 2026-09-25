@@ -80,6 +80,36 @@ export interface Hypothesis {
 	at: number;
 }
 
+/**
+ * 自动入账：把「一条验证没通过」构造成一条假设。
+ *
+ * 为什么需要它（2026-09-25 机制体检）：假设台账原本只能由模型主动调 lume_hypothesis 写入，
+ * 而模型 14 天 0 次调用 → 台账恒空 → 渲染对空表返回 null（无法自举）→ 死机制。
+ *
+ * 口径（第一次验收的教训）：**第一次非成功就写**，不设"连续失败 ≥2"的闸门——真机里失败常被
+ * core/signals 判成 `unknown`（PowerShell 管道会把退出码吞掉），计数类闸门永远不开。
+ * "第几次"由调用方从**台账本身**数出来（易失计数器不可靠）。
+ *
+ * 诚实边界：只记**事实**，状态一律 `open`——「已排除」是一次裁决，必须由模型带证据/裁决方式/
+ * 反例检查去下（见 lume_hypothesis 的门禁），插件不替它下结论。
+ */
+/** 自动入账的条目文本（**单一真值来源**：构造与「第几次」的计数都必须用它，否则去重会失效）。 */
+export function verifyMissText(command: string): string {
+	return `验证未通过：${command.replace(/\s+/g, " ").trim().slice(0, 90) || "（未能取到命令文本）"}`;
+}
+
+export function hypothesisFromVerifyMiss(input: { command: string; error: string; times: number; at: number }): Hypothesis {
+	const oneLine = (text: string, limit: number) => text.replace(/\s+/g, " ").trim().slice(0, limit);
+	const command = oneLine(input.command, 90) || "（未能取到命令文本）";
+	const error = oneLine(input.error, 160) || "（未捕获到输出）";
+	return {
+		text: `验证未通过：${command}`,
+		evidence: `自动：这条验证已出现 ${input.times} 次非成功；最近输出：${error}`,
+		status: "open",
+		at: input.at,
+	};
+}
+
 export type ProjectFactKind = "build" | "test" | "module" | "convention" | "deadend";
 
 export interface ProjectFact {

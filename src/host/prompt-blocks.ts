@@ -100,7 +100,7 @@ export interface BlockInput {
 
 /**
  * 当前步的易变段：路由 / 阶段 / 闲聊声明 / 长会话护栏 / 目标锚点 / 对齐 / 交付复核 /
- * 压缩重锚 / 协议纠偏 / 反思提醒 + 载具与方法块。
+ * 压缩重锚 / 协议纠偏 / 反思提醒 + 记录与方法块。
  *
  * 顺序有讲究：把「此刻最该做的一件事」（触发器提醒）放在最后——尾部注意力最强。
  * 超预算时先丢 `droppable` 块（见 methods.composeBlocks）。
@@ -125,9 +125,9 @@ export function volatileBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 }
 
 /**
- * 任务载具块：契约 / 改动台账 / 假设台账 / 设计决策 / 需求锚点 / 项目知识 + 方法块 + 触发器提醒。
+ * 任务记录块：契约 / 改动记录 / 假设记录 / 设计决策 / 需求锚点 / 项目知识 + 方法块 + 触发器提醒。
  *
- * 全部落在尾部快照（易变层）——这正是「载具」现在才做得起的理由：0.6.2 之前每步注入一份
+ * 全部落在尾部快照（易变层）——这正是「记录」现在才做得起的理由：0.6.2 之前每步注入一份
  * 会变的状态等于每步作废整段前缀，而快照只在内容变化时才付费（实测 58 步只产生 9 条快照）。
  */
 export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
@@ -166,7 +166,7 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		}
 	}
 	return [
-		// 契约：有就回显（交付轮切成对账口径），没有且是任务轮就先教它写一份。
+		// 契约：有就回显（交付轮切成核对口径），没有且是任务轮就先教它写一份。
 		{ text: deps.renderContract(contract, st.taskPhase === "deliver") },
 		{ text: !contract && contractMethods && !smallEdit ? deps.buildContractMethodDirective() : null, droppable: true },
 		// 设计三问：设计型任务且还没写下设计时反复顶（实测一次提示会被忽略）
@@ -176,9 +176,9 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		// 台账与假设：存在就回显——让模型「看见」自己的计划，而不是记在脑子里。
 		{ text: changes.length > 0 ? deps.renderChangeLedger(changes) : null },
 		{ text: deps.renderHypotheses(deps.hypothesesOf(sid)) },
-		// 设计决策：跨轮/跨压缩回显，让「数据落在哪 / 接口 / 范式 / 取舍」不随上下文漂移
+		// 设计决策：跨轮/跨压缩回显，让「数据落在哪 / 接口 / 范式 / 取舍」不随上下文对不上
 		{ text: deps.renderDesign(deps.designOf(sid)) },
-		// 需求锚点：逐字回显用户原话（非可丢块——它是最不该漂移的东西）
+		// 需求锚点：逐字回显用户原话（非可丢块——它是最不该对不上的东西）
 		{ text: deps.renderRequirements(deps.requirementsOf(sid)) },
 		// 需求覆盖核对：需求原句 vs 交付物句子（只在有文档产物时出现）
 		{ text: noticeText(st, "coverage") },

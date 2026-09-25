@@ -18,7 +18,7 @@ export function buildContractMethodDirective(): string {
 		"〔先量化后动手〕**只有**多步、多目标或需求有歧义的任务才写任务契约（lume_contract）：",
 		"- 目标：一句话，可观察的结果（不是「优化一下」这种动词）",
 		"- 范围：精确到路径 / 模块 / 章节 / 表",
-		"- 数量：必填，先估一个数，探索后回填实际值（实在无法估时传 0 并说明理由）——交付时要用实际数量对账",
+		"- 数量：必填，先估一个数，探索后回填实际值（实在无法估时传 0 并说明理由）——交付时要用实际数量核对",
 		"- 完成判据：可执行、可核对（命令 / 回读 / 对照），不是「改完」",
 		"- 非目标：明确不动什么，防止范围蔓延",
 		"- 待确认：默认 0 条。只列确实阻塞、且代码与文档都答不了的（≤2 个，写清为什么答不了）；其余按默认假设前进并写明假设",
@@ -55,7 +55,7 @@ export function buildStructureHint(toolName: string | null): string | null {
 
 /**
  * 拼装尾部快照块：超预算时优先丢掉**可丢**的块（从后往前），而不是截断中间的句子。
- * 预算存在的意义是防止"载具越积越多，把注意力挤没"——实测尾部快照约 1.8-2k 字符时
+ * 预算存在的意义是防止"记录越积越多，把注意力挤没"——实测尾部快照约 1.8-2k 字符时
  * 命中率与合规都健康，这里给到 4200 字符仍有充足余量。
  */
 /**
@@ -89,10 +89,10 @@ export function buildRequirementMethodDirective(taskMethods = true): string {
 	].join("\n");
 }
 
-/** 需求漂移提示：模型输出里出现需求原话没有的变更类型词时顶一句。 */
+/** 需求对不上提示：模型输出里出现需求原话没有的变更类型词时顶一句。 */
 export function buildDriftDirective(words: string[]): string | null {
 	if (words.length === 0) return null;
-	return `〔需求漂移〕你的输出里出现了需求原话里没有的变更类型：${words.join("、")}。先自问：这是需求要求的，还是你补出来的？若需求确实没要求、但技术上必须这么动，就说明它为什么必须、并请用户确认；若是自己补的，收回它，只按需求做。`;
+	return `〔需求对不上〕你的输出里出现了需求原话里没有的变更类型：${words.join("、")}。先自问：这是需求要求的，还是你补出来的？若需求确实没要求、但技术上必须这么动，就说明它为什么必须、并请用户确认；若是自己补的，收回它，只按需求做。`;
 }
 
 export function buildDesignMethodDirective(): string {
@@ -168,20 +168,20 @@ export function buildRequirementCoverageDirective(
 	return lines.join("\n");
 }
 
-/** 载具缺口：动了代码却没有任何契约/设计——交付时如实说出来（触发器发了它也没动，只能靠事实对账）。 */
+/** 还没写清：动了代码却没有任何契约/设计——交付时如实说出来（触发器发了它也没动，只能靠事实核对）。 */
 export function buildCarrierGapNotice(input: { mutations: number; hasContract: boolean; hasDesign: boolean }): string | null {
 	if (input.mutations <= 0) return null;
 	if (input.hasContract && input.hasDesign) return null;
 	const missing = [!input.hasContract ? "任务契约 0 条" : "", !input.hasDesign ? "设计 pass 0 条" : ""].filter(Boolean).join("、");
 	return [
-		`〔载具缺口〕这次会话已经有 ${input.mutations} 处改动，但${missing}——交付前按这两条自查：`,
+		`〔还没写清〕这次会话已经有 ${input.mutations} 处改动，但${missing}——交付前按这两条自查：`,
 		"- 做完的判据是什么（可核对的那种，不是「改完了」）？",
 		"- 关键取舍写下来了没有：数据落在哪 / 接口长什么样 / 为什么不那样做？",
 		"补一句也算（lume_contract / lume_design）。交付只有动作清单，用户就得自己替你核。",
 	].join("\n");
 }
 
-/** 交付对账：把「还没验证的具体条目」摆出来，而不是泛泛提醒「要有验证证据」。 */
+/** 交付核对：把「还没验证的具体条目」摆出来，而不是泛泛提醒「要有验证证据」。 */
 export function buildUnverifiedDeliveryNotice(
 	items: Array<{ target: string; change: string; verify: string; status: string }>,
 ): string | null {
@@ -192,7 +192,7 @@ export function buildUnverifiedDeliveryNotice(
 		return `- [${mark}] ${item.target} — ${item.change}${item.verify ? `（打算验：${item.verify}）` : ""}`;
 	});
 	return [
-		`〔交付对账〕台账里还有 ${pending.length} 项没有验证证据：`,
+		`〔交付核对〕台账里还有 ${pending.length} 项没有验证证据：`,
 		...lines,
 		"交付文案里逐项写清「已验证 / 未验证」，并说明怎么验的（命令 + 结果）。没验的就说没验，不要把动作完成说成判据达成。",
 	].join("\n");

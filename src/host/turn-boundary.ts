@@ -37,6 +37,8 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 				lastDriftTurn: st.lastDriftTurn,
 				counters: st.triggerCounters,
 				knowledgePrompted: st.knowledgePrompted,
+				unexplainedCodes: st.agent?.unexplainedCodes ?? [],
+				readabilityPrompted: st.readabilityPrompted,
 			},
 			deps.triggerThresholds,
 		);
@@ -54,6 +56,8 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 				// 契约对账用「交付口径」渲染原始判据：防判据随进展漂移。
 				st.lastDriftTurn = st.turnIndex;
 				deps.forceNotice(st, "turn", deps.renderContract(deps.contractOf(sid), true));
+			} else if (fire.id === "human-readability") {
+				st.readabilityPrompted = true;
 			} else {
 				st.knowledgePrompted = true;
 				deps.forceNotice(st, "turn", fire.text);

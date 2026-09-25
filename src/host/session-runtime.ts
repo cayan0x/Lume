@@ -85,8 +85,6 @@ export interface SessionRuntime {
 	agent: {
 		/** 文件 → 读过的行窗口 / grep 命中的行（引用核对）。 */
 		evidence: EvidenceIndex;
-		/** 最近一次「未读就改」的目标（决策分档提醒要指名道姓）。 */
-		lastBlindTarget?: string | null;
 		/** 本会话写出的文档正文（覆盖核对要把需求原句与交付物句子并列）。 */
 		artifactText: string;
 		/** 首改前的定位门槛：本会话摸过（read/grep 命中）的目标路径。 */
@@ -98,6 +96,8 @@ export interface SessionRuntime {
 		lastToolArgs: string | null;
 		/** 最近一次工具调用的目标路径（回读验证与定位门槛都要用）。 */
 		lastToolTarget: string | null;
+		/** 上一轮助手输出里未解释的代号（「输出的受众」触发器用）。 */
+		unexplainedCodes: string[];
 		/** 本会话自动沉淀的项目知识条数（防灌垃圾：每会话有上限） */
 		autoFacts: number;
 	};
@@ -124,6 +124,8 @@ export interface SessionRuntime {
 	knowledgePrompted: boolean;
 	/** 本轮是否更新过假设台账（更新过就不再提醒维护假设）。 */
 	hypothesesTouched: boolean;
+	/** 本会话是否已提醒过「讲人话」（避免唠叨）。 */
+	readabilityPrompted: boolean;
 	/** 当前轮用户明确纠正或重复提问时的临时对齐提醒。 */
 	/** 最近用户请求的归一化文本，仅用于检测上下文失配，不持久化。 */
 	recentUserQueries: string[];
@@ -182,6 +184,7 @@ function defaultRuntime(): SessionRuntime {
 			lastToolArgs: null,
 			lastToolTarget: null,
 			autoFacts: 0,
+			unexplainedCodes: [],
 		},
 		pendingFacts: [],
 		projectKey: null,
@@ -191,6 +194,7 @@ function defaultRuntime(): SessionRuntime {
 		lastDriftTurn: null,
 		knowledgePrompted: false,
 		hypothesesTouched: false,
+		readabilityPrompted: false,
 		recentUserQueries: [],
 		taskPhase: "answer",
 		toolCalls: 0,

@@ -12,6 +12,7 @@ import { DESIGN_SIGNAL_RE } from "./protocol.js";
 import { forceNotice, noticeText } from "./notices.js";
 import type { SessionRuntime } from "./session-runtime.js";
 import { buildTaskMemory, type TaskMemory } from "../core/task-memory.js";
+import { hypothesisFromVerifyMiss, verifyMissText } from "../core/ledger.js";
 import type { ResultSignals } from "../core/signals.js";
 
 import type { ProjectStore } from "./project.js";
@@ -110,6 +111,24 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 						`〔验证失败〕刚才那条验证没过（${commandSummary(st.agent.lastToolArgs)}）。先定位并修红：看第一条错误属于输入 / 逻辑 / 接口 / 环境哪一类，修完重新验；不要在这个状态上继续扩大改动范围，也不要把动作完成当成验证通过。`,
 					);
 				deps.ctx.logger?.warn?.(`lume: [${sid}] 真验证失败：${commandSummary(st.agent.lastToolArgs)}`);
+				// 假设台账的自动入账（体检结论的解药）：**任何非成功结果都记**。
+				// 第一次验收的教训：闸门若挂在 verifyFailStreak 上，真机里失败常被判成 unknown（管道吞退出码）→ 恒为 0 → 永不开。
+				// 所以「第几次」从**台账本身**数（verifyMissText 是构造与计数的单一真值来源）。
+				const missArgs = st.agent.lastToolArgs ?? "";
+				const missItem = hypothesisFromVerifyMiss({
+					command: missArgs,
+					error: resultText,
+					times: hypothesesOf(sid).filter((item) => item.text === verifyMissText(missArgs)).length + 1,
+					at: Date.now(),
+				});
+				void deps.stores.projectReady
+					.then(async (store) => {
+						await store?.upsertHypothesis(sid, missItem);
+						deps.ctx.logger?.warn?.(
+							`lume: [${sid}] 自动入账假设（第 ${missItem.evidence.match(/已出现 (\d+) 次/)?.[1] ?? "?"} 次非成功）：${missItem.text.slice(0, 60)}`,
+						);
+					})
+					.catch((error) => deps.ctx.logger?.warn?.(`lume: [${sid}] 自动入账假设失败：${String(error)}`));
 			}
 			return;
 		}

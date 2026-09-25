@@ -395,7 +395,7 @@ export function describeHost(ctx: unknown): Record<string, ProbeJson> {
 		};
 	}
 	const toolsShape = describeShape(host.tools);
-	// fs seam 的具体名字（lume_patch 依赖 resolve/stat/readText/writeText）：
+	// fs seam 的具体名字（给未来需要走宿主写路径的功能留个探针）：
 	// 2026-09-25 真机实测 `ctx.fs` 的 keys/methods 只露出 checkedTarget/editText/writeText，
 	// 而宿主自己的 str_replace 用的是 resolve/stat/readText —— 必须用 typeof 逐个问清楚，
 	// 否则「第一调用才炸」。

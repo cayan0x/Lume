@@ -12,7 +12,7 @@ import { bootLume, assistantMessage, toolResult, userMessage } from "./apply-har
 const SID = "s-1";
 const CWD = "D:\\Projects\\demo";
 
-describe("P0-2 自动改动台账：mutate 工具一被调用就落账（不依赖模型自觉）", () => {
+describe("P0-2 自动改动记录：mutate 工具一被调用就落账（不依赖模型自觉）", () => {
 	it("edit 调用 → ledger 表出现该文件、状态 done", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "tool/call", { name: "edit", args: { path: "src/a.ts" } });
@@ -121,7 +121,7 @@ describe("P1-3 反思：跳过原因必须可观测（上一版完全看不到�
 	});
 });
 
-describe("设计层：设计三问 + 设计决策载具（0.7.5）", () => {
+describe("设计层：设计三问 + 设计决策记录（0.7.5）", () => {
 	it("功能型任务轮注入〔设计三问〕并点名 lume_design", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("优惠视图新增权限人字段，业务类型下拉加三个选项，分页改成带总数"));
@@ -165,7 +165,7 @@ describe("设计层：设计三问 + 设计决策载具（0.7.5）", () => {
 	});
 });
 
-describe("需求锚点与需求漂移（0.7.5）", () => {
+describe("需求锚点与需求对不上（0.7.5）", () => {
 	it("任务型用户消息 → 原话被逐字锚定，并在注入里回显", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("在数据表里新增一个权限人字段，不要复用原来的字段"));
@@ -178,25 +178,25 @@ describe("需求锚点与需求漂移（0.7.5）", () => {
 		expect(text).toContain("需求解读");
 	});
 
-	it("模型把需求没提的变更说成自己要做的 → 顶漂移（只在提议时触发）", async () => {
+	it("模型把需求没提的变更说成自己要做的 → 顶对不上（只在提议时触发）", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("业务类型下拉新增移动业务、宽带业务"));
 		await new Promise((resolve) => setTimeout(resolve, 0)); // 锚点是异步落账，助手消息要等它写入
 		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "我建议删掉旧的「小合约」值" }] } });
 		const text = harness.runtimeText(SID, "thinking");
-		expect(text).toContain("需求漂移");
+		expect(text).toContain("需求对不上");
 		expect(text).toContain("删掉");
 	});
 
-	it("条件语句 / 风险讨论不顶漂移（2026-09-23 误报事故：模型因此学会了躲词）", async () => {
+	it("条件语句 / 风险讨论不顶对不上（2026-09-23 误报事故：模型因此学会了躲词）", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("业务类型下拉新增移动业务、宽带业务"));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "如果业务类型删除，旧数据就要割接" }] } });
-		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求漂移");
+		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求对不上");
 	});
 
-	it("推理块里的词不算漂移：只看可见正文", async () => {
+	it("推理块里的词不算对不上：只看可见正文", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("业务类型下拉新增移动业务、宽带业务"));
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -208,7 +208,7 @@ describe("需求锚点与需求漂移（0.7.5）", () => {
 				],
 			},
 		});
-		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求漂移");
+		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求对不上");
 	});
 
 	it("每会话限次：顶过两次之后不再顶（反复出现就是噪音）", async () => {
@@ -216,19 +216,19 @@ describe("需求锚点与需求漂移（0.7.5）", () => {
 		harness.fire(SID, "user/message", userMessage("业务类型下拉新增移动业务、宽带业务"));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "建议删掉旧值" }] } });
-		expect(harness.runtimeText(SID, "thinking")).toContain("需求漂移");
+		expect(harness.runtimeText(SID, "thinking")).toContain("需求对不上");
 		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "建议替换掉旧值" }] } });
-		expect(harness.runtimeText(SID, "thinking")).toContain("需求漂移");
+		expect(harness.runtimeText(SID, "thinking")).toContain("需求对不上");
 		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "建议回滚这批数据" }] } });
-		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求漂移");
+		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求对不上");
 	});
 
-	it("需求自己就写了删除 → 不算漂移", async () => {
+	it("需求自己就写了删除 → 不算对不上", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("把这个字段删除，并清理历史数据"));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		harness.fire(SID, "assistant/message", { message: { content: [{ type: "text", text: "确认要删除字段并清理历史数据" }] } });
-		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求漂移");
+		expect(harness.runtimeText(SID, "thinking")).not.toContain("需求对不上");
 	});
 });
 
@@ -254,7 +254,7 @@ describe("P0 提示跟随已定路由（2026-09-23 现场：同轮自相矛盾�
 	});
 });
 
-describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付对账 / 知识补落盘", () => {
+describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付核对 / 知识补落盘", () => {
 	it("引用核对：引用了这次没打开过的行 → 摆事实（turn 18 那条错误结论会被拦住）", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "tool/call", { name: "read", args: { file_path: "b2i\\Foo.java", offset: 470, limit: 140 } });
@@ -302,7 +302,7 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 		expect(text).toContain("src/never-read.ts");
 	});
 
-	it("交付对账：台账还有未验证项 → 下一轮列出具体条目", async () => {
+	it("交付核对：台账还有未验证项 → 下一轮列出具体条目", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("把 src/a.ts 里的注入逻辑改成分层写法"));
 		harness.fire(SID, "tool/call", { name: "edit", args: { path: "src/a.ts" } });
@@ -310,7 +310,7 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		harness.fireTurnEnd(SID);
 		const text = harness.runtimeText(SID, "thinking");
-		expect(text).toContain("交付对账");
+		expect(text).toContain("交付核对");
 		expect(text).toContain("src/a.ts");
 	});
 
@@ -463,7 +463,7 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 		expect(rows[0]?.change).toContain("const a = 1;");
 	});
 
-	it("载具缺口：动了代码但契约/设计都空 → 下一轮如实说出", async () => {
+	it("还没写清：动了代码但契约/设计都空 → 下一轮如实说出", async () => {
 		const harness = await bootLume();
 		harness.fire(SID, "user/message", userMessage("把 src/a.ts 里的注入逻辑改成分层写法"));
 		harness.fire(SID, "tool/call", { name: "edit", args: { path: "src/a.ts", new_string: "const a = 1;" } });
@@ -471,7 +471,7 @@ describe("0.7.5 机制化：引用核对 / 自动验证 / 定位门槛 / 交付�
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		harness.fireTurnEnd(SID);
 		const text = harness.runtimeText(SID, "thinking");
-		expect(text).toContain("载具缺口");
+		expect(text).toContain("还没写清");
 		expect(text).toContain("设计 pass 0 条");
 	});
 });

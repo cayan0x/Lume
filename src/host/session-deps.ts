@@ -117,6 +117,8 @@ export interface SessionSignalDeps {
 	summarizeToolChange: typeof signalsMod.summarizeToolChange;
 	toolArtifactText: typeof signalsMod.toolArtifactText;
 	readResultSignals: typeof signalsMod.readResultSignals;
+	/** 输出可读性判据（未解释代号；纯函数，来自 core/readability）。 */
+	unexplainedCodes: typeof readabilityMod.unexplainedCodes;
 	unsupportedCitations: typeof citationsMod.unsupportedCitations;
 	unsupportedClaims: typeof citationsMod.unsupportedClaims;
 	recordSymbols: typeof citationsMod.recordSymbols;

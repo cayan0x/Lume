@@ -2,7 +2,7 @@
  * 方法层测试：文本内容与预算组装。
  *
  * 方法块是「按任务形态注入」的，所以既要测它说到位（含关键约束），也要测预算机制——
- * 载具越积越多时必须有东西可丢，否则尾部快照会把注意力挤没。
+ * 记录越积越多时必须有东西可丢，否则尾部快照会把注意力挤没。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -65,7 +65,7 @@ describe("P0 提示降噪与路由一致（2026-09-23 现场诊断）", () => {
 		expect(text).toContain("提问的默认值是 0");
 	});
 
-	it("漂移提示：去掉「收回」这种压制措辞，保留「确实必须」的出口", () => {
+	it("对不上提示：去掉「收回」这种压制措辞，保留「确实必须」的出口", () => {
 		const text = buildDriftDirective(["割接"]);
 		expect(text).toContain("割接");
 		expect(text).not.toContain("收回并只按需求做");
@@ -73,7 +73,7 @@ describe("P0 提示降噪与路由一致（2026-09-23 现场诊断）", () => {
 	});
 });
 
-describe("引用核对与交付对账（0.7.5）", () => {
+describe("引用核对与交付核对（0.7.5）", () => {
 	it("引用核对：复述事实（你引用的行没打开过 + 读过的是哪些范围）", () => {
 		const text = buildCitationDirective([{ file: "Foo.java", line: 159, key: "foo.java" }], () => "412-433、470-609");
 		expect(text).toContain("引用核对");
@@ -82,7 +82,7 @@ describe("引用核对与交付对账（0.7.5）", () => {
 		expect(buildCitationDirective([], () => "")).toBeNull();
 	});
 
-	it("交付对账：列出未验证的具体条目，而不是泛泛提醒", () => {
+	it("交付核对：列出未验证的具体条目，而不是泛泛提醒", () => {
 		const text = buildUnverifiedDeliveryNotice([
 			{ target: "src/a.ts", change: "（自动）由 edit 修改", verify: "", status: "done" },
 			{ target: "src/b.ts", change: "加字段", verify: "回读", status: "verified" },
@@ -110,9 +110,9 @@ describe("引用核对与交付对账（0.7.5）", () => {
 		expect(buildQuestionAuditDirective({ count: 0, unsupported: [] })).toBeNull();
 	});
 
-	it("载具缺口：动了代码但契约/设计都空才说，且指出缺哪一样", () => {
+	it("还没写清：动了代码但契约/设计都空才说，且指出缺哪一样", () => {
 		const text = buildCarrierGapNotice({ mutations: 3, hasContract: false, hasDesign: false });
-		expect(text).toContain("载具缺口");
+		expect(text).toContain("还没写清");
 		expect(text).toContain("任务契约 0 条");
 		expect(text).toContain("设计 pass 0 条");
 		expect(buildCarrierGapNotice({ mutations: 3, hasContract: true, hasDesign: true })).toBeNull();

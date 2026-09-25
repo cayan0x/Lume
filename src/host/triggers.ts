@@ -21,12 +21,12 @@ export type TriggerId =
 	| "criteria-drift"
 	| "knowledge-capture"
 	| "design-missing"
-	| "unfounded-change";
+	| "human-readability";
 
 export interface TriggerCounters {
-	/** 连续只读探查次数（被改动/验证/写载具打断）。 */
+	/** 连续只读探查次数（被改动/验证/写记录打断）。 */
 	inspectStreak: number;
-	/** 连续改动次数（被验证/探查/写载具打断）。 */
+	/** 连续改动次数（被验证/探查/写记录打断）。 */
 	mutateStreak: number;
 	/** 连续验证失败次数（成功的验证清零）。 */
 	verifyFailStreak: number;
@@ -38,8 +38,6 @@ export interface TriggerCounters {
 	steps: number;
 	/** 摸到真实文件路径的只读探查次数（设计 pass 的触发依据） */
 	codeInspects: number;
-	/** 改过「本会话从没读过的目标」的次数（决策分档的触发依据）。 */
-	unfoundedChanges: number;
 }
 
 export function newTriggerCounters(): TriggerCounters {
@@ -51,7 +49,6 @@ export function newTriggerCounters(): TriggerCounters {
 		mutations: 0,
 		steps: 0,
 		codeInspects: 0,
-		unfoundedChanges: 0,
 	};
 }
 
@@ -74,7 +71,7 @@ export function applyToolSignal(counters: TriggerCounters, kind: ToolKind, signa
 		return;
 	}
 	if (kind === "plan") {
-		// 写载具本身就是「收敛」动作：两个连击都清零。
+		// 写记录本身就是「收敛」动作：两个连击都清零。
 		counters.inspectStreak = 0;
 		counters.mutateStreak = 0;
 	}
@@ -121,7 +118,7 @@ export const DEFAULT_TRIGGER_THRESHOLDS: TriggerThresholds = {
 export interface ToolTriggerContext {
 	turnIndex: number;
 	isTask: boolean;
-	/** 诊断模式（排查类请求）——假设台账提醒只在这里出现。 */
+	/** 诊断模式（排查类请求）——假设记录提醒只在这里出现。 */
 	diagnosing: boolean;
 	hasContract: boolean;
 	unverifiedChanges: number;
@@ -129,12 +126,10 @@ export interface ToolTriggerContext {
 	hasDesign: boolean;
 	/** 这条需求是不是「要动数据/接口」的设计型任务 */
 	designSignal: boolean;
-	/** 机械替换类小改：豁免〔载具缺失〕提醒（判据集中在 protocol.ts，避免各处各写一条）。 */
+	/** 机械替换类小改：豁免〔还没写清〕提醒（判据集中在 protocol.ts，避免各处各写一条）。 */
 	smallEdit?: boolean;
-	/** 本轮是否更新过假设台账（更新过就不再提醒）。 */
+	/** 本轮是否更新过假设记录（更新过就不再提醒）。 */
 	hypothesesTouched: boolean;
-	/** 最近一次「未读就改」的目标路径（决策分档要指名道姓，模型才知道该核实哪一份）。 */
-	blindTarget?: string | null;
 }
 
 export interface TriggerFire {
@@ -163,14 +158,7 @@ export function evaluateToolTrigger(
 		}
 		return {
 			id: "dead-path",
-			text: `〔死路提醒〕同一验证已连续失败 ${n} 次。先归因（输入 / 逻辑 / 接口 / 环境 / 权限），把结论写进假设台账：证实的标 confirmed、排除的标 excluded（用 lume_hypothesis）——已排除的假设不要再试。换一个方案再动手。`,
-		};
-	}
-	// 决策分档：正在拿推测当依据改东西。排在「改多了要验证」之前——因为这一步的**依据**有问题。
-	if (counters.unfoundedChanges > 0 && ctx.blindTarget) {
-		return {
-			id: "unfounded-change",
-			text: `〔决策分档〕这一步在改一个**本会话没读过**的目标：${ctx.blindTarget}。二选一：① 先做最便宜的核实（读一次 / 跑一次 / 查一次引用），拿到事实再改；② 确实要带着不确定动手 → 用 lume_hypothesis 把它落成假设（写清证据与「怎么验证」，并说明「如果这条不成立会怎样」）。不要拿推测当依据直接改。`,
+			text: `〔死路提醒〕同一验证已连续失败 ${n} 次。先分清是哪类原因（输入 / 逻辑 / 接口 / 环境 / 权限），这条反复失败的验证**插件已自动记入假设记录**；换方案前先看一眼台账里已排除的东西，别再试同一招。若有结论，用 lume_hypothesis 标 confirmed/excluded（要带证据与下结论方式）。换一个方案再动手。`,
 		};
 	}
 	if (counters.mutateStreak >= thresholds.changeStreak || ctx.unverifiedChanges >= thresholds.changeStreak) {
@@ -182,7 +170,7 @@ export function evaluateToolTrigger(
 	if (!ctx.hasContract && ctx.isTask && counters.mutations > 0 && ctx.smallEdit !== true) {
 		return {
 			id: "contract-missing",
-			text: "〔载具缺失〕你已经动手改动，但还没写下任务契约。花一次调用写清：目标（可观察的结果）、范围（精确到路径/模块/章节）、预计数量、完成判据（可执行）、非目标（明确不动什么）、待确认（≤2 个）。之后每步以契约为准，交付时按它逐项对账——用 lume_contract。",
+			text: "〔还没写清〕你已经动手改动，但还没写下任务契约。花一次调用写清：目标（可观察的结果）、范围（精确到路径/模块/章节）、预计数量、完成判据（可执行）、非目标（明确不动什么）、待确认（≤2 个）。之后每步以契约为准，交付时按它逐项核对——用 lume_contract。",
 		};
 	}
 	if (ctx.isTask && ctx.designSignal && !ctx.hasDesign && counters.codeInspects >= thresholds.designAfterInspects) {
@@ -194,13 +182,13 @@ export function evaluateToolTrigger(
 	if (ctx.isTask && counters.inspectStreak >= thresholds.inspectStreak) {
 		return {
 			id: "converge",
-			text: `〔收敛提醒〕已连续 ${counters.inspectStreak} 次只读探查，还没有产出契约或改动台账。停止撒网式通读，先把链路复述出来——入口 → 数据流 → 影响面（谁调用、被谁调用、配置与 SQL 绑定）——写成改动台账（lume_change）并回填实际数量，然后带着这份清单回去读缺口。`,
+			text: `〔收敛提醒〕已连续 ${counters.inspectStreak} 次只读探查，还没有产出契约或改动记录。停止撒网式通读，先把链路复述出来——入口 → 数据流 → 影响面（谁调用、被谁调用、配置与 SQL 绑定）——写成改动记录（lume_change）并回填实际数量，然后带着这份清单回去读缺口。`,
 		};
 	}
 	if (counters.verifyFailStreak > 0 && ctx.diagnosing && !ctx.hypothesesTouched) {
 		return {
 			id: "hypothesis-stale",
-			text: "〔假设台账〕本轮出现了验证失败，但假设状态没有更新。把这次失败归因写进 lume_hypothesis（证实 / 排除 / 新假设），并标出下一步要验的是哪一条——否则同一个假设会被反复试。",
+			text: "〔假设记录〕本轮出现了验证失败，但假设状态没有更新。把这次失败归因写进 lume_hypothesis（证实 / 排除 / 新假设），并标出下一步要验的是哪一条——否则同一个假设会被反复试。",
 		};
 	}
 	return null;
@@ -211,18 +199,30 @@ export interface TurnTriggerContext {
 	hasContract: boolean;
 	/** 压缩发生在第几轮（null = 没压缩过）。 */
 	compactionTurn: number | null;
-	/** 上次契约对账在第几轮（null = 还没对账过）。 */
+	/** 上次契约核对在第几轮（null = 还没核对过）。 */
 	lastDriftTurn: number | null;
 	counters: TriggerCounters;
 	/** 本会话是否已经提醒过项目知识采集。 */
 	knowledgePrompted: boolean;
+	/** 上一轮助手输出里未解释的代号（给「输出的受众」触发器用）。 */
+	unexplainedCodes?: string[];
+	/** 本会话是否已经提醒过「讲人话」。 */
+	readabilityPrompted: boolean;
 }
 
-/** 轮边界触发的判定：契约对账（防判据漂移）与项目知识采集。 */
+/** 轮边界触发的判定：契约核对（防验收标准对不上）与项目知识采集。 */
 export function evaluateTurnTrigger(
 	ctx: TurnTriggerContext,
 	thresholds: TriggerThresholds = DEFAULT_TRIGGER_THRESHOLDS,
 ): TriggerFire | null {
+	// 输出的受众：上一轮甩了没解释的代号（用户看不懂就要追问，追问就是一轮完整上下文）。
+	// 排最前——它是**紧接着上一轮**的问题，越早纠正越省。
+	if (!ctx.readabilityPrompted && ctx.unexplainedCodes?.length) {
+		return {
+			id: "human-readability",
+			text: `〔讲人话〕你上一轮引用了 ${ctx.unexplainedCodes.slice(0, 3).join("、")}，但没有说明它们指什么——读者没看过那份文档。用一句人话补上它们各是什么、影响什么；代号不能代替说明（把 P0 说成「必须马上做，不做会出事故」）。`,
+		};
+	}
 	if (ctx.hasContract) {
 		const afterCompaction = ctx.compactionTurn !== null && ctx.turnIndex - ctx.compactionTurn <= 1;
 		const periodic = ctx.turnIndex >= 3 && (ctx.lastDriftTurn === null || ctx.turnIndex - ctx.lastDriftTurn >= 3);

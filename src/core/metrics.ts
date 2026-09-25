@@ -121,7 +121,6 @@ export const TRIGGER_EXPECT: Record<string, EfficacyExpect> = {
 	"design-missing": "design",
 	// 决策分档：提醒是二选一（先做最便宜的核实 / 或落成假设），所以两条路都认。
 	// 只认「假设」会虚低——模型走了被鼓励的那条路（核实）反而记 0 改善（外部审核指出）。
-	"unfounded-change": "verify-or-hypothesis",
 	converge: "ledger",
 	"hypothesis-stale": "hypothesis",
 	"criteria-drift": "none",

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { trimRequirements } from "../src/core/ledger.js";
-import { classifyTool, deadPathKind, readResultSignals } from "../src/core/signals.js";
+import { classifyTool, deadPathKind, looksLikeFailure, readResultSignals } from "../src/core/signals.js";
 import {
 	DRIFT_NOTICE_MAX,
 	auditOpenQuestions,
@@ -40,7 +40,7 @@ describe("classifyTool", () => {
 		expect(classifyTool("todo_write")).toBe("plan");
 	});
 
-	it("载具工具是 plan，人格工具是 other（不污染改动连击）", () => {
+	it("记录工具是 plan，人格工具是 other（不污染改动连击）", () => {
 		expect(classifyTool("lume_contract")).toBe("plan");
 		expect(classifyTool("lume_change")).toBe("plan");
 		expect(classifyTool("lume_hypothesis")).toBe("plan");
@@ -96,20 +96,6 @@ function feed(
 	return counters;
 }
 
-describe("host/triggers：决策分档（未读就改）", () => {
-	it("改一个本会话没读过的目标 → 先分档（排在「增量验证」之前，因为依据本身有问题）", () => {
-		const counters = { ...newTriggerCounters(), unfoundedChanges: 1, mutateStreak: 9 };
-		const fire = evaluateToolTrigger(counters, { ...CTX, blindTarget: "src/x.ts" });
-		expect(fire?.id).toBe("unfounded-change");
-		expect(fire?.text).toContain("决策分档");
-		expect(fire?.text).toContain("src/x.ts"); // 要指名道姓，模型才知道该核实哪一份
-	});
-	it("没有盲改目标时不出这条（不能拿它当常规提醒）", () => {
-		const counters = { ...newTriggerCounters(), unfoundedChanges: 1 };
-		expect(evaluateToolTrigger(counters, { ...CTX, blindTarget: null })?.id).not.toBe("unfounded-change");
-	});
-});
-
 describe("evaluateToolTrigger", () => {
 	it("连续只读探查到阈值 → 收敛提醒（带具体步数）", () => {
 		const counters = feed("inspect", DEFAULT_TRIGGER_THRESHOLDS.inspectStreak);
@@ -132,7 +118,7 @@ describe("evaluateToolTrigger", () => {
 		expect(evaluateToolTrigger(counters, { ...CTX, hasContract: true })).toBeNull();
 	});
 
-	it("机械替换类小改不催契约（豁免〔载具缺失〕）", () => {
+	it("机械替换类小改不催契约（豁免〔还没写清〕）", () => {
 		// A/B 实测：连「把域名全部替换掉」都被催着写契约，纯开销 → 由 smallEdit 豁免
 		const counters = feed("mutate", 1);
 		expect(evaluateToolTrigger(counters, { ...CTX, smallEdit: true })).toBeNull();
@@ -142,7 +128,7 @@ describe("evaluateToolTrigger", () => {
 
 	it("同一验证连续失败 → 死路提醒；环境故障占多数时给降级阶梯", () => {
 		const retry = feed("verify", 3, newTriggerCounters(), { failure: true, unknown: false, env: false });
-		expect(evaluateToolTrigger(retry, CTX)?.text).toContain("归因");
+		expect(evaluateToolTrigger(retry, CTX)?.text).toContain("先分清是哪类原因");
 
 		const env = feed("verify", 3, newTriggerCounters(), { failure: true, unknown: false, env: true });
 		const fire = evaluateToolTrigger(env, CTX);
@@ -161,7 +147,7 @@ describe("evaluateToolTrigger", () => {
 		expect(evaluateToolTrigger(counters, CTX)).toBeNull();
 	});
 
-	it("写载具会清掉探查/改动连击（收敛动作本身被承认）", () => {
+	it("写记录会清掉探查/改动连击（收敛动作本身被承认）", () => {
 		const counters = feed("inspect", 11);
 		applyToolSignal(counters, "plan", null);
 		expect(counters.inspectStreak).toBe(0);
@@ -185,7 +171,7 @@ describe("evaluateToolTrigger", () => {
 		expect(fire?.text).toContain("lume_change");
 	});
 
-	it("诊断模式下即使还没写过假设，失败也会提醒（否则这个载具永远不会被启用）", () => {
+	it("诊断模式下即使还没写过假设，失败也会提醒（否则这个记录永远不会被启用）", () => {
 		const counters = feed("verify", 1, newTriggerCounters(), { failure: true, unknown: false, env: false });
 		const fire = evaluateToolTrigger(counters, { ...CTX, diagnosing: true });
 		expect(fire?.id).toBe("hypothesis-stale");
@@ -220,7 +206,7 @@ describe("evaluateToolTrigger", () => {
 });
 
 describe("evaluateTurnTrigger", () => {
-	it("有契约时每 3 轮对账一次，压缩后立即对账", () => {
+	it("有契约时每 3 轮核对一次，压缩后立即核对", () => {
 		const base = { hasContract: true, lastDriftTurn: null, compactionTurn: null, knowledgePrompted: false, counters: newTriggerCounters() };
 		expect(evaluateTurnTrigger({ ...base, turnIndex: 2 })?.id).toBeUndefined(); // 2 轮还不查
 		expect(evaluateTurnTrigger({ ...base, turnIndex: 3 })?.id).toBe("criteria-drift");
@@ -388,5 +374,24 @@ describe("需求锚点保留策略（2026-09-23 现场：需求原文被评审�
 		const kept = trimRequirements(items, 10);
 		expect(kept[0]!.text).toBe("闲聊 0");
 		expect(kept.length).toBe(10);
+	});
+
+	describe("失败判定：Node 断言与退出码（2026-09-25 现场）", () => {
+		it("AssertionError 型输出必须算失败（\\berror\\b 的词边界抓不到它，曾因此被读成成功）", () => {
+			const output =
+				"> node check.mjs\nAssertionError [ERR_ASSERTION]: sum([1,2,3]) 应为 6，实际 7\n7 !== 6\n    at file:///D:/x/check.mjs:11:8";
+			expect(looksLikeFailure(output)).toBe(true);
+			expect(readResultSignals(output)).toMatchObject({ failure: true, unknown: false });
+		});
+
+		it("shell 退出码报告也算失败", () => {
+			expect(looksLikeFailure("Command failed with exit code 1")).toBe(true);
+			expect(looksLikeFailure("process exited with code 2")).toBe(true);
+		});
+
+		it("成功输出不能误判（0 failures / 全部通过 这类措辞）", () => {
+			expect(looksLikeFailure("Tests  0 failures\n全部通过")).toBe(false);
+			expect(readResultSignals("全部通过\n> node check.mjs")).toMatchObject({ failure: false, unknown: false });
+		});
 	});
 });

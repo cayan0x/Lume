@@ -15,7 +15,7 @@ import type { SessionRuntime } from "./session-runtime.js";
 
 /** 各机制的每会话上限（要加机制只改这张表）。 */
 export const NOTICE_CAPS: Record<string, number> = {
-	/** 需求漂移：反复顶会让模型开始躲词而不是解决问题（实测） */
+	/** 需求对不上：反复顶会让模型开始躲词而不是解决问题（实测） */
 	drift: 2,
 	/** 引用-证据对齐 */
 	citation: 3,
@@ -27,7 +27,7 @@ export const NOTICE_CAPS: Record<string, number> = {
 	coverage: 2,
 	// 上下文预警：warn/critical 各一次就够（反复催会变噪音）
 	pressure: 3,
-	/** 载具缺口（动了代码但契约/设计都空） */
+	/** 还没写清（动了代码但契约/设计都空） */
 	carrierGap: 2,
 	/** 度量自校：本会话路由被反复纠正时顶一次（上限 2，防噪音） */
 	metrics: 2,

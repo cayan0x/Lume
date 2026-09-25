@@ -77,6 +77,7 @@ import { rememberWorkspace, sessionDirSlug, workspaceFromSlug } from "./workspac
 import { requirementHintsOf, type RequirementHint } from "./requirements-scan.js";
 import { TASK_SIGNAL_RE } from "./thinking.js";
 import { applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger } from "./triggers.js";
+import { unexplainedCodes } from "../core/readability.js";
 import { detectLeak } from "../core/leak-detector.js";
 import { isCompactionCheckpoint } from "./compaction.js";
 import { isDuplicateFact, resolveAuxRoute } from "./extraction.js";
@@ -240,6 +241,7 @@ export function assembleSessionEventDeps(input: WiringInput): SessionEventDeps {
 		cooldownOk,
 		evaluateToolTrigger,
 		evaluateTurnTrigger,
+		unexplainedCodes,
 		triggerThresholds: input.triggerThresholds,
 		boundaryTurns: input.boundaryTurns,
 		runtime: input.runtime,

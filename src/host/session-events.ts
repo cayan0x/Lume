@@ -120,6 +120,8 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				const text = deps.visibleText((event.data as { message?: unknown } | undefined)?.message);
 				if (!text) break;
 				st.assistantText = text;
+				// 输出的受众：记下这一轮助理输出里**未解释的代号**，供轮边界触发器提醒（判据是纯函数）。
+				st.agent.unexplainedCodes = deps.unexplainedCodes(text, st.userText ?? "");
 				collectAssistantFacts(sid, st, deps, text, event.data);
 				checkRequirementDrift(sid, st, deps, text);
 				checkContextPressure(sid, st, deps, event.data, session);
@@ -139,17 +141,6 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				// 否则「改动台账」永远空着（这正是上一版没生效的地方）。
 				if (st.toolKind === "inspect" && deps.toolTargetOf(event.data)) st.triggerCounters.codeInspects++;
 				// 越权改动：判成问答却动了文件——「路由判错」的机械证据，比用户抱怨出现得更早。
-				// 决策分档的机械判据：**已存在的文件**在本会话没看过就改 = 拿推测当依据。
-				// - 只管已存在的目标：新建文件天然「没读过」，对它喊「先读一次」是错话（外部审核指出）；
-				// - 看过的判据只走 inspectedTarget（证据索引 + 摸过的目标，同一套 pathKey），
-				//   不再让两处各问一次、各用一种键。
-				if (st.toolKind === "mutate") {
-					const target = existingTarget(st, deps.toolTargetOf(event.data));
-					if (target && !inspectedTarget(st, target)) {
-						st.triggerCounters.unfoundedChanges++;
-						st.agent.lastBlindTarget = target;
-					} else st.agent.lastBlindTarget = null;
-				}
 				if (st.toolKind === "mutate" && st.interactionMode === "question")
 					deps.recordMetric({
 						kind: "outcome",
@@ -273,7 +264,6 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							// 机械替换类小改：豁免〔载具缺失〕——见 protocol.ts 的 isSmallMechanicalEdit
 							smallEdit: deps.isSmallMechanicalEdit(st.intent?.text ?? st.userText ?? ""),
 							hypothesesTouched: st.hypothesesTouched,
-							blindTarget: st.agent.lastBlindTarget ?? null,
 						},
 						deps.triggerThresholds,
 					);

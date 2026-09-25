@@ -4,6 +4,7 @@
  *
  *   ① node scripts/release-check.mjs                 ← 本地构建门禁（不通过直接退出）
  *   ② npm publish --tag next                         ← 只发到 next，latest 不动
+	}
  *   ②b registry 确认（直连 HTTP）                     ← **命令返回 0 不算发出去**；npm 的 PUT 202 是异步入队，
  *        只有 registry 上真出现这个版本才算受理，否则直接非零退出（不动 latest、不弃用）
  *   ③ node scripts/release-check.mjs --published X   ← 检查**真正发布出去**的 tarball
@@ -23,7 +24,10 @@ const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 const PACKAGE = "lume-dsh-plugin";
 
 function run(args, options = {}) {
-	// Windows 下 spawnSync 直接跑 npm.cmd 会 EINVAL（Node 20+ 安全变更），必须走 shell\n	return execFileSync(NPM, args, { cwd: ROOT, encoding: "utf8", stdio: options.capture ? "pipe" : "inherit", shell: process.platform === "win32" });
+	// Windows 下直接跑 npm.cmd 会 EINVAL（Node 20+ 安全变更），必须走 shell。
+	// ⚠️ 这里曾写成一个**字面量 \n**，把函数体连注释一起吃掉了——run() 从此不执行任何命令、
+	// 返回 undefined、退出码恒为 0，于是「发布」变成「假成功」（0.8.1 / 0.8.2 两次踩到）。
+	return execFileSync(NPM, args, { cwd: ROOT, encoding: "utf8", stdio: options.capture ? "pipe" : "inherit", shell: true });
 }
 
 function check(args) {
@@ -76,6 +80,11 @@ if (!local.ok) {
 console.log("  ✓ 通过\n");
 
 console.log("② 发布到 next（latest 暂不动）");
+	// 幂等：版本已在 registry 上就别再 publish（重复 publish 会非零退出，被误判成失败）
+	const precheck = await versionOnRegistry(version);
+	if (precheck.ok) {
+		console.log("  · registry 上已经有 " + version + "（跳过 publish，直接进入复检）\n");
+	} else {
 let publishOutput = "";
 try {
 	publishOutput = run(["publish", "--tag", "next"], { capture: true });

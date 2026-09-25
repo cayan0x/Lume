@@ -29,3 +29,6 @@ lib/
 
 # 本地记忆与交接状态（goose 的 .goose 目录）
 .goose/
+
+# 临时脚本/中间产物（我曾三次误提交 tmp-*，从 0.8.1 起由 gitignore 兜住）
+tmp-*

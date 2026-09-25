@@ -1,9 +1,0 @@
-npm warn "0.8.1" is being parsed as a normal command line argument.
-npm warn "0.8.1" is being parsed as a normal command line argument.
-npm warn Unknown cli config "--published". This will stop working in the next major version of npm.
-npm warn Unknown cli config "--expect-version". This will stop working in the next major version of npm.
-
-> lume-dsh-plugin@0.8.1 release:audit
-> node scripts/release-check.mjs --published 0.8.1 0.8.1
-
-门禁自身出错： registry 上没有 0.8.1

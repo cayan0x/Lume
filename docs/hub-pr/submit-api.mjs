@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 const UPSTREAM = "awesome-dsh-plugin/awesome-dsh-plugin";
 const ENTRY = "data/plugins/cayan0x__Lume.yml";
 const BRANCH = "update-cayan0x-lume-description";
-const TITLE = "Update description for cayan0x/Lume (layered injection + methods layer)";
+const TITLE = "Update description for cayan0x/Lume (trim to a short blurb; drop claims that no longer match the code)";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const dryRun = process.argv.includes("--dry-run");
 

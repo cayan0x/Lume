@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 const UPSTREAM = "awesome-dsh-plugin/awesome-dsh-plugin";
 const ENTRY = "data/plugins/cayan0x__Lume.yml";
 const BRANCH = "update-cayan0x-lume-description";
-const TITLE = "Update description for cayan0x/Lume (layered injection + methods layer)";
+const TITLE = "Update description for cayan0x/Lume (trim to a short blurb; drop claims that no longer match the code)";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** 统一用 capture 模式跑外部命令，失败时把 stderr 一并抛出，便于定位。 */

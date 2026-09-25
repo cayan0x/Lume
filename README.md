@@ -62,10 +62,10 @@ _（下面用一个跟你业务无关的小例子：一个自己写着玩的跑�
 dsh plugin add lume-dsh-plugin
 
 # GitHub（备选）
-dsh plugin add github:cayan0x/Lume#v0.8.1
+dsh plugin add github:cayan0x/Lume#v<版本>   # 例如 v0.8.2
 
 # 指定版本 / 最新
-dsh plugin add lume-dsh-plugin@0.8.1
+dsh plugin add lume-dsh-plugin@<版本>       # 例如 0.8.2
 dsh plugin add lume-dsh-plugin@latest
 ```
 

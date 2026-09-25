@@ -100,6 +100,8 @@ for (let attempt = 1; attempt <= 12; attempt++) {
 }
 if (!landed) {
 	console.error("✗ npm publish 退出码为 0，但 registry 上始终没有 " + version + " —— 判定为**没发出去**，已中止（latest 未改动）。");
+	console.error("   npm 的输出（判断到底发没发出去，看这里）：");
+	console.error(publishOutput.trim().slice(-1500) || "（npm 一句话都没说——若如此，说明 publish 根本没被执行）");
 	console.error("   排查：看 npm debug 日志（%LOCALAPPDATA%/npm-cache/_logs 最新那份里的 http fetch PUT 状态码；PUT 202 才算受理）。");
 	process.exit(1);
 }

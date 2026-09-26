@@ -74,8 +74,31 @@ const api = (method, path, payload) =>
 		req.end();
 	});
 
-const title = (body.split("\n").find((l) => l.trim()) ?? tag).replace(/^[-*\s]+/, "").slice(0, 80);
-const payload = { tag_name: tag, name: tag + " — " + (title || tag), body, draft: false, prerelease: false, make_latest: "true" };
+/** 从 CHANGELOG 正文里提炼一句干净的标题：去 markdown、去引导词、截到第一个句末。 */
+const title = (() => {
+	const flat = body
+		.replace(/\*\*/g, "")
+		.replace(/`/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/^[-*\s]+/, "");
+	const sentence = /^(.{6,60}?[。！？.!?])/.exec(flat)?.[1] ?? flat.slice(0, 60);
+	return sentence.trim();
+})();
+const footer =
+	"\n---\n\n安装：`dsh plugin add lume-dsh-plugin`（指定版本：`dsh plugin add github:cayan0x/Lume#" +
+	tag +
+	"`）\n" +
+	"npm：https://www.npmjs.com/package/lume-dsh-plugin/v/" +
+	version;
+const payload = {
+	tag_name: tag,
+	name: tag + (title ? " — " + title : ""),
+	body: body + footer,
+	draft: false,
+	prerelease: false,
+	make_latest: "true",
+};
 const existing = await api("GET", "/repos/" + OWNER + "/" + REPO + "/releases/tags/" + tag);
 const res =
 	existing.status === 200

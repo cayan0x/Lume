@@ -95,7 +95,11 @@ for (const raw of files) {
 	const allFiles = walk("src").filter((f) => /\.tsx?$/.test(f));
 	for (const f of allFiles) {
 		const text = readFileSync(f, "utf8");
-		for (const hit of text.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)) usage.add(hit[1]);
+		// 嵌套依赖也要算：`deps.ctx.tokenMeter` 既用到 ctx 也用到 tokenMeter。
+		// （2026-09-26：只看一层 `deps.X` 会把 `interface XDeps { ctx: { a?: … } }` 的 a 误判成死声明。）
+		for (const hit of text.matchAll(/\bdeps((?:\.[A-Za-z_$][\w$]*)+)/g)) {
+			for (const seg of hit[1].split(".").filter(Boolean)) usage.add(seg);
+		}
 		// 也认「解构」用法：const { a, b } = deps（rpc.ts 就是这么取 registry/distill 的）
 		for (const hit of text.matchAll(/const\s*\{([^}]*)\}\s*=\s*deps\b/gs)) {
 			for (const part of hit[1].split(",")) {

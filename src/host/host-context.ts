@@ -25,4 +25,12 @@ export interface LumeHostContext {
 		section: (options: { name: string; order?: number; text: (context?: HostPayload) => string }) => void;
 		context: (options: { name: string; order?: number; text: (context?: HostPayload) => string }) => void;
 	};
+	/** 生命周期挂钩：注册的副作用随插件卸载一起清理（`ctx.effect(() => ctx.on(...), "lume: …")`）。 */
+	effect: (setup: () => void | (() => void), label?: string) => void;
+	/** 插件私有存储域（键值持久化）：`open(域描述)` 返回该域句柄（bootstrap 里传的是 {name,version,tables}）。 */
+	storageDomain: { open: (spec: unknown) => any };
+	/** 工具注册表（我们只用到 register）。 */
+	tools: { register: (tool: unknown) => unknown };
+	/** 只读探针体检宿主能力面时读它（未注入即 undefined，不当作依赖）。 */
+	fs?: unknown;
 }

@@ -11,6 +11,7 @@ import type { RequirementHint } from "./requirements-scan.js";
 import * as citationsMod from "../core/citations.js";
 import * as leakMod from "../core/leak-detector.js";
 import * as ledgerMod from "../core/ledger.js";
+import * as readabilityMod from "../core/readability.js";
 import * as signalsMod from "../core/signals.js";
 import * as textMod from "../core/text.js";
 import * as knowledgeMod from "../core/knowledge.js";

@@ -207,7 +207,14 @@ describe("evaluateToolTrigger", () => {
 
 describe("evaluateTurnTrigger", () => {
 	it("有契约时每 3 轮核对一次，压缩后立即核对", () => {
-		const base = { hasContract: true, lastDriftTurn: null, compactionTurn: null, knowledgePrompted: false, counters: newTriggerCounters() };
+		const base = {
+			hasContract: true,
+			lastDriftTurn: null,
+			compactionTurn: null,
+			knowledgePrompted: false,
+			readabilityPrompted: false,
+			counters: newTriggerCounters(),
+		};
 		expect(evaluateTurnTrigger({ ...base, turnIndex: 2 })?.id).toBeUndefined(); // 2 轮还不查
 		expect(evaluateTurnTrigger({ ...base, turnIndex: 3 })?.id).toBe("criteria-drift");
 		expect(evaluateTurnTrigger({ ...base, turnIndex: 4, lastDriftTurn: 3 })).toBeNull();
@@ -216,7 +223,7 @@ describe("evaluateTurnTrigger", () => {
 
 	it("无契约且步数够多时提醒采集项目知识（每会话一次）", () => {
 		const counters = feed("inspect", DEFAULT_TRIGGER_THRESHOLDS.knowledgeSteps);
-		const base = { turnIndex: 2, hasContract: false, compactionTurn: null, lastDriftTurn: null, counters };
+		const base = { turnIndex: 2, hasContract: false, compactionTurn: null, lastDriftTurn: null, readabilityPrompted: false, counters };
 		expect(evaluateTurnTrigger({ ...base, knowledgePrompted: false })?.id).toBe("knowledge-capture");
 		expect(evaluateTurnTrigger({ ...base, knowledgePrompted: true })).toBeNull();
 	});

@@ -113,6 +113,7 @@ describe("提示块装配（从 index.ts 抽出后的块表）", () => {
 				lastToolArgs: null,
 				lastToolTarget: null,
 				autoFacts: 0,
+				unexplainedCodes: [],
 			},
 		});
 		const first = carrierBlocks(deps(), { sid: "s", context: {}, st: runtime, query: "写文档", mode: "execute" });

@@ -100,6 +100,7 @@ npm deprecate lume-dsh-plugin@<坏版本> "…"                 # 并给坏版�
 但"npm 已发布、仓库里还躺着坏代码"本身就是不可接受的发布姿态：**npm 发出去就撤不回来**。
 
 落地要求：
+
 1. 先把改动 commit + push 到 GitHub，工作区干净、门禁全绿；
 2. **发版脚本本身也要先被验证**：`node scripts/publish.mjs --verify-only <已发布版本>` 必须退出 0（只读复检，不发布任何东西）；
 3. 以上都过了，才执行 `npm run release:publish`；
@@ -108,3 +109,14 @@ npm deprecate lume-dsh-plugin@<坏版本> "…"                 # 并给坏版�
 同一批事故的另一条教训：**`publish.mjs` 的 `run()` 曾因一个"字面量 \\n"把函数体连注释一起吃掉了**，导致
 "npm publish 退出码 0 但什么都没发出去"（0.8.1 / 0.8.2 两次）。现在假成功路径会打印 npm 的输出，
 并且 registry 确认走直连 HTTP。**任何涉及发版的脚本改动，都必须用 `--verify-only` 实测一次。**
+
+## github-release 步骤（2026-09-26 补上，曾被整段遗漏）
+
+**发完 npm 与 git tag 之后，必须建 GitHub Release**——否则 Releases 页面会一直停在旧版本并顶着
+「Latest」徽章（真实事故：页面长期显示 v0.6.1 为最新，而实际已发到 0.8.2）。
+
+```bash
+node scripts/gh-release.mjs            # 版本取 package.json；已存在则更新并标记 Latest
+```
+
+完整顺序：`npm run gate` → `npm run release:check` → `npm run release:publish` → `git push origin main` + `git push origin v<版本>` → **`node scripts/gh-release.mjs`**。

@@ -18,8 +18,34 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const UPSTREAM = "awesome-dsh-plugin/awesome-dsh-plugin";
+// 提交前先验证 YAML —— 2026-09-25 PR #5888 就因为内层裸双引号被索引 CI 判 invalid YAML
+assertYamlValid(new URL("cayan0x__Lume.yml", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const ENTRY = "data/plugins/cayan0x__Lume.yml";
 const BRANCH = "update-cayan0x-lume-description";
+
+/**
+ * 提交前必须**用真解析器验证 YAML**——只数引号是否成对是不够的：
+ * 2026-09-25 的 PR #5888 就因为 en 标量里内层有裸双引号（`"continue"`），
+ * 导致索引仓库 CI 报 `invalid YAML — bad indentation of a mapping entry`。
+ */
+function assertYamlValid(file) {
+	const raw = readFileSync(file, "utf8");
+	let parse;
+	try {
+		({ parse } = require("js-yaml"));
+	} catch {
+		// 本仓库没有 js-yaml 时，退化为结构检查：双引号标量里不得有裸的双引号
+		for (const [index, line] of raw.split("\n").entries()) {
+			const m = /^\s+(?:zh|en):\s*"(.*)"\s*$/.exec(line);
+			if (m && m[1].replace(/\\"/g, "").includes('"')) {
+				throw new Error(`${file}:${index + 1} 的 YAML 标量里有未转义的双引号（CI 会判 invalid YAML）`);
+			}
+		}
+		return;
+	}
+	parse(raw); // 解析失败会抛
+}
+
 const TITLE = "Update description for cayan0x/Lume (trim to a short blurb; drop claims that no longer match the code)";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 

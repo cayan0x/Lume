@@ -72,7 +72,8 @@
     "lint": "node scripts/lint-arch.mjs && prettier --check src test scripts && tsc -p tsconfig.json --noEmit && node scripts/mechanism-coverage.mjs",
     "verify:live": "node scripts/verify-live.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "gate": "node scripts/gate.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

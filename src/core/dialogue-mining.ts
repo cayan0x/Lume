@@ -346,7 +346,6 @@ export function mineChatLog(chat: ChatLog, hint?: string): DialogueMining {
 	// 关系称呼：双方谁扮演什么角色。微信「备注名/对方昵称」本身即关系线索——
 	// 用户给 TA 的备注是「老公」→ 用户叫 TA 老公（userToTarget）；TA 对用户的称呼
 	// 只能看 TA 消息里的称呼词（「老婆，…」）。消息内容中的称呼词同样计入另一侧。
-	const otherSpeakers = chat.speakers.filter((s) => s !== speaker);
 	const userLines = chat.messages.filter((m) => m.speaker !== speaker).map((m) => m.text);
 	const targetLinesAll = targetLines;
 	const greetingOf = (text: string | undefined): string | null => {

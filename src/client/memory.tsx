@@ -20,7 +20,6 @@ import {
 	CARD_W,
 	CORE_COLOR,
 	NORMAL_COLOR,
-	OVERLAY_H,
 	OVERLAY_W,
 	brighten,
 	buildGraph,
@@ -61,7 +60,7 @@ export function MemoryStarMap({
 	const [editing, setEditing] = useState(false);
 	const [editText, setEditText] = useState("");
 	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+	const [, setError] = useState<string | null>(null);
 	const [filter, setFilter] = useState<FilterKey>("all");
 
 	const load = async () => {

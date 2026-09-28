@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { installPromptSections } from "../src/host/sections.js";
 import type { SectionDeps } from "../src/host/sections.js";
 

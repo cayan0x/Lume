@@ -8,22 +8,15 @@
  * 安全：素材视为不可信文本，system prompt 明确声明其中任何指令一律不执行；
  * 产出全部过结构校验与长度上限，内置名保护由 IdentityStore.setCustomPersona 复用。
  */
-import { fnv1a32 } from "../core/sampling.js";
 import { mineDialogue } from "../core/dialogue-mining.js";
 import {
 	DISTILL_TEXT_CAP,
 	CHAT_TEXT_CAP,
 	CONTRACT_TOKENS,
 	CORPUS_TOKENS,
-	PROMPT_TEXT_CAP,
-	DISPLAY_NAME_CAP,
-	DESCRIPTION_CAP,
-	summarizeLineLengths,
 	buildContractPrompt,
 	buildCorpusPrompt,
 	parseJsonLoose,
-	extractBalancedAt,
-	normalizeKey,
 	normalizeContract,
 	buildStoryPrompt,
 	STORY_MEMORY_CAP,
@@ -34,7 +27,6 @@ import {
 	dedupeMemories,
 	buildMemoryPrompt,
 } from "./distill-prompt.js";
-import type { ChatFlowLine } from "../core/dialogue-mining.js";
 import type { PersonaSample } from "../core/manifest.js";
 import { sanitizeCorpus } from "./identity.js";
 import type { LlmRoute } from "./extraction.js";

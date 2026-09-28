@@ -5,7 +5,7 @@
  * 那种自相矛盾就是这么进来的（实测模型只能在两种指示里赌）。现在块表可断言。
  */
 import { describe, expect, it } from "vitest";
-import { carrierBlocks, volatileBlocks, type BlockDeps, type BlockInput } from "../src/host/prompt-blocks.js";
+import { carrierBlocks, volatileBlocks, type BlockDeps } from "../src/host/prompt-blocks.js";
 import { clearNotice, noticeText } from "../src/host/notices.js";
 import type { SessionRuntime } from "../src/host/session-runtime.js";
 

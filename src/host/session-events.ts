@@ -12,7 +12,7 @@ import type { SessionRuntime } from "./session-runtime.js";
 import { pathKey } from "../core/citations.js";
 import { looksLikeFailure } from "../core/signals.js";
 
-import type { HostPayload, LumeHostContext } from "./host-context.js";
+import type { HostPayload } from "./host-context.js";
 import { handleTurnEnd } from "./turn-boundary.js";
 import type { SessionEventDeps } from "./session-deps.js";
 import {

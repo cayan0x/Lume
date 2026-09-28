@@ -116,10 +116,6 @@ export interface IdentityTable {
 }
 
 /** 宽松读取：schema 校验失败或损坏值按空值处理，不炸会话。 */
-function asArray<T>(value: unknown): T[] {
-	return Array.isArray(value) ? (value as T[]) : [];
-}
-
 function isFactList(value: unknown): value is MemoryFact[] {
 	return (
 		Array.isArray(value) && value.every((v) => typeof (v as MemoryFact)?.text === "string" && typeof (v as MemoryFact)?.at === "number")

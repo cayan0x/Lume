@@ -7,7 +7,6 @@
  */
 import { Button, Input, Modal } from "@deepseek-ai/dsh-client-ui-primitives";
 import { useEffect, useRef, useState } from "react";
-import type { PersonaSample } from "../core/manifest.js";
 import { detectChatLog } from "../core/dialogue-mining.js";
 import { CHAT_TEXT_CAP, POLL_INTERVAL_MS, STAGE_ORDER, TEXT_CAP, applyJobStatus } from "./distill-job.js";
 import type { DistillJobView, DistillStage, DistilledCard } from "./distill-job.js";

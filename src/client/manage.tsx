@@ -157,9 +157,9 @@ export function ManageModal({
 			setError(t("manage.import.read.failed"));
 			return;
 		}
-		let parsed: { ok?: boolean; value?: unknown; error?: string } | undefined;
+		// 只做 JSON 合法性预检（真正解析在宿主侧 importPersona）；不合法就别发请求。
 		try {
-			parsed = { ok: true, value: JSON.parse(text) };
+			JSON.parse(text);
 		} catch {
 			setError(t("manage.import.parse.failed"));
 			return;

@@ -3,7 +3,7 @@
  * 内置优先：setCustomPersona 已在写入侧拒绝内置名，这里只做统一解析与列表。
  */
 import type { Persona } from "../core/manifest.js";
-import type { CustomPersona, IdentityStore } from "./identity.js";
+import type { IdentityStore } from "./identity.js";
 
 export interface PersonaSummary {
 	name: string;

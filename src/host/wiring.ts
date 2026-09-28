@@ -74,7 +74,7 @@ import { buildContextPressureDirective, contextPressure, renderTaskMemory, isCol
 import { toolArgsOf, toolNameOf, toolTargetOf, workspaceFromSnapshotText } from "./host-events.js";
 import { resolveDsHome, startBackfill } from "./backfill.js";
 import { rememberWorkspace, sessionDirSlug, workspaceFromSlug } from "./workspace-map.js";
-import { requirementHintsOf, type RequirementHint } from "./requirements-scan.js";
+import { requirementHintsOf } from "./requirements-scan.js";
 import { TASK_SIGNAL_RE } from "./thinking.js";
 import { applyToolSignal, applyVerifyOutcome, cooldownOk, evaluateToolTrigger, evaluateTurnTrigger } from "./triggers.js";
 import { unexplainedCodes } from "../core/readability.js";
@@ -88,7 +88,7 @@ import type { AuxLlm } from "./llm-aux.js";
 import type { LlmRouteCell } from "./llm-route.js";
 import type { ChangeItem, ProjectFact } from "../core/ledger.js";
 import { isRealVerifyCommand } from "../core/signals.js";
-import { buildDocumentDirective, probeDocumentCapabilities } from "./documents.js";
+import { buildDocumentDirective } from "./documents.js";
 import type { DocumentCapabilities } from "./documents.js";
 import type { IdentityStore } from "./identity.js";
 import type { ProjectAccess } from "./project-access.js";

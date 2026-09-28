@@ -13,18 +13,15 @@
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
-import { BlockAssembler, createUserMessage, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
-import { defineTool } from "@deepseek-ai/dsh-tools";
 import z from "@deepseek-ai/schemastery";
 import { buildPersonaContractSection, buildPersonaRuntimeSection } from "./host/injection.js";
 import { loadPersonalities, NONE_PERSONA } from "./host/personalities.js";
 import { createLumeRpcHandler } from "./host/rpc.js";
 import { installProbe } from "./host/probe.js";
 import { makeRpcRoute } from "./host/rpc-bridge.js";
-import { FilePersonaStore, migrateLegacyState, PersonaStore } from "./host/store.js";
-import { IdentityStore, LUME_IDENTITY_SPEC, zodLike } from "./host/identity.js";
+import { migrateLegacyState } from "./host/store.js";
+import { zodLike } from "./host/identity.js";
 import { PersonaRegistry } from "./host/registry.js";
 import {
 	buildCorrectionPrompt,
@@ -43,79 +40,18 @@ import {
 import { DistillJobRunner, DISTILL_ALGORITHM_VERSION, runDistill } from "./host/distill.js";
 import { jaccard } from "./core/retrieval.js";
 import { fnv1a32 } from "./core/sampling.js";
-import { detectLeak } from "./core/leak-detector.js";
-import { messageText, visibleText } from "./core/text.js";
-import { formatWindows, recordReadArgs, recordResultText, unsupportedCitations } from "./core/citations.js";
+import { messageText } from "./core/text.js";
 import { composeBoundary } from "./host/boundary.js";
 import { SessionRuntimeStore } from "./host/session-runtime.js";
 import type { SessionRuntime } from "./host/session-runtime.js";
-import { isCompactionCheckpoint } from "./host/compaction.js";
-import { LUME_REFLECTION_SPEC, ReflectionStore, buildReflectionPrompt, parseReflectionScore } from "./host/reflection.js";
 import { appendLumeLog } from "./host/diag.js";
-import { clearNotice, forceNotice, noticeOpen, noticeText, setNotice } from "./host/notices.js";
-import { toolArgsOf, toolNameOf, toolTargetOf } from "./host/host-events.js";
-import {
-	advancePhase,
-	buildAlignmentCorrection,
-	buildCasualDirective,
-	buildCompactionNotice,
-	buildInteractionDirective,
-	buildLongSessionGuard,
-	buildSessionAnchor,
-	buildTaskPhaseDirective,
-	buildToolFailureNotice,
-	classifyWithTrajectory,
-	isUserAuthored,
-	taskPhaseForMode,
-} from "./host/protocol.js";
-import { DESIGN_SIGNAL_RE } from "./host/protocol.js";
-import { buildDocumentDirective, probeDocumentCapabilities } from "./host/documents.js";
+import { noticeOpen, setNotice } from "./host/notices.js";
+import { buildToolFailureNotice, classifyWithTrajectory, isUserAuthored, taskPhaseForMode } from "./host/protocol.js";
+import { probeDocumentCapabilities } from "./host/documents.js";
 import { REASONING_MODEL_RE, TASK_SIGNAL_RE, selectStableThinkingProtocol } from "./host/thinking.js";
-import {
-	normalizeChange,
-	normalizeContract,
-	normalizeHypothesis,
-	normalizeProjectFact,
-	projectKeyOf,
-	renderChangeLedger,
-	renderContract,
-	renderHypotheses,
-	renderProjectFacts,
-} from "./core/ledger.js";
-import { normalizeDesign, renderDesign, renderRequirements } from "./core/ledger.js";
-import { classifyTool, readResultSignals } from "./core/signals.js";
-import {
-	auditOpenQuestions,
-	isRealVerifyCommand,
-	summarizeToolChange,
-	toolArtifactText,
-	unrequestedChangeWords,
-	type ResultSignals,
-} from "./core/signals.js";
-import { recordSymbols, unsupportedClaims } from "./core/citations.js";
-import { coverageRows, danglingSectionRefs, hasFigureRefs, pickRequirementCorpus, splitRequirementItems } from "./core/coverage.js";
-
-/** 〔提问核对〕每会话上限（提问纪律的纠偏；比引用核对更敏感，限得更死）。 */
-const QUESTION_AUDIT_MAX = 2;
-
-/** 只把「文档类产物」当交付物收进覆盖核对（源码改动进去只会制造噪音）。 */
-const DOC_ARTIFACT_RE = /\.(md|markdown|txt)$/i;
-import {
-	buildCarrierGapNotice,
-	buildCitationDirective,
-	buildClaimDirective,
-	buildContractMethodDirective,
-	buildDocumentMethodDirective,
-	buildImpactDirective,
-	buildQuestionAuditDirective,
-	buildRequirementCoverageDirective,
-	buildStructureHint,
-	buildUnverifiedDeliveryNotice,
-	composeBlocksDetailed,
-	type ComposeResult,
-} from "./host/methods.js";
-import { buildDesignMethodDirective, buildRequirementMethodDirective, buildDriftDirective } from "./host/methods.js";
-import { LUME_PROJECT_SPEC, ProjectStore } from "./host/project.js";
+import { normalizeProjectFact, projectKeyOf } from "./core/ledger.js";
+import { isRealVerifyCommand } from "./core/signals.js";
+import { composeBlocksDetailed, type ComposeResult } from "./host/methods.js";
 import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { initStores } from "./host/bootstrap.js";
 import { focusIdsFor } from "./host/clauses.js";
@@ -130,16 +66,10 @@ import { assembleBlockDeps, assembleSessionEventDeps, assembleToolDeps, startSes
 import type { HostPayload } from "./host/host-context.js";
 import type { WiringInput } from "./host/wiring.js";
 import { createSessionDisposedHandler, createSessionEventHandler } from "./host/session-events.js";
-import {
-	DEFAULT_TRIGGER_THRESHOLDS,
-	applyToolSignal,
-	applyVerifyOutcome,
-	cooldownOk,
-	evaluateToolTrigger,
-	evaluateTurnTrigger,
-	type TriggerId,
-	type TriggerThresholds,
-} from "./host/triggers.js";
+import { DEFAULT_TRIGGER_THRESHOLDS, type TriggerThresholds } from "./host/triggers.js";
+
+/** 只把「文档类产物」当交付物收进覆盖核对（源码改动进去只会制造噪音）。 */
+const DOC_ARTIFACT_RE = /\.(md|markdown|txt)$/i;
 
 /** schemastery → domainTable 形参的桥接（与 stores.identity().ts 同款）。 */
 const recordSchema = zodLike;
@@ -357,7 +287,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	});
 	const {
 		projectKeyFor,
-		commandSummary,
 		flushPendingFacts,
 		settleVerification,
 		saveSessionMemory,

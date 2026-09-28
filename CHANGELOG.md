@@ -32,10 +32,11 @@
 - **提示槽幂等**：`setNotice` 文本逐字未变时**不算新命中**——否则调用方每步重生成同一句就会把每会话配额烧光，而配额正是防噪音用的。
 - **工具使用纳入度量**：`lume_*` 工具调用计入机制健康（回答「模型到底调没调 `lume_contract` / `lume_hypothesis`」这个历史上多次全部落空的问题）；旧记录没有 `mechanismFires` 时**不再误报**「从未命中」（只统计触发器并注明）。
 - **注入选条与预算**：项目知识超过上限时按**相关性（主导）+ 新近度（平局）+ 死路优先**取 top-k（空 query 退化为最近 N 条）；块预算新增 `weight`，超限时先丢低权重可丢块——方法指令（1）先于会话记忆（2）、项目知识（3）被丢，**事实回显在预算紧张时优先保住**。
+- **撤销入口**：新增 `lume_forget` 工具与 `deleteProjectEntry` RPC——自动入账的改动/假设/设计/需求此前没有定点删除入口（facts 有 `lume_project_forget`），出错只能整库清空；现在可按 kind + ref 撤销，模型可代用户执行。
 
 **工程**
 
-- 机制覆盖 **51/51**（新增 mechanism-health / criteria-fixtures / host-capabilities / host-shape-drift，均由行为测试锁定）；全量测试 709 条（以 `npm test` 当场输出为准）；`npm run lint`（架构 / 格式 / 类型 / 机制覆盖）全绿。
+- 机制覆盖 **52/52**（新增 mechanism-health / criteria-fixtures / host-capabilities / host-shape-drift / lume_forget，均由行为测试锁定）；全量测试 715 条（以 `npm test` 当场输出为准）；`npm run lint`（架构 / 格式 / 类型 / 机制覆盖）全绿。
 
 ## v0.8.3 (2026-09-28)
 

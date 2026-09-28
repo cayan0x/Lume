@@ -306,6 +306,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		requirementsOf,
 		designOf,
 		needsDesignPass,
+		forgetEntry,
 		structureToolName,
 	} = projectAccess;
 	/** 被动提取：三道门 → 小模型 → 合并落盘。按会话串行，失败静默。 */
@@ -575,6 +576,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			saveSessionMemory,
 			taskMemoriesOf,
 			needsDesignPass,
+			forgetEntry,
 			structureToolName,
 		},
 		projectTask: stores.projectTask,
@@ -871,6 +873,10 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			if (!st.projectKey) return false;
 			await stores.project().clearFacts(st.projectKey);
 			return true;
+		},
+		async deleteProjectEntry(sessionId: string, kind: string, ref: string) {
+			// 撤销一条记录（改动/假设/设计/需求/知识）：与模型侧 lume_forget 共用同一实现。
+			return forgetEntry(sessionId, kind, ref, {});
 		},
 	});
 	// ── RPC 通道 ──

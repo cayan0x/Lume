@@ -57,6 +57,7 @@ export const MECHANISMS: readonly Mechanism[] = [
 	{ id: "lume_design", kind: "tool", label: "设计决策" },
 	{ id: "lume_project_note", kind: "tool", label: "项目知识（记）" },
 	{ id: "lume_project_forget", kind: "tool", label: "项目知识（删）" },
+	{ id: "lume_forget", kind: "tool", label: "撤销记录" },
 	{ id: "lume_remember", kind: "tool", label: "长期记忆" },
 	{ id: "lume_update_style", kind: "tool", label: "风格约定" },
 	{ id: "lume_create_persona", kind: "tool", label: "新建人设" },

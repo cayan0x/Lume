@@ -8,7 +8,14 @@
  * 4. 会话结束时任务态被清掉，但项目知识（跨会话）保留。
  */
 import { describe, expect, it } from "vitest";
-import { normalizeChange, normalizeContract, normalizeHypothesis, normalizeProjectFact } from "../src/core/ledger.js";
+import {
+	normalizeChange,
+	normalizeContract,
+	normalizeDesign,
+	normalizeHypothesis,
+	normalizeProjectFact,
+	normalizeRequirement,
+} from "../src/core/ledger.js";
 import { ProjectStore } from "../src/host/project.js";
 import { FakePersonaTable } from "./fake-table.js";
 
@@ -129,5 +136,28 @@ describe("会话清理", () => {
 		expect(store.getChanges("s1")).toHaveLength(0);
 		expect(store.getHypotheses("s1")).toHaveLength(0);
 		expect(store.factCount("p1")).toBe(1);
+	});
+});
+
+describe("撤销记录（delete*：lume_forget / deleteProjectEntry 的底座）", () => {
+	it("按 target / 原句 / 决策点删掉对应条目；找不到返回 false（不静默成功）", async () => {
+		const { store } = makeStore();
+		await store.upsertChange("s1", normalizeChange({ target: "A.java", change: "改" }, 1)!);
+		await store.upsertChange("s1", normalizeChange({ target: "B.java", change: "改" }, 2)!);
+		expect(await store.deleteChange("s1", "A.java")).toBe(true);
+		expect(store.getChanges("s1").map((item) => item.target)).toEqual(["B.java"]);
+		expect(await store.deleteChange("s1", "不存在.java")).toBe(false);
+
+		await store.upsertHypothesis("s1", normalizeHypothesis({ text: "是并发" }, 1)!);
+		expect(await store.deleteHypothesis("s1", "是并发")).toBe(true);
+		expect(store.getHypotheses("s1")).toHaveLength(0);
+
+		await store.upsertDesign("s1", normalizeDesign({ point: "权限人存哪", choice: "新增列" }, 1)!);
+		expect(await store.deleteDesign("s1", "权限人存哪")).toBe(true);
+		expect(store.getDesign("s1")).toHaveLength(0);
+
+		await store.appendRequirement("s1", normalizeRequirement({ text: "新增权限人字段" }, 1)!);
+		expect(await store.deleteRequirement("s1", "新增权限人字段")).toBe(true);
+		expect(store.getRequirements("s1")).toHaveLength(0);
 	});
 });

@@ -35,6 +35,8 @@ export interface ToolDeps {
 	defaultName: string | null;
 	/** 跨会话项目键：与事件处理器共用同一实现（project-access）。 */
 	projectKeyFor: ProjectAccess["projectKeyFor"];
+	/** 撤销一条记录（改动/假设/设计/需求/知识）：与 RPC 共用同一实现。 */
+	forgetEntry: ProjectAccess["forgetEntry"];
 	/** 项目存储句柄（异步兑现，所以是函数）。 */
 	projectOf: () => ProjectStore | null;
 	/** 取用器：不可用时抛可读错误（工具入口统一用它，省得每处判空）。 */
@@ -358,6 +360,28 @@ export function registerLumeTools(deps: ToolDeps): void {
 					if (!projectKey) throw new Error("lume_project_forget 拿不到工作目录，无法定位知识库");
 					const removed = await deps.projectStore().deleteFactById(projectKey, ref);
 					if (!removed) throw new Error(`lume_project_forget 没找到 ${ref}（用项目知识块里的 #编号 或短 id）`);
+					return { ok: true };
+				},
+			}),
+		);
+		deps.ctx.tools.register(
+			defineTool({
+				name: "lume_forget",
+				description:
+					"撤销一条已过时/记错的记录（包括插件自动入账的条目）：kind = change | hypothesis | design | requirement | fact，ref = 定位串。改动用注入块里显示的 target；假设/需求用条目原句；设计用决策点；项目知识用 #编号或短 id。删不掉会报错，不静默成功。",
+				parameters: {
+					kind: { type: "string", required: true, description: "change | hypothesis | design | requirement | fact" },
+					ref: { type: "string", required: true, description: "定位串（改动=target；假设/需求=原句；设计=决策点；知识=#编号或短 id）" },
+				},
+				output: { schema: OK_OUTPUT_SCHEMA, render: () => [{ type: "text" as const, text: "已删除该记录" }] },
+				execute: async (args: Record<string, unknown>, exec: HostPayload) => {
+					const sid = String(exec?.agent?.session?.id ?? "");
+					if (!sid) throw new Error("lume_forget requires an active session");
+					const kind = String(args.kind ?? "").trim();
+					const ref = String(args.ref ?? "").trim();
+					if (!kind || !ref) throw new Error("lume_forget requires kind and ref");
+					const removed = await deps.forgetEntry(sid, kind, ref, { agent: exec?.agent });
+					if (!removed) throw new Error(`lume_forget 没找到匹配的 ${kind}：${ref}（用注入块里显示的定位串）`);
 					return { ok: true };
 				},
 			}),

@@ -33,14 +33,22 @@ function setup(opts: { identity?: unknown; project?: unknown; contract?: unknown
 		upsertHypothesis: vi.fn(),
 		upsertDesign: vi.fn(),
 		addFact: vi.fn(async () => true),
+		deleteChange: vi.fn(async () => true),
+		deleteHypothesis: vi.fn(async () => true),
+		deleteDesign: vi.fn(async () => true),
+		deleteRequirement: vi.fn(async () => true),
+		deleteFactById: vi.fn(async () => true),
 	};
 	const project = opts.project === null ? null : stores;
 	const st = { lastInjected: "当值人设" };
+	// 撤销入口：真实现走 project-access.forgetEntry（这里给可断言的替身）
+	const forgetEntry = vi.fn(async () => true);
 	const deps = {
 		ctx,
 		runtime: { get: () => st } as never,
 		defaultName: null,
 		projectKeyFor: () => "D:/Projects/demo",
+		forgetEntry,
 		normalizeContract,
 		normalizeChange,
 		normalizeHypothesis,
@@ -59,7 +67,7 @@ function setup(opts: { identity?: unknown; project?: unknown; contract?: unknown
 	} as unknown as ToolDeps;
 	registerLumeTools(deps);
 	const byName = new Map(tools.map((t) => [t.name, t]));
-	return { tools, byName, stores, st };
+	return { tools, byName, stores, st, forgetEntry };
 }
 
 const exec = { agent: { session: { id: "sid-1" } } };
@@ -76,6 +84,7 @@ describe("host/tools：注册面", () => {
 			"lume_hypothesis",
 			"lume_project_note",
 			"lume_design",
+			"lume_forget",
 		]) {
 			expect(byName.has(n), n).toBe(true);
 		}
@@ -167,5 +176,30 @@ describe("host/tools：lume_metrics", () => {
 		const all = (await byName.get("lume_metrics")!.execute({ scope: "all" }, exec)) as { text: string };
 		expect(calls[1]).toBeUndefined();
 		expect(all.text).toBe("SUMMARY:all");
+	});
+});
+
+/**
+ * 撤销入口（lume_forget）：自动入账的改动/假设/知识此前**没有定点删除入口**，
+ * 出了错只能整库清空。它按 kind + ref 调 project-access.forgetEntry（与 RPC 共用实现）。
+ */
+describe("host/tools：lume_forget", () => {
+	it("按 kind + ref 调 forgetEntry（改动 target / 假设原句 / 知识 #编号）", async () => {
+		const { byName, forgetEntry } = setup();
+		const res = (await byName.get("lume_forget")!.execute({ kind: "change", ref: "src/a.ts" }, exec)) as { ok?: boolean };
+		expect(res.ok).toBe(true);
+		expect(forgetEntry).toHaveBeenCalledWith("sid-1", "change", "src/a.ts", expect.anything());
+	});
+
+	it("删不到 → 报错，不静默成功", async () => {
+		const { byName, forgetEntry } = setup();
+		forgetEntry.mockResolvedValueOnce(false);
+		await expect(byName.get("lume_forget")!.execute({ kind: "hypothesis", ref: "不存在" }, exec)).rejects.toThrow(/没找到/);
+	});
+
+	it("缺 kind / ref → 报错", async () => {
+		const { byName } = setup();
+		// 缺 ref 由 schema 拦；这里传空串走到处理器的第二道保险。
+		await expect(byName.get("lume_forget")!.execute({ kind: "change", ref: "" }, exec)).rejects.toThrow(/kind and ref/);
 	});
 });

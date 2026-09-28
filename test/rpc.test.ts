@@ -307,3 +307,39 @@ describe("createLumeRpcHandler", () => {
 		expect(after).toEqual({ ok: true });
 	});
 });
+
+describe("deleteProjectEntry（撤销入口，供外部/未来 UI）", () => {
+	const makeHandler = (impl: (sid: string, kind: string, ref: string) => Promise<boolean>) =>
+		createLumeRpcHandler({
+			store: { get: () => null, select: async () => {} },
+			registry: new PersonaRegistry(makePersonalities(), () => null),
+			identity: null,
+			distill: null,
+			deleteProjectEntry: impl,
+		});
+
+	it("缺参 → bad-request；正常 → 回 { deleted } 并把参数透传给实现", async () => {
+		const calls: Array<[string, string, string]> = [];
+		const handle = makeHandler(async (sid, kind, ref) => {
+			calls.push([sid, kind, ref]);
+			return true;
+		});
+		expect(await handle("deleteProjectEntry", { sessionId: "s1" })).toMatchObject({ ok: false, error: { code: "bad-request" } });
+		const res = await handle("deleteProjectEntry", { sessionId: "s1", kind: "change", ref: "a.ts" });
+		expect(res).toMatchObject({ ok: true, value: { deleted: true } });
+		expect(calls).toEqual([["s1", "change", "a.ts"]]);
+	});
+
+	it("没接实现 → storage-unavailable（不假装删成功）", async () => {
+		const handle = createLumeRpcHandler({
+			store: { get: () => null, select: async () => {} },
+			registry: new PersonaRegistry(makePersonalities(), () => null),
+			identity: null,
+			distill: null,
+		});
+		expect(await handle("deleteProjectEntry", { sessionId: "s1", kind: "fact", ref: "#1" })).toMatchObject({
+			ok: false,
+			error: { code: "storage-unavailable" },
+		});
+	});
+});

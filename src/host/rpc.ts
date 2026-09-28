@@ -40,6 +40,8 @@ export interface LumeRpcDeps {
 	getProjectState?: (sessionId: string) => unknown;
 	/** 清空当前项目的知识积累（不可逆）。 */
 	clearProjectFacts?: (sessionId: string) => Promise<boolean>;
+	/** 撤销一条记录（改动/假设/设计/需求/知识）。 */
+	deleteProjectEntry?: (sessionId: string, kind: string, ref: string) => Promise<boolean>;
 }
 
 function requireString(payload: unknown, field: string): string | null {
@@ -74,6 +76,18 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 				if (!sessionId) return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
 				const cleared = (await deps.clearProjectFacts?.(sessionId)) ?? false;
 				return { ok: true, value: { cleared } };
+			}
+			case "deleteProjectEntry": {
+				// 撤销一条记录（改动/假设/设计/需求/知识）：供外部工具与未来 UI 使用。
+				const sessionId = requireString(payload, "sessionId");
+				const kind = requireString(payload, "kind");
+				const ref = requireString(payload, "ref");
+				if (!sessionId || !kind || !ref) {
+					return { ok: false, error: { code: "bad-request", message: "sessionId, kind and ref are required" } };
+				}
+				if (!deps.deleteProjectEntry) return { ok: false, error: { code: "storage-unavailable", message: "project store unavailable" } };
+				const deleted = await deps.deleteProjectEntry(sessionId, kind, ref);
+				return { ok: true, value: { deleted } };
 			}
 			case "select": {
 				const sessionId = requireString(payload, "sessionId");

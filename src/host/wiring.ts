@@ -131,6 +131,7 @@ export interface WiringInput {
 		| "saveSessionMemory"
 		| "taskMemoriesOf"
 		| "needsDesignPass"
+		| "forgetEntry"
 		| "structureToolName"
 	>;
 	/** fire-and-forget 持久化（失败留痕；来自 bootstrap，不属于 ProjectAccess）。 */
@@ -273,6 +274,7 @@ export function assembleToolDeps(input: WiringInput): ToolDeps {
 		runtime: input.runtime,
 		defaultName: input.defaultName,
 		projectKeyFor: input.access.projectKeyFor,
+		forgetEntry: input.access.forgetEntry,
 		requirementHintsOf,
 		normalizeContract,
 		normalizeChange,

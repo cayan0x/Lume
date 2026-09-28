@@ -181,6 +181,33 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		return mode !== "question" && DESIGN_SIGNAL_RE.test(query) && designOf(sid).length === 0;
 	}
 
+	/**
+	 * 撤销一条记录（改动 / 假设 / 设计 / 需求 / 项目知识）：模型侧（`lume_forget` 工具）与
+	 * RPC（`deleteProjectEntry`，供外部/未来 UI）共用同一实现，避免两处口径漂移。
+	 */
+	async function forgetEntry(sid: string, kind: string, ref: string, source: HostPayload): Promise<boolean> {
+		const store = deps.stores.project();
+		if (!store) return false;
+		const key = String(ref ?? "").trim();
+		if (!key) return false;
+		switch (kind) {
+			case "change":
+				return store.deleteChange(sid, key);
+			case "hypothesis":
+				return store.deleteHypothesis(sid, key);
+			case "design":
+				return store.deleteDesign(sid, key);
+			case "requirement":
+				return store.deleteRequirement(sid, key);
+			case "fact": {
+				const projectKey = projectKeyFor(sid, source);
+				return projectKey ? store.deleteFactById(projectKey, key) : false;
+			}
+			default:
+				return false;
+		}
+	}
+
 	function structureToolName(context: HostPayload): string | null {
 		try {
 			const schemas = deps.ctx.get("tools")?.schemas?.(context?.agent);
@@ -252,6 +279,7 @@ export function createProjectAccess(deps: ProjectAccessDeps) {
 		requirementsOf,
 		designOf,
 		needsDesignPass,
+		forgetEntry,
 		structureToolName,
 	};
 }

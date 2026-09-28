@@ -245,6 +245,15 @@ export class ProjectStore {
 		return hit;
 	}
 
+	/** 按 target 删掉改动记录（撤销自动入账/写错的条目）。返回是否删到。 */
+	async deleteChange(sid: string, target: string): Promise<boolean> {
+		const items = this.getChanges(sid);
+		const next = items.filter((item) => item.target !== target);
+		if (next.length === items.length) return false;
+		await this.#ledgerTable.put(sid, next);
+		return true;
+	}
+
 	/**
 	 * 插件自己推进台账：一次**成功且真实**的验证，把此前「已改未验」的条目推进成 verified。
 	 *
@@ -299,6 +308,15 @@ export class ProjectStore {
 	/** 一轮内至少更新过假设状态——触发器据此判断「有没有在维护假设」。 */
 	lastHypothesisAt(sid: string): number {
 		return this.getHypotheses(sid).reduce((max, item) => Math.max(max, item.at), 0);
+	}
+
+	/** 按原句删掉一条假设（撤销自动入账的失败假设等）。 */
+	async deleteHypothesis(sid: string, text: string): Promise<boolean> {
+		const list = this.getHypotheses(sid);
+		const next = list.filter((item) => item.text !== text);
+		if (next.length === list.length) return false;
+		await this.#hypothesisTable.put(sid, next);
+		return true;
 	}
 
 	// ── 会话记忆（按项目键，跨会话续接）──
@@ -426,6 +444,15 @@ export class ProjectStore {
 		else items.push(item);
 		await this.#designTable.put(sid, trimDesign(items, DESIGN_CAP));
 	}
+
+	/** 按决策点删掉一条设计决策。 */
+	async deleteDesign(sid: string, point: string): Promise<boolean> {
+		const items = this.getDesign(sid);
+		const next = items.filter((entry) => entry.point !== point);
+		if (next.length === items.length) return false;
+		await this.#designTable.put(sid, next);
+		return true;
+	}
 	// ── 需求锚点（会话态）──
 
 	getRequirements(sid: string): RequirementAnchor[] {
@@ -445,6 +472,15 @@ export class ProjectStore {
 		if (items.some((entry) => entry.text === item.text)) return false;
 		items.push(item);
 		await this.#requirementTable.put(sid, trimRequirements(items, REQUIREMENT_CAP));
+		return true;
+	}
+
+	/** 按原句删掉一条需求锚点（用户明确说“这条需求不做了”时）。 */
+	async deleteRequirement(sid: string, text: string): Promise<boolean> {
+		const items = this.getRequirements(sid);
+		const next = items.filter((entry) => entry.text !== text);
+		if (next.length === items.length) return false;
+		await this.#requirementTable.put(sid, next);
 		return true;
 	}
 

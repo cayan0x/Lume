@@ -155,7 +155,10 @@ function baseClauseIds(input: FocusInput): string[] {
 	if (input.compactionRecent) return ["context", "evidence-recency", "facts-first"];
 	switch (input.mode) {
 		case "question":
-			return ["facts-first", "question-discipline", "evidence-source"];
+			// 2026-09-28：问答轮原来给的是「事实优先 + 提问纪律 + 证据来源」，缺「证据时效」——
+			// 而「引用日志/历史/旧结论」恰恰最常发生在问答轮。限 3 条，同族里保留「时效」
+			// （核对时间窗），「来源」（以当前代码为准）由 P0 事实优先兜住。
+			return ["facts-first", "question-discipline", "evidence-recency"];
 		case "research":
 			return ["evidence-source", "facts-first", "evidence-recency"];
 		case "discussion":

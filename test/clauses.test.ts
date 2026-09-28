@@ -63,10 +63,11 @@ describe("host/clauses：协议条款表", () => {
 
 describe("host/clauses：本轮重点（每轮最多三条）", () => {
 	it("按形态选：纠正 > 压缩 > 模式", () => {
+		// 问答轮必须带「证据时效」：引用日志/历史/旧结论最常发生在问答轮（2026-09-28 修）
 		expect(focusClauseIds({ mode: "question", phase: "answer", turnIndex: 1 })).toEqual([
 			"facts-first",
 			"question-discipline",
-			"evidence-source",
+			"evidence-recency",
 		]);
 		expect(focusClauseIds({ mode: "execute", phase: "execute", turnIndex: 3, hasContract: false })).toEqual([
 			"phase-gate",

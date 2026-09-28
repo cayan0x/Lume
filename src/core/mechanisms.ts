@@ -7,12 +7,12 @@
  * 于是「这条机制到底跑没跑过」只能靠翻日志。这里把机制列成一张表，度量聚合时用它回答两个问题：
  * ① 每类机制在这段时间里命中了几次；② 哪些机制**从未命中**（0 只代表没被触发过，不代表失效）。
  *
- * 边界：本表只登记「会被触发」的机制（提示槽 + 行为触发器）；模型主动调用的工具不是「该不该响」，
- * 不进这张表。id 必须与 `NOTICE_CAPS` 的键、`TriggerId` 的成员严格一致——由
+ * 边界：本表登记「会被触发/会被调用」的机制——提示槽、行为触发器、以及模型可调用的 `lume_*` 工具。
+ * id 必须与 `NOTICE_CAPS` 键、`TriggerId` 成员、`tools.ts` 的 `lume_*` 工具名严格一致——由
  * `test/mechanisms.test.ts` 直接读源码对账（防这张表自己漂）。
  */
 
-export type MechanismKind = "notice" | "trigger";
+export type MechanismKind = "notice" | "trigger" | "tool";
 
 export interface Mechanism {
 	/** 稳定键：提示槽 id 或触发器 id。 */
@@ -50,6 +50,17 @@ export const MECHANISMS: readonly Mechanism[] = [
 	{ id: "knowledge-capture", kind: "trigger", label: "知识采集" },
 	{ id: "design-missing", kind: "trigger", label: "设计缺失" },
 	{ id: "human-readability", kind: "trigger", label: "讲人话" },
+	// ── 模型可调用工具（回答「它到底调没调」——历史上 contract/hypothesis/project_note 多次全部落空）──
+	{ id: "lume_contract", kind: "tool", label: "任务契约" },
+	{ id: "lume_change", kind: "tool", label: "改动台账" },
+	{ id: "lume_hypothesis", kind: "tool", label: "假设台账" },
+	{ id: "lume_design", kind: "tool", label: "设计决策" },
+	{ id: "lume_project_note", kind: "tool", label: "项目知识（记）" },
+	{ id: "lume_project_forget", kind: "tool", label: "项目知识（删）" },
+	{ id: "lume_remember", kind: "tool", label: "长期记忆" },
+	{ id: "lume_update_style", kind: "tool", label: "风格约定" },
+	{ id: "lume_create_persona", kind: "tool", label: "新建人设" },
+	{ id: "lume_metrics", kind: "tool", label: "读度量" },
 ];
 
 export function mechanismIds(): string[] {

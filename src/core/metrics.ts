@@ -238,6 +238,8 @@ export interface MetricsSummary {
 	mechanisms: MechanismHealth[];
 	/** 样本期内从未命中的机制 id（0 只代表没被触发过，不代表机制失效）。 */
 	neverFired: string[];
+	/** 是否有「提示槽 / 工具」命中数据（旧版本记录没有 mechanismFires，不能据此断言「从未命中」）。 */
+	mechanismFiresObserved: boolean;
 }
 
 function bump(map: Record<string, number>, key: string): void {
@@ -310,18 +312,20 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 	const mechanismEntries = new Map<string, MechanismHealth>();
 	for (const mechanism of MECHANISMS)
 		mechanismEntries.set(mechanism.id, { id: mechanism.id, kind: mechanism.kind, label: mechanism.label, sessions: 0, hits: 0 });
-	/** 提示槽：id → （会话 → 累计命中次数）。 */
-	const noticeMax = new Map<string, Map<string, number>>();
+	/** 提示槽 / 工具：id → （会话 → 累计命中次数）。 */
+	const slotMax = new Map<string, Map<string, number>>();
 	/** 触发器：id → 命中的会话集合。 */
 	const triggerSids = new Map<string, Set<string>>();
+	// 旧版本的 state 记录没有 mechanismFires：没有这批数据就不能把提示槽/工具判成「从未命中」。
+	const mechanismFiresObserved = scoped.some((record) => record.kind === "state" && record.mechanismFires !== undefined);
 	for (const record of scoped) {
 		if (record.kind === "state" && record.mechanismFires) {
 			for (const [id, count] of Object.entries(record.mechanismFires)) {
 				if (!count || count <= 0) continue;
-				if (mechanismEntries.get(id)?.kind !== "notice") continue;
-				const perSid = noticeMax.get(id) ?? new Map<string, number>();
+				if (mechanismEntries.get(id)?.kind === "trigger") continue;
+				const perSid = slotMax.get(id) ?? new Map<string, number>();
 				perSid.set(record.sid, Math.max(perSid.get(record.sid) ?? 0, count));
-				noticeMax.set(id, perSid);
+				slotMax.set(id, perSid);
 			}
 		} else if (record.kind === "trigger") {
 			if (!mechanismEntries.has(record.id)) continue;
@@ -332,8 +336,8 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 	}
 	const mechanisms = [...mechanismEntries.values()];
 	for (const entry of mechanisms) {
-		if (entry.kind === "notice") {
-			const perSid = noticeMax.get(entry.id);
+		if (entry.kind !== "trigger") {
+			const perSid = slotMax.get(entry.id);
 			entry.sessions = perSid ? perSid.size : 0;
 			entry.hits = perSid ? [...perSid.values()].reduce((sum, count) => sum + count, 0) : 0;
 		} else {
@@ -341,7 +345,10 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 			entry.hits = triggers.find((trigger) => trigger.id === entry.id)?.fired ?? 0;
 		}
 	}
-	const neverFired = mechanisms.filter((entry) => entry.sessions === 0).map((entry) => entry.id);
+	// 触发器记录一直带 id，所以总能判；提示槽/工具要等有 mechanismFires 数据才敢判「从未命中」。
+	const neverFired = mechanisms
+		.filter((entry) => entry.sessions === 0 && (entry.kind === "trigger" || mechanismFiresObserved))
+		.map((entry) => entry.id);
 
 	return {
 		sessions: sessions.size,
@@ -356,6 +363,7 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 		improvedHits: measured.reduce((sum, entry) => sum + entry.improved, 0),
 		mechanisms,
 		neverFired,
+		mechanismFiresObserved,
 	};
 }
 
@@ -484,5 +492,7 @@ export function formatMetricsSummary(summary: MetricsSummary, opts: { label?: st
 	lines.push(
 		`  从未命中：${summary.neverFired.length > 0 ? summary.neverFired.join("、") : "无"}（0 只代表样本期内没被触发过，不代表机制失效）`,
 	);
+	if (!summary.mechanismFiresObserved)
+		lines.push("  注：提示槽 / 工具命中数据本区间缺失（旧版本记录），这部分「从未命中」已略过，只统计了触发器");
 	return lines.join("\n");
 }

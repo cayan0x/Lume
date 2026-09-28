@@ -54,6 +54,12 @@ describe("机制健康：清单必须与代码对账（防这张表自己漂）"
 		expect(new Set(ids).size).toBe(ids.length);
 		for (const id of noticeKeys) expect(mechanismById(id)?.kind).toBe("notice");
 		for (const id of triggerIds) expect(mechanismById(id)?.kind).toBe("trigger");
+
+		// 工具也要登记：回答「模型到底调没调 lume_contract / lume_hypothesis …」。
+		const toolsText = readFileSync("src/host/tools.ts", "utf8");
+		const toolNames = [...toolsText.matchAll(/name:\s*"(lume_[a-z_]+)"/g)].map((hit) => hit[1]!);
+		expect(toolNames.length).toBeGreaterThan(0);
+		for (const id of toolNames) expect(mechanismById(id)?.kind).toBe("tool");
 	});
 
 	it("度量聚合能回答「哪些机制从未命中」，并如实标注 0 不代表失效", () => {
@@ -70,7 +76,8 @@ describe("机制健康：清单必须与代码对账（防这张表自己漂）"
 				unverified: 0,
 				verified: 0,
 				hypotheses: 0,
-				mechanismFires: { citation: 2 },
+				// 提示槽与工具共用 mechanismFires
+				mechanismFires: { citation: 2, lume_contract: 1 },
 			},
 			{
 				kind: "trigger" as const,
@@ -83,13 +90,43 @@ describe("机制健康：清单必须与代码对账（防这张表自己漂）"
 		];
 		const summary = summarizeMetrics(records);
 		expect(summary.mechanisms.find((entry) => entry.id === "citation")).toMatchObject({ sessions: 1, hits: 2, kind: "notice" });
+		expect(summary.mechanisms.find((entry) => entry.id === "lume_contract")).toMatchObject({ sessions: 1, hits: 1, kind: "tool" });
 		expect(summary.mechanisms.find((entry) => entry.id === "converge")).toMatchObject({ sessions: 1, hits: 1, kind: "trigger" });
 		expect(summary.neverFired).toContain("drift");
 		expect(summary.neverFired).not.toContain("citation");
+		expect(summary.neverFired).not.toContain("lume_contract");
+		expect(summary.mechanismFiresObserved).toBe(true);
 		const text = formatMetricsSummary(summary);
 		expect(text).toContain("机制健康");
 		expect(text).toContain("从未命中");
 		expect(MECHANISMS.length).toBeGreaterThan(0);
+	});
+
+	it("旧记录没有 mechanismFires → 不断言提示槽/工具「从未命中」（只统计触发器）", () => {
+		const counters = { steps: 1, inspectStreak: 0, mutateStreak: 0, mutations: 0, verifyFailStreak: 0, verifyEnvHits: 0, codeInspects: 0 };
+		const legacy = [
+			// 旧版 state 记录没有 mechanismFires 字段
+			{
+				kind: "state" as const,
+				at: 1,
+				sid: "s1",
+				turn: 1,
+				counters,
+				hasContract: false,
+				designs: 0,
+				changes: 0,
+				unverified: 0,
+				verified: 0,
+				hypotheses: 0,
+			},
+			{ kind: "trigger" as const, at: 2, sid: "s1", turn: 2, id: "converge", counters },
+		];
+		const summary = summarizeMetrics(legacy);
+		expect(summary.mechanismFiresObserved).toBe(false);
+		expect(summary.neverFired).not.toContain("drift"); // 提示槽无法判断 → 不列入
+		expect(summary.neverFired).not.toContain("lume_contract"); // 工具同样
+		expect(summary.neverFired).toContain("verify-as-you-go"); // 触发器总能判（没命中过）
+		expect(formatMetricsSummary(summary)).toContain("旧版本记录");
 	});
 });
 describe("机制覆盖：客户端产物 client-no-duplicate-decl / client-bundle-parses", () => {

@@ -13,6 +13,7 @@ import { pathKey } from "../core/citations.js";
 import { newHostShapeHealth, observeToolCall, isShapeDrift } from "../core/host-shape.js";
 import { pickMetricCounters } from "../core/metrics.js";
 import { looksLikeFailure } from "../core/signals.js";
+import { recordMechanismFire } from "./notices.js";
 
 import type { HostPayload } from "./host-context.js";
 import { handleTurnEnd } from "./turn-boundary.js";
@@ -145,6 +146,9 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				// 记成"整文件读过"会把没看的行洗白（宁可少记，也不要给假证据）。
 				const callName = deps.toolNameOf(event.data);
 				const callArgs = deps.toolArgsOf(event.data);
+				// 工具使用入账：回答「模型到底调没调 lume_contract / lume_hypothesis / lume_project_note」
+				// ——这是历史上多次全部落空的地方（见 core/mechanisms.ts 的工具条目）。
+				if (callName.startsWith("lume_")) recordMechanismFire(st, callName);
 				// 宿主形状漂移检测：持续收到工具调用但入参/名字解不出 → 依赖入参的机制（自动台账、
 				// 引用核对、覆盖核对、定位门槛）会静默失效。这是 2026-09-23 六功能一起死的那类事故的
 				// 机械信号——立刻留痕 + 落度量，而不是继续假装在记账。

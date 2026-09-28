@@ -52,8 +52,9 @@ export function noticeSlot(st: SessionRuntime, id: string) {
 /**
  * 机制健康计数：无论走 setNotice 还是 forceNotice，只要真的顶出了文本就 +1。
  * 与 `used`（配额）分开——forceNotice 绕过配额，若共用计数，触发器这类机制会永远显示 0。
+ * 也用于登记 `lume_*` 工具调用（工具由会话事件侧调用本函数）。
  */
-function recordMechanismFire(st: SessionRuntime, id: string): void {
+export function recordMechanismFire(st: SessionRuntime, id: string): void {
 	const fires = (st.mechanismFires ??= {});
 	fires[id] = (fires[id] ?? 0) + 1;
 }

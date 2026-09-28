@@ -119,8 +119,8 @@ client 不得 import host 的运行时值**（类型导入可以，因为它不�
 
 ## 七、当前已知短板（诚实清单）
 
-1. `index.ts` 仍 780 行（2026-09-24 实测；数字会变，以 `node -e` 当场数为准）：191 行配置 schema（该留）+ 装配/effect 注册；还有可搬的（RPC 注册、蒸馏 runner 的接线）；
-2. `client/` 只整理了蒸馏弹窗的逻辑抽取：`index.tsx` 281 / `manage.tsx` 299 / `memory.tsx` 263 行，尚未做同等级别的分层；
-3. `SessionRuntime` 39 个字段（`agent` 组已收口 7 个），其余仍平铺；
+1. `index.ts` ~1037 行（2026-09-28 实测；数字会变，以 `node -e` 当场数为准）：配置 schema 已抽到 `host/config.ts` + 装配/effect 注册；还有可搬的（RPC 注册、蒸馏 runner 的接线）；
+2. `client/` 只整理了蒸馏弹窗的逻辑抽取（`client/distill-job.ts`）：`index.tsx` / `manage.tsx` / `memory.tsx` / `distill.tsx` 尚未做同等级别的分层；
+3. `SessionRuntime` 字段仍平铺（`agent` 组已收口），可按域继续分组；
 4. `lint-arch.mjs` 是零依赖检查器而非 eslint（原因见文件头注释）；CI（`.github/workflows/ci.yml`）跑同一套门禁（lint → test → build → release-check），本地 `release:check` 只是提前一步；
 5. 反射/蒸馏链路没有端到端测试（只有纯函数与假宿主层）。

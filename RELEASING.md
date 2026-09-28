@@ -167,7 +167,7 @@ git 来源的插件**靠 `prepare` 脚本在安装时构建** —— DSH 自己�
 
 所以这条路有两个前提：
 
-1. **本包必须有 `prepare`**。**本仓目前没有**（2026-09-28 发现，**未改** —— 要不要加待定）：所以现在从 GitHub 装 0.8.2 及更早的 tag，装到的是一个**没有 `lib/` 的空壳**，插件加载不了。修法是在 `package.json` 加 `"prepare": "npm run build"`。
+1. **本包必须有 `prepare`**。本仓已补（0.8.3）：package.json 里 `"prepare": "npm run build"`。0.8.2 及更早的 tag 没有它，从 GitHub 装到的是一个**没有 `lib/` 的空壳**，插件加载不了。
 2. **pnpm 默认拦构建脚本**：用户要按 pnpm 打印出来的那个 key，在 profile 的 `pnpm-workspace.yaml` 里加 `allowBuilds`，再重跑一次。
 
 **npm 路径（推荐）不受这两条影响** —— npm 包里自带构建好的 `lib/`。

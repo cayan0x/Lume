@@ -347,7 +347,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	// ── 载具与项目知识的读取入口（实现见 host/project-access.ts）──
 	const projectAccess = createProjectAccess({
 		ctx,
-		config,
 		runtime,
 		stores,
 		projectTask: stores.projectTask,
@@ -577,7 +576,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			});
 			const mode = decision.mode;
 			st.intent = { turnIndex: st.turnIndex, messageId, text };
-			st.lastQuery = text;
 			st.interactionMode = mode;
 			st.taskPhase = taskPhaseForMode(mode);
 			st.toolCalls = 0;
@@ -596,7 +594,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				...(decision.evidence ? { evidence: decision.evidence.trim().replace(/\s+/g, " ").slice(0, 120) } : {}),
 			});
 		}
-		return { text: st.intent?.text ?? st.lastQuery ?? "", mode: st.interactionMode };
+		return { text: st.intent?.text ?? "", mode: st.interactionMode };
 	}
 
 	/**
@@ -687,6 +685,29 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		return () => stopBackfill?.();
 	});
 
+	// 能力矩阵（降级清单）：把「哪些能力真的接上了」在启动后落成一行可 grep 的日志。
+	// 为什么需要：本插件最容易出的问题不是崩溃，而是**某条能力静默降级**（宿主不支持
+	// systemPrompt.context、项目域没兑现、RPC 走了回退路径），事后只能靠行为反推。
+	// 与核心机制无关（纯诊断），所以独立成 effect、失败只留痕。
+	ctx.effect(() => {
+		let cancelled = false;
+		void (async () => {
+			try {
+				// 四个域各自独立降级，句柄在各自的 .then 里回填；一起 await 才能读到真实状态。
+				await Promise.all([stores.storesReady, stores.identityReady, stores.projectReady, stores.reflectionReady]);
+			} catch (error) {
+				ctx.logger?.warn?.(`lume: 能力矩阵就绪等待失败（诊断信息，不影响功能）：${describeError(error)}`);
+			}
+			if (cancelled) return;
+			ctx.logger?.warn?.(
+				`lume: 能力矩阵 layered=${layeredOn} runtimeContext=${runtimeContextSupported} project=${projectMemoryOn} triggers=${behaviorTriggersOn} metrics=${metricsEnabled} reflection=${reflectionEnabled} identity=${Boolean(stores.identity())} projectStore=${Boolean(stores.project())} reflectionStore=${Boolean(stores.reflectionStore())}`,
+			);
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, "lume: 能力矩阵");
+
 	const sessionEventDeps = assembleSessionEventDeps(wiring);
 	const toolDeps = assembleToolDeps(wiring);
 	const blockDeps: BlockDeps = assembleBlockDeps(wiring);
@@ -749,6 +770,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			unverified,
 			verified: changes.filter((item) => item.status === "verified").length,
 			hypotheses: hypothesesOf(sid).length,
+			// 机制健康：把本会话各类机制累计命中次数随状态快照落盘（见 core/mechanisms.ts）。
+			mechanismFires: { ...(st.mechanismFires ?? {}) },
 		});
 	}
 
@@ -880,9 +903,6 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 
 	// ── RPC 通道 ──
 	const handleEndpoint = createLumeRpcHandler({
-		get personalities() {
-			return builtins;
-		},
 		get store() {
 			return stores.currentStore()!;
 		},

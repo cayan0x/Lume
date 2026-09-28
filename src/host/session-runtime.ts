@@ -21,7 +21,6 @@ export interface NoticeSlot {
 export interface SessionRuntime {
 	userText: string;
 	assistantText: string;
-	lastQuery: string | null;
 	turnIndex: number;
 	/** undefined = 本会话尚无注入先例（不视为切换）；null = 当值人设为「不使用」。 */
 	lastInjected: string | null | undefined;
@@ -76,6 +75,14 @@ export interface SessionRuntime {
 	/** 需求漂移提示（模型输出里出现需求原话没有的变更类型词时置位）。 */
 	/** 提示槽：drift / citation / question / coverage / carrierGap / trigger / turn / postTurn … */
 	notices: Record<string, NoticeSlot>;
+	/**
+	 * 各类机制的本会话累计命中次数（键 = 提示槽 id）。
+	 *
+	 * 为什么单独计数而不是复用 `notices[id].used`：`forceNotice` 刻意绕过每会话上限，
+	 * 不写 `used`；而触发器、轮边界提醒恰好全走 forceNotice。健康自检要的是「响没响过」，
+	 * 与「配额还剩多少」是两回事，混用会让 forceNotice 类的机制永远显示 0。
+	 */
+	mechanismFires?: Record<string, number>;
 	/** 漂移提示里已经报过的词（同词不重报）。 */
 	driftWordsReported: string[];
 	/**
@@ -151,7 +158,6 @@ function defaultRuntime(): SessionRuntime {
 	return {
 		userText: "",
 		assistantText: "",
-		lastQuery: null,
 		turnIndex: 0,
 		lastInjected: undefined,
 		switchTurn: null,
@@ -175,6 +181,7 @@ function defaultRuntime(): SessionRuntime {
 		requirementFresh: false,
 		driftWordsReported: [],
 		notices: {},
+		mechanismFires: {},
 		agent: {
 			evidence: new Map(),
 			artifactText: "",

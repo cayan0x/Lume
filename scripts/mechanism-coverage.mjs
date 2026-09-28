@@ -58,6 +58,18 @@ const EXTRA_MECHANISMS = [
 		keyword: "createMetricsLog",
 	},
 	{ id: "metrics-feedback", what: "度量回灌（纠正率过高时顶一句路由自校）", impl: "src/host/notices.ts", keyword: "metrics" },
+	{
+		id: "mechanism-health",
+		what: "机制健康自检（每类机制命中/从未命中报告）",
+		impl: "src/core/mechanisms.ts",
+		keyword: "MECHANISMS",
+	},
+	{
+		id: "criteria-fixtures",
+		what: "机械判据注册表 + fixture 门禁",
+		impl: "src/core/criteria.ts",
+		keyword: "CRITERIA",
+	},
 ];
 
 const read = (p) => {

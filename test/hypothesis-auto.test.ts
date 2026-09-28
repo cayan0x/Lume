@@ -31,7 +31,6 @@ function makeAccess(existing: Array<Record<string, unknown>> = []) {
 	};
 	const access = createProjectAccess({
 		ctx: { logger: { warn: vi.fn() } } as never,
-		config: {} as never,
 		runtime: { get: () => ({}) } as never,
 		stores: { project: () => store as never, projectReady: Promise.resolve(store as never) },
 		projectTask: ((_sid: string, _label: string, run: (s: unknown) => unknown) => run(store)) as never,

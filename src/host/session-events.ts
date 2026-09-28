@@ -9,10 +9,8 @@
  * 全局：测试替身可以只实现自己关心的那几个。
  */
 import type { SessionRuntime } from "./session-runtime.js";
-import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
 import { pathKey } from "../core/citations.js";
-import { claimsVerification, looksLikeFailure } from "../core/signals.js";
+import { looksLikeFailure } from "../core/signals.js";
 
 import type { HostPayload, LumeHostContext } from "./host-context.js";
 import { handleTurnEnd } from "./turn-boundary.js";
@@ -41,17 +39,6 @@ function inspectedTarget(st: SessionRuntime, target: string): boolean {
 	if (st.agent.evidence.has(key)) return true;
 	for (const seen of st.agent.inspectedTargets) if (pathKey(seen) === key) return true;
 	return false;
-}
-
-/**
- * 只对**已存在**的文件判「没读过就改」：新建文件天然没读过，对它喊「先读一次」是错话。
- * 相对路径按会话 cwd 解析；解析不了（cwd 未知）就当新建处理——宁可漏，不喊错话。
- */
-function existingTarget(st: SessionRuntime, target: string | null | undefined): string | null {
-	const raw = String(target ?? "").trim();
-	if (!raw) return null;
-	const resolved = isAbsolute(raw) ? raw : st.cwd ? join(st.cwd, raw) : raw;
-	return existsSync(resolved) ? raw : null;
 }
 
 export type { SessionEventDeps };

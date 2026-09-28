@@ -5,7 +5,6 @@
  * （会话态在 runtime，跨会话知识在项目域）。全部经工厂注入依赖，不捕获 index 的闭包。
  */
 import type { HostPayload, LumeHostContext } from "./host-context.js";
-import type { LumeConfig } from "./config.js";
 import type { SessionRuntimeStore } from "./session-runtime.js";
 import type * as ledgerMod from "../core/ledger.js";
 import { DESIGN_SIGNAL_RE } from "./protocol.js";
@@ -19,8 +18,6 @@ import type { ProjectStore } from "./project.js";
 
 export interface ProjectAccessDeps {
 	ctx: LumeHostContext;
-	// lint-arch: allow-unused 历史遗留：config 目前没人读（删它要同时改装配与假宿主，单独一批做）
-	config: LumeConfig;
 	runtime: SessionRuntimeStore;
 	stores: { project: () => ProjectStore | null; projectReady: Promise<ProjectStore | null> };
 	/** fire-and-forget 的持久化（失败留痕，见 bootstrap.projectTask）。 */

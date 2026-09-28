@@ -31,7 +31,6 @@ function makeAccess(opts: { store?: unknown } = {}) {
 	});
 	const access = createProjectAccess({
 		ctx: { logger: { warn: vi.fn() } } as never,
-		config: {} as never,
 		runtime: { get: () => state } as never,
 		stores: { project: () => store as never, projectReady: Promise.resolve(store as never) },
 		projectTask: projectTask as never,

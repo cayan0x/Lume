@@ -33,7 +33,7 @@ function makeHarness(options: { withIdentity?: boolean; withDistill?: boolean } 
 					route: () => ({ provider: "test", model: "test-model" }),
 					call: async () => '{"key":"distilled","displayName":"蒸馏姐","description":"测试","promptText":"【身份】测试。"}',
 				});
-	const handle = createLumeRpcHandler({ personalities: makePersonalities(), store, registry, identity, distill });
+	const handle = createLumeRpcHandler({ store, registry, identity, distill });
 	return { store, identity, identityTables, handle, distill };
 }
 
@@ -293,7 +293,6 @@ describe("createLumeRpcHandler", () => {
 			custom_personas: new FakePersonaTable(),
 		});
 		const handle = createLumeRpcHandler({
-			personalities: makePersonalities(),
 			get store() {
 				return store as PersonaStore;
 			},

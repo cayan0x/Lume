@@ -16,9 +16,8 @@
  * - exportPersona       → 导出人设卡 {personaName, includeMemory} → 完整 bundle（含内置）
  * - importPersona       → 导入人设卡 {payload} → 校验后落盘，同名覆盖需确认
  */
-import type { Persona } from "../core/manifest.js";
-import type { DistillJobRunner } from "./distill.js";
 import { settleMemoryText, STORY_MEMORY_CAP } from "./distill-prompt.js";
+import type { DistillJobRunner } from "./distill.js";
 import type { IdentityStore } from "./identity.js";
 import type { PersonaRegistry } from "./registry.js";
 import { normalizeCard, parseCard } from "../core/card.js";
@@ -32,8 +31,6 @@ export interface PersonaSelectionStore {
 }
 
 export interface LumeRpcDeps {
-	// lint-arch: allow-unused 历史遗留：personalities 目前没人读（同上，单独一批清理）
-	personalities: Record<string, Persona>;
 	store: PersonaSelectionStore;
 	registry: PersonaRegistry;
 	identity: IdentityStore | null;

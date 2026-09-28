@@ -3,6 +3,8 @@ import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 import { buildAlignmentCorrection } from "../src/host/protocol.js";
 import { buildContextPressureDirective, contextPressure } from "../src/core/task-memory.js";
+import { MECHANISMS, mechanismById, mechanismIds } from "../src/core/mechanisms.js";
+import { formatMetricsSummary, summarizeMetrics } from "../src/core/metrics.js";
 
 /**
  * 机制覆盖补齐（2026-09-24）：`npm run lint` 里的 scripts/mechanism-coverage.mjs 从代码里枚举
@@ -33,6 +35,61 @@ describe("机制覆盖：对齐纠偏 notice:align", () => {
 		const repeated = buildAlignmentCorrection("repeated-request");
 		expect(repeated).toMatch(/重复/);
 		expect(repeated).not.toBe(correction);
+	});
+});
+describe("机制健康：清单必须与代码对账（防这张表自己漂）", () => {
+	it("MECHANISMS 覆盖全部 NOTICE_CAPS 键与 TriggerId 成员，且无重复 id", () => {
+		const notices = readFileSync("src/host/notices.ts", "utf8");
+		const capsBlock = notices.match(/NOTICE_CAPS[^{]*\{([\s\S]*?)\n\};/);
+		expect(capsBlock).toBeTruthy();
+		const noticeKeys = [...capsBlock![1].matchAll(/^\s*([a-zA-Z-]+):/gm)].map((hit) => hit[1]!);
+		expect(noticeKeys.length).toBeGreaterThan(0);
+
+		const triggersText = readFileSync("src/host/triggers.ts", "utf8");
+		const union = triggersText.match(/TriggerId\s*=([\s\S]*?);/);
+		expect(union).toBeTruthy();
+		const triggerIds = [...union![1].matchAll(/"([a-z-]+)"/g)].map((hit) => hit[1]!);
+
+		const ids = mechanismIds();
+		expect(new Set(ids).size).toBe(ids.length);
+		for (const id of noticeKeys) expect(mechanismById(id)?.kind).toBe("notice");
+		for (const id of triggerIds) expect(mechanismById(id)?.kind).toBe("trigger");
+	});
+
+	it("度量聚合能回答「哪些机制从未命中」，并如实标注 0 不代表失效", () => {
+		const records = [
+			{
+				kind: "state" as const,
+				at: 1,
+				sid: "s1",
+				turn: 1,
+				counters: { steps: 1, inspectStreak: 0, mutateStreak: 0, mutations: 0, verifyFailStreak: 0, verifyEnvHits: 0, codeInspects: 0 },
+				hasContract: false,
+				designs: 0,
+				changes: 0,
+				unverified: 0,
+				verified: 0,
+				hypotheses: 0,
+				mechanismFires: { citation: 2 },
+			},
+			{
+				kind: "trigger" as const,
+				at: 2,
+				sid: "s1",
+				turn: 2,
+				id: "converge",
+				counters: { steps: 3, inspectStreak: 14, mutateStreak: 0, mutations: 0, verifyFailStreak: 0, verifyEnvHits: 0, codeInspects: 14 },
+			},
+		];
+		const summary = summarizeMetrics(records);
+		expect(summary.mechanisms.find((entry) => entry.id === "citation")).toMatchObject({ sessions: 1, hits: 2, kind: "notice" });
+		expect(summary.mechanisms.find((entry) => entry.id === "converge")).toMatchObject({ sessions: 1, hits: 1, kind: "trigger" });
+		expect(summary.neverFired).toContain("drift");
+		expect(summary.neverFired).not.toContain("citation");
+		const text = formatMetricsSummary(summary);
+		expect(text).toContain("机制健康");
+		expect(text).toContain("从未命中");
+		expect(MECHANISMS.length).toBeGreaterThan(0);
 	});
 });
 describe("机制覆盖：客户端产物 client-no-duplicate-decl / client-bundle-parses", () => {

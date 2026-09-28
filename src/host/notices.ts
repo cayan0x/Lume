@@ -49,6 +49,15 @@ export function noticeSlot(st: SessionRuntime, id: string) {
 	return st.notices[id]!;
 }
 
+/**
+ * 机制健康计数：无论走 setNotice 还是 forceNotice，只要真的顶出了文本就 +1。
+ * 与 `used`（配额）分开——forceNotice 绕过配额，若共用计数，触发器这类机制会永远显示 0。
+ */
+function recordMechanismFire(st: SessionRuntime, id: string): void {
+	const fires = (st.mechanismFires ??= {});
+	fires[id] = (fires[id] ?? 0) + 1;
+}
+
 /** 还能不能顶（上限没到）。 */
 export function noticeOpen(st: SessionRuntime, id: string): boolean {
 	return noticeSlot(st, id).used < (NOTICE_CAPS[id] ?? Number.POSITIVE_INFINITY);
@@ -68,6 +77,7 @@ export function setNotice(st: SessionRuntime, id: string, text: string | null | 
 	if (!noticeOpen(st, id)) return false;
 	slot.text = text;
 	slot.used += 1;
+	recordMechanismFire(st, id);
 	return true;
 }
 
@@ -75,6 +85,7 @@ export function setNotice(st: SessionRuntime, id: string, text: string | null | 
 export function forceNotice(st: SessionRuntime, id: string, text: string | null | undefined): void {
 	const slot = noticeSlot(st, id);
 	slot.text = text ?? null;
+	if (text) recordMechanismFire(st, id);
 }
 
 export function clearNotice(st: SessionRuntime, id: string): void {

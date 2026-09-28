@@ -16,6 +16,7 @@
  *
  * 本模块是纯函数 + 纯类型（无 I/O），落盘与环形缓冲在 host/metrics-log.ts。
  */
+import { MECHANISMS, type MechanismKind } from "./mechanisms.js";
 
 export type MetricKind = "route" | "trigger" | "state" | "blocks" | "outcome";
 
@@ -76,6 +77,11 @@ export interface StateMetric extends MetricBase {
 	unverified: number;
 	verified: number;
 	hypotheses: number;
+	/**
+	 * 本会话各类机制的**累计命中次数**（键 = 提示槽 id，值 = 会话结束前的累计 used）。
+	 * 有了它，"哪条机制从来没响过"就能从数据里读出来，而不是靠翻日志（见 core/mechanisms.ts）。
+	 */
+	mechanismFires?: Record<string, number>;
 }
 
 /** 块装配：本步实际注入多少块、丢了多少、命中哪三条重点条款（预算是否吃紧看这里）。 */
@@ -162,6 +168,17 @@ export interface TriggerEfficacy {
 	improved: number;
 }
 
+/** 单类机制的健康：本区间内有多少个会话命中过、共命中多少次。 */
+export interface MechanismHealth {
+	id: string;
+	kind: MechanismKind;
+	label: string;
+	/** 命中过它的会话数（0 = 样本期内从未命中）。 */
+	sessions: number;
+	/** 累计命中次数（提示槽取各会话的累计值之和，触发器取记录条数）。 */
+	hits: number;
+}
+
 export interface RouteStats {
 	total: number;
 	byMode: Record<string, number>;
@@ -199,6 +216,10 @@ export interface MetricsSummary {
 	/** 有机械口径的**命中次数**合计（measuredTriggers 是「触发器类别数」，两者别混）。 */
 	measuredHits: number;
 	improvedHits: number;
+	/** 机制健康：每类机制本区间命中情况（含从未命中的，用于「它到底跑没跑过」）。 */
+	mechanisms: MechanismHealth[];
+	/** 样本期内从未命中的机制 id（0 只代表没被触发过，不代表机制失效）。 */
+	neverFired: string[];
 }
 
 function bump(map: Record<string, number>, key: string): void {
@@ -265,6 +286,44 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 	const triggers = [...byId.values()].sort((a, b) => b.fired - a.fired);
 	const measured = triggers.filter((entry) => entry.expect !== "none");
 
+	// 机制健康：提示槽从状态快照的 mechanismFires 里按会话取累计最大值；触发器从命中记录里数。
+	// 目录来自 core/mechanisms.ts（唯一真值），所以报表能直接列出「从未命中」的机制。
+	const mechanismEntries = new Map<string, MechanismHealth>();
+	for (const mechanism of MECHANISMS)
+		mechanismEntries.set(mechanism.id, { id: mechanism.id, kind: mechanism.kind, label: mechanism.label, sessions: 0, hits: 0 });
+	/** 提示槽：id → （会话 → 累计命中次数）。 */
+	const noticeMax = new Map<string, Map<string, number>>();
+	/** 触发器：id → 命中的会话集合。 */
+	const triggerSids = new Map<string, Set<string>>();
+	for (const record of scoped) {
+		if (record.kind === "state" && record.mechanismFires) {
+			for (const [id, count] of Object.entries(record.mechanismFires)) {
+				if (!count || count <= 0) continue;
+				if (mechanismEntries.get(id)?.kind !== "notice") continue;
+				const perSid = noticeMax.get(id) ?? new Map<string, number>();
+				perSid.set(record.sid, Math.max(perSid.get(record.sid) ?? 0, count));
+				noticeMax.set(id, perSid);
+			}
+		} else if (record.kind === "trigger") {
+			if (!mechanismEntries.has(record.id)) continue;
+			const set = triggerSids.get(record.id) ?? new Set<string>();
+			set.add(record.sid);
+			triggerSids.set(record.id, set);
+		}
+	}
+	const mechanisms = [...mechanismEntries.values()];
+	for (const entry of mechanisms) {
+		if (entry.kind === "notice") {
+			const perSid = noticeMax.get(entry.id);
+			entry.sessions = perSid ? perSid.size : 0;
+			entry.hits = perSid ? [...perSid.values()].reduce((sum, count) => sum + count, 0) : 0;
+		} else {
+			entry.sessions = triggerSids.get(entry.id)?.size ?? 0;
+			entry.hits = triggers.find((trigger) => trigger.id === entry.id)?.fired ?? 0;
+		}
+	}
+	const neverFired = mechanisms.filter((entry) => entry.sessions === 0).map((entry) => entry.id);
+
 	return {
 		sessions: sessions.size,
 		records: scoped.length,
@@ -276,6 +335,8 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 		improvedTriggers: measured.filter((entry) => entry.improved > 0).length,
 		measuredHits: measured.reduce((sum, entry) => sum + entry.fired, 0),
 		improvedHits: measured.reduce((sum, entry) => sum + entry.improved, 0),
+		mechanisms,
+		neverFired,
 	};
 }
 
@@ -388,5 +449,19 @@ export function formatMetricsSummary(summary: MetricsSummary, opts: { label?: st
 				`  · ${entry.id}：命中 ${entry.fired} 次，改善 ${entry.improved}${entry.expect === "none" ? "（无机械口径，未判定）" : ""}`,
 			);
 	}
+	// 机制健康：回答「这条机制到底跑过没有」。样本期内的 0 只代表没被触发过，不代表失效——
+	// 与效能口径同一套诚实纪律，别把「没证据」读成「机制坏了」。
+	const fired = summary.mechanisms.filter((entry) => entry.sessions > 0).sort((a, b) => b.hits - a.hits);
+	lines.push(`- 机制健康：${fired.length}/${summary.mechanisms.length} 类本区间命中过`);
+	if (fired.length > 0)
+		lines.push(
+			`  命中：${fired
+				.slice(0, 8)
+				.map((entry) => `${entry.id} ${entry.hits}`)
+				.join(" · ")}`,
+		);
+	lines.push(
+		`  从未命中：${summary.neverFired.length > 0 ? summary.neverFired.join("、") : "无"}（0 只代表样本期内没被触发过，不代表机制失效）`,
+	);
 	return lines.join("\n");
 }

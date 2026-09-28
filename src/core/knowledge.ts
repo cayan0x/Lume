@@ -10,6 +10,24 @@
  * 2. **敏感内容一律不落**（facts 是明文 JSON，且要跨会话累积，密钥/生产配置绝不能固化进去）。
  */
 import type { ProjectFactKind } from "./ledger.js";
+import {
+	ANCHOR_RE,
+	BUILD_RE,
+	COMMAND_LINE_RE,
+	CODE_SHAPE_RE,
+	CONVENTION_RE,
+	DEADEND_RE,
+	LIST_FRAGMENT_RE,
+	PATH_ONLY_RE,
+	QUESTION_RE,
+	REJECT_RE,
+	SCAFFOLD_RE,
+	SENSITIVE_RE,
+	TABLE_ROW_RE,
+	TEST_RE,
+	TEST_RUN_RE,
+	USER_RULE_RE,
+} from "./criteria.js";
 
 export interface KnowledgeCandidate {
 	kind: ProjectFactKind;
@@ -25,66 +43,37 @@ export interface KnowledgeCandidate {
 export type KnowledgeSource = "tool" | "assistant" | "user";
 
 /**
- * 明面上要拒绝的内容：**带值的**密钥/密码/令牌/连接串，以及"某密钥可解"这类结论。
- *
- * 刻意区分「凭证名」与「凭证值」：`-Djasypt.encryptor.password` 只是参数名（正当约定，该留），
- * 而 `password=ENC(…)`、`jdbc:postgresql://…`、`api_key` 这类才是要挡的。
- * 第一版把前者也挡了——测试与现场清理都抓到了这个误杀。
+ * 敏感内容硬拦：判据在 `core/criteria.ts`（词法判据唯一出处）+ 正反例 fixture。
+ * 这里只保留入口函数——调用方（tools / wiring / backfill）依赖的是它，不是某个正则。
  */
-const SENSITIVE_RE =
-	/(password|passwd|pwd|secret|token)\s*[:=]|ENC\(|BEGIN [A-Z ]*PRIVATE KEY|jdbc:[a-z]+:\/\/|connection\s*string|api[_-]?key|private[_-]?key|access[_-]?key|密钥|凭证|实测可解/i;
-
 export function looksSensitive(text: unknown): boolean {
 	return SENSITIVE_RE.test(String(text ?? ""));
 }
 
 /**
  * 证据锚点：没有这些东西的句子只是议论，不该进跨会话知识。
- * 文件锚点刻意放宽到「任意非空白 token + 扩展名」——现场句子常是 `doc/<需求>/08-建表语句（表名）.sql`，
- * 用 `\w` 匹配会把中文与括号挡掉（测试抓到的第一版漏洞）。
+ * 判据与正反例见 `core/criteria.ts` 的 `anchor`。
  */
-const ANCHOR_RE =
-	/([A-Za-z]:\\|\/[\w.-]+\/)|[^\s/\\|，。；]+\.(java|xml|sql|yml|yaml|json|md|ts|tsx|js|py|go|cs|kt|properties|sh|ps1)\b|\b[A-Z][A-Z0-9_]{4,}\b|\b(mvn|gradle|npm|pnpm|yarn|docker|kubectl|psql|mysql|redis-cli|python|pip|dotnet|go|cargo|make|git|icacls|chmod|rsync|systemctl|curl)\b/;
 
 /**
- * 死路判据：谓词 + 对象/证据。
- *
- * 为什么加锚点（2026-09-24 审核指出误报）：原来只要有「不可用」就算死路，于是我们自己的诊断文案
- * ——「落点不可用：宿主没提供 DSH_HOME…」——被记成死路，污染了最值钱的一类知识。
- * 现在只认**明确的"怎么都不行"谓词**（行不通/跑不了/用不了/不可行/已经不行，以及带对象的"不支持"）。
- *
- * 为什么连「不可用」都删了（二审指出）：第一版用「负向断言豁免名单」挡自己的文案，看着像修好了，
- * 其实「不可用」依旧单独立案——「身份域不可用」「载具不可用」照收不误，换个词同一个 bug 原样再来。
- * 判据必须是**谓词 + 对象**，而不是「某个词 + 一张例外表」。
+ * 死路判据：谓词 + 对象/证据。判据与正反例见 `core/criteria.ts` 的 `deadend`。
  */
-const DEADEND_RE =
-	/(?:行不通|跑不了|用不了|不可行|已经不行)[^。；\n]{0,40}|(?:不支持|不再维护|unsupported|not supported)[^。；\n]{0,40}(?:[A-Za-z0-9_./\\-]{3,}|版本|依赖|命令|报错|平台)/i;
 
 /** 四类机械可判的事实。刻意写窄：宁可漏掉，也不要把建议/议论灌进知识库。 */
 const KIND_RULES: readonly { kind: ProjectFactKind; re: RegExp }[] = [
 	// 构建/测试：必须出现"命令"语义（否则"构建通过"这种临时结果不值得跨会话留）
-	{ kind: "build", re: /(构建|编译|打包|build)[^。；\n]{0,30}(命令|用\s*\S{2,30}\s*(执行|跑)|是\s*\S{2,30})/i },
-	{ kind: "test", re: /(测试|用例|单测|test)[^。；\n]{0,30}(命令|用\s*\S{2,30}\s*(执行|跑)|入口是)/i },
+	{ kind: "build", re: BUILD_RE },
+	{ kind: "test", re: TEST_RE },
 	// 死路：说清"行不通"，这是最值钱的一类（避免重复踩）。
-	// 判据 = 谓词 + 锚点（2026-09-24 审核指出误报）：
-	// 「不可用」太泛，我们自己的诊断文案就带它——「落点不可用：宿主没提供 DSH_HOME…」曾被记成死路，
-	// 直接污染了最值钱的一类。现在要么是明确的"跑不了/行不通"表述，要么「不支持」类必须带具体对象。
 	{ kind: "deadend", re: DEADEND_RE },
 	// 约定：只认"项目/仓库/团队 + 一律/必须/统一"这种规范性表述
-	{ kind: "convention", re: /(约定|规范|一律|统一|必须|禁止)[^。；\n]{0,60}/ },
+	{ kind: "convention", re: CONVENTION_RE },
 ];
 
 /**
- * 明确的"别记"特征：
- * - 给人建议（我们只沉淀**事实**，不沉淀建议）；
- * - 提问（问题不是知识）；
- * - **宿主运行时快照**（它经 user/message 通道投递，里面全是 policy 文本与路径）。
+ * 明确的"别记"特征：建议 / 提问 / 宿主运行时快照。
+ * 判据与正反例见 `core/criteria.ts` 的 `reject`。
  */
-/** 工具输出里的脚手架行：不是事实，是检索/回显的格式（`63: …`、`Line 164: …`、`Found 3 of 9 matches`）。 */
-const SCAFFOLD_RE = /(Found \d+ of \d+ matches|^\s*Line\s*\d+\s*[:：]|^\s*L\d{2,}\s*[:：]|\b\d{1,5}\s*[:：]\s)/;
-
-/** 纯路径 / 纯标识符行：只有定位信息、没有事实内容（现场噪音最大的一类）。 */
-const PATH_ONLY_RE = /^[\w\\./:\-()（）<>@$\u4e00-\u9fa5]+$/;
 
 /** 去掉行首的编号/引用标记，让真句子上来参与判据与存储。 */
 function stripScaffold(line: string): string {
@@ -94,38 +83,15 @@ function stripScaffold(line: string): string {
 		.trim();
 }
 
-const REJECT_RE =
-	/(建议你|你可以|请把|请给|你应该|需要你|那条|这条|上述|前面那|刚才那)|Current runtime context|runtime context|file policy|workspace-write|approval policy|supersedes earlier|^\s*(#|【|一、|二、|三、)/;
-
 /**
  * **形状**拒收：代码/测试产物/表格行/清单片段——它们不是句子，也不是事实。
  *
  * 为什么必须有（2026-09-24 真机数据，外部审核指出「它在往 DSH 嘴里塞垃圾」）：
- * Lume 工作区 18 条知识里 11 条是本仓开发过程的产物——vitest 用例名（`✓ test/tools.test.ts > …`）、
- * 源码注释（`/** 可省略：…`）、CHANGELOG 句子、markdown 表格行、测试代码（`expect(…)`）。
+ * Lume 工作区 18 条知识里 11 条是本仓开发过程的产物——vitest 用例名、源码注释、CHANGELOG 句子、
+ * markdown 表格行、测试代码（expect/promise）。
  * 根因：这套形状过滤当时**只对非 tool 来源生效**，而噪音恰好全走 tool 通道（读文件/跑测试的输出）。
- * 现在一律先过形状闸，再谈判据。
+ * 现在一律先过形状闸，再谈判据。判据与正反例见 `core/criteria.ts`。
  */
-const TEST_RUN_RE = /(?:^|\s)[✓✗×]\s|\b\d+\s*ms\s*$|test\/[\w./-]+\.test\.ts\s*[>›]/;
-
-const CODE_SHAPE_RE =
-	/(expect\(|\.toBe\(|\.toHaveLength\(|=>|\/\*\*|\*\/|^\s*\/\/|\{\s*\"|^\s*\+\s*\w|^\s*const\s|^\s*let\s|\t|\u0060\u0060\u0060)/;
-
-/** 表格行（`| a | b |`）：文档片段不是事实。 */
-const TABLE_ROW_RE = /^\s*\|/;
-
-/**
- * 复制粘贴的命令行（真机剩的那条噪音就是这个形状：`npm run lint   # 架构规则（…）`）。
- * 形状清单永远补不全，所以这条按**类别**拦：命令行开头 + 注释符，或含 shell 的管道/重定向。
- */
-const COMMAND_LINE_RE =
-	/^\s*(?:npm|pnpm|npx|yarn|node|git|python|pip|mvn|gradle|go|cargo|make|tsc|vitest|jest|dotnet|docker|kubectl|psql|curl)\b[^\n]*#|2>&1|\|\s*(?:head|tail|grep|findstr|Select-String|Select-Object)\b/;
-
-/** 清单/引用/标题片段（`- x`、`* x`、`> x`、`# x`、`3. x`、`③ x`）：脱离上下文没有意义。 */
-const LIST_FRAGMENT_RE = /^\s*(?:[-*+>#]\s|\d+[.)]\s|[①-⑳])/;
-
-/** 问句不收：以问号收尾的句子是问题，不是可复用事实。 */
-const QUESTION_RE = /[?？]\s*$/;
 
 const MIN_LEN = 12;
 const MAX_LEN = 200;
@@ -145,8 +111,6 @@ export function extractKnowledgeCandidates(
 	if (!raw || raw.length < MIN_LEN) return [];
 	const max = options.max ?? 2;
 	const source = options.source ?? "tool";
-	// 用户的规范陈述判据：比工具/助手更严——它会被当成权威跨会话复用，收错了代价最大
-	const USER_RULE_RE = /(必须|一律|统一|禁止|不要|别用|不能|唯一|按\s*\S{2,20}\s*(做|来|办)|约定|规范|标准是)/;
 	const userText = String(options.userText ?? "");
 	const out: KnowledgeCandidate[] = [];
 	const seen = new Set<string>();

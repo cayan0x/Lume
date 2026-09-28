@@ -111,7 +111,7 @@ export interface BlocksMetric extends MetricBase {
 	focus: string[];
 }
 
-export type OutcomeEvent = "user-correction" | "repeat-request" | "overreach" | "no-action" | "verify-run";
+export type OutcomeEvent = "user-correction" | "repeat-request" | "overreach" | "no-action" | "verify-run" | "host-shape-drift";
 
 /**
  * 外部结果信号：用户纠正 / 重复同一请求 / 问答轮却改了文件 / 执行轮一步没动。
@@ -207,6 +207,8 @@ export interface OutcomeStats {
 	repeats: number;
 	overreach: number;
 	noAction: number;
+	/** 宿主工具事件形状漂移告警次数（依赖入参的机制可能静默失效的强信号）。 */
+	hostShapeDrift: number;
 	/** 按模式拆的纠正次数：纠正落在哪个模式上，就是哪个模式在误判。 */
 	correctionsByMode: Record<string, number>;
 }
@@ -262,7 +264,7 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 	}
 
 	const routes: RouteStats = { total: 0, byMode: {}, byMatched: {}, bySource: {} };
-	const outcomes: OutcomeStats = { corrections: 0, repeats: 0, overreach: 0, noAction: 0, correctionsByMode: {} };
+	const outcomes: OutcomeStats = { corrections: 0, repeats: 0, overreach: 0, noAction: 0, hostShapeDrift: 0, correctionsByMode: {} };
 	const blocks: BlocksStats = { steps: 0, droppedSteps: 0, avgChars: 0, budget: 0, focusCounts: {} };
 	let charsTotal = 0;
 
@@ -279,6 +281,7 @@ export function summarizeMetrics(records: readonly MetricRecord[], opts: { sid?:
 			} else if (record.event === "repeat-request") outcomes.repeats++;
 			else if (record.event === "overreach") outcomes.overreach++;
 			else if (record.event === "no-action") outcomes.noAction++;
+			else if (record.event === "host-shape-drift") outcomes.hostShapeDrift++;
 		} else if (record.kind === "blocks") {
 			blocks.steps++;
 			charsTotal += record.chars;
@@ -445,7 +448,9 @@ export function formatMetricsSummary(summary: MetricsSummary, opts: { label?: st
 		.join(" · ");
 	if (sourceTail) lines.push(`  证据来源：${sourceTail}（text=只看这一句，trajectory/sticky=轨迹补证，correction=纠正后重算）`);
 	const o = summary.outcomes;
-	lines.push(`- 外部结果信号：用户纠正 ${o.corrections} · 重复请求 ${o.repeats} · 问答轮改动 ${o.overreach} · 执行轮零动作 ${o.noAction}`);
+	lines.push(
+		`- 外部结果信号：用户纠正 ${o.corrections} · 重复请求 ${o.repeats} · 问答轮改动 ${o.overreach} · 执行轮零动作 ${o.noAction} · 宿主形状漂移 ${o.hostShapeDrift}`,
+	);
 	const wrongModes = Object.entries(o.correctionsByMode)
 		.sort((a, b) => b[1] - a[1])
 		.map(([mode, count]) => `${mode} ${count}`)

@@ -70,6 +70,8 @@ const EXTRA_MECHANISMS = [
 		impl: "src/core/criteria.ts",
 		keyword: "CRITERIA",
 	},
+	{ id: "host-capabilities", what: "宿主能力矩阵探测（降级清单）", impl: "src/host/capabilities.ts", keyword: "probeHostCapabilities" },
+	{ id: "host-shape-drift", what: "工具事件形状漂移检测", impl: "src/core/host-shape.ts", keyword: "isShapeDrift" },
 ];
 
 const read = (p) => {

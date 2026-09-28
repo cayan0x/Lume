@@ -10,6 +10,7 @@
  */
 import type { SessionRuntime } from "./session-runtime.js";
 import { pathKey } from "../core/citations.js";
+import { newHostShapeHealth, observeToolCall, isShapeDrift } from "../core/host-shape.js";
 import { pickMetricCounters } from "../core/metrics.js";
 import { looksLikeFailure } from "../core/signals.js";
 
@@ -144,6 +145,29 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 				// 记成"整文件读过"会把没看的行洗白（宁可少记，也不要给假证据）。
 				const callName = deps.toolNameOf(event.data);
 				const callArgs = deps.toolArgsOf(event.data);
+				// 宿主形状漂移检测：持续收到工具调用但入参/名字解不出 → 依赖入参的机制（自动台账、
+				// 引用核对、覆盖核对、定位门槛）会静默失效。这是 2026-09-23 六功能一起死的那类事故的
+				// 机械信号——立刻留痕 + 落度量，而不是继续假装在记账。
+				const shape = (st.agent.hostShape ??= newHostShapeHealth());
+				observeToolCall(shape, callArgs, callName);
+				if (!shape.warned && isShapeDrift(shape)) {
+					shape.warned = true;
+					deps.appendLumeLog(
+						`[${sid}] 宿主形状漂移：${shape.calls} 次 tool/call 中 args 解不出 ${shape.argsNull}、name 缺失 ${shape.nameMissing}`,
+					);
+					deps.ctx.logger?.warn?.(
+						`lume: [${sid}] 宿主工具事件形状可能已变（args 解不出 ${shape.argsNull}/${shape.calls}，name 缺失 ${shape.nameMissing}/${shape.calls}）→ 依赖入参的机制可能静默失效，请核对宿主版本与 host/host-events.ts`,
+					);
+					deps.recordMetric({
+						kind: "outcome",
+						at: Date.now(),
+						sid,
+						turn: st.turnIndex,
+						event: "host-shape-drift",
+						mode: st.interactionMode,
+						detail: `calls=${shape.calls} argsNull=${shape.argsNull} nameMissing=${shape.nameMissing}`,
+					});
+				}
 				st.agent.lastToolName = callName || null;
 				st.agent.lastToolArgs = callArgs ? JSON.stringify(callArgs) : null;
 				st.agent.lastToolTarget = deps.toolTargetOf(event.data);

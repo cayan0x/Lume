@@ -9,6 +9,7 @@
 import type { EvidenceIndex } from "../core/citations.js";
 import type { ProjectFact } from "../core/ledger.js";
 import type { ToolKind } from "../core/signals.js";
+import { newHostShapeHealth, type HostShapeHealth } from "../core/host-shape.js";
 import { newTriggerCounters } from "./triggers.js";
 import type { TriggerCounters, TriggerId } from "./triggers.js";
 
@@ -107,6 +108,8 @@ export interface SessionRuntime {
 		unexplainedCodes: string[];
 		/** 本会话自动沉淀的项目知识条数（防灌垃圾：每会话有上限） */
 		autoFacts: number;
+		/** 宿主工具事件形状健康度：入参/名字持续解不出时判漂移并告警（见 core/host-shape.ts）。懒初始化。 */
+		hostShape?: HostShapeHealth;
 	};
 	/**
 	 * cwd 未就绪时暂存的项目知识。
@@ -192,6 +195,7 @@ function defaultRuntime(): SessionRuntime {
 			lastToolTarget: null,
 			autoFacts: 0,
 			unexplainedCodes: [],
+			hostShape: newHostShapeHealth(),
 		},
 		pendingFacts: [],
 		projectKey: null,

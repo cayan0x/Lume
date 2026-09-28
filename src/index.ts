@@ -19,6 +19,7 @@ import { buildPersonaContractSection, buildPersonaRuntimeSection } from "./host/
 import { loadPersonalities, NONE_PERSONA } from "./host/personalities.js";
 import { createLumeRpcHandler } from "./host/rpc.js";
 import { installProbe } from "./host/probe.js";
+import { degradedCapabilities, formatCapabilityMatrix, probeHostCapabilities } from "./host/capabilities.js";
 import { makeRpcRoute } from "./host/rpc-bridge.js";
 import { migrateLegacyState } from "./host/store.js";
 import { zodLike } from "./host/identity.js";
@@ -183,6 +184,12 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 	if (layeredInjection && !runtimeContextSupported) {
 		ctx.logger?.warn?.("lume: 当前宿主不支持 systemPrompt.context，易变注入段并回系统提示词（前缀缓存收益消失，功能不受影响）");
 	}
+	// 宿主能力矩阵（降级清单）：把 API 面的真实形状一次性落成可 grep 的一行，并点名降级项——
+	// 「某能力静默降级」是本插件最常见的故障形态，事后只能靠行为反推（见 host/capabilities.ts）。
+	const hostCapabilities = probeHostCapabilities(ctx);
+	ctx.logger?.warn?.(`lume: 宿主能力 ${formatCapabilityMatrix(hostCapabilities)}`);
+	const degraded = degradedCapabilities(hostCapabilities);
+	if (degraded.length > 0) ctx.logger?.warn?.(`lume: 降级能力（功能受限、非崩溃）：${degraded.join("、")}`);
 	const defaultName = builtins[NONE_PERSONA] ? NONE_PERSONA : null;
 	const legacyStatePath = join(assetsDir, "persona-state.json");
 
@@ -615,10 +622,8 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 		return () => stopBackfill?.();
 	});
 
-	// 能力矩阵（降级清单）：把「哪些能力真的接上了」在启动后落成一行可 grep 的日志。
-	// 为什么需要：本插件最容易出的问题不是崩溃，而是**某条能力静默降级**（宿主不支持
-	// systemPrompt.context、项目域没兑现、RPC 走了回退路径），事后只能靠行为反推。
-	// 与核心机制无关（纯诊断），所以独立成 effect、失败只留痕。
+	// 运行时就绪（降级清单）：四个存储域各自异步兑现、失败即降级，这里在就绪后落成一行。
+	// 与「宿主能力矩阵」（apply 同步探测 API 面）互补：那条测 API 在不在，这条测域有没有兑现。
 	ctx.effect(() => {
 		let cancelled = false;
 		void (async () => {
@@ -626,17 +631,17 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 				// 四个域各自独立降级，句柄在各自的 .then 里回填；一起 await 才能读到真实状态。
 				await Promise.all([stores.storesReady, stores.identityReady, stores.projectReady, stores.reflectionReady]);
 			} catch (error) {
-				ctx.logger?.warn?.(`lume: 能力矩阵就绪等待失败（诊断信息，不影响功能）：${describeError(error)}`);
+				ctx.logger?.warn?.(`lume: 运行时就绪等待失败（诊断信息，不影响功能）：${describeError(error)}`);
 			}
 			if (cancelled) return;
 			ctx.logger?.warn?.(
-				`lume: 能力矩阵 layered=${layeredOn} runtimeContext=${runtimeContextSupported} project=${projectMemoryOn} triggers=${behaviorTriggersOn} metrics=${metricsEnabled} reflection=${reflectionEnabled} identity=${Boolean(stores.identity())} projectStore=${Boolean(stores.project())} reflectionStore=${Boolean(stores.reflectionStore())}`,
+				`lume: 运行时就绪 layered=${layeredOn} runtimeContext=${runtimeContextSupported} project=${projectMemoryOn} triggers=${behaviorTriggersOn} metrics=${metricsEnabled} reflection=${reflectionEnabled} identity=${Boolean(stores.identity())} projectStore=${Boolean(stores.project())} reflectionStore=${Boolean(stores.reflectionStore())}`,
 			);
 		})();
 		return () => {
 			cancelled = true;
 		};
-	}, "lume: 能力矩阵");
+	}, "lume: 运行时就绪");
 
 	const sessionEventDeps = assembleSessionEventDeps(wiring);
 	const toolDeps = assembleToolDeps(wiring);

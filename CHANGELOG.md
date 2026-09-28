@@ -21,9 +21,15 @@
 - 删未调用函数 `existingTarget`、冗余字段 `lastQuery`，以及靠 `allow-unused` 挂着的死依赖 `ProjectAccessDeps.config` / `LumeRpcDeps.personalities`；架构检查的「依赖声明」由 2 个未使用转为 **0**。
 - 修 `ARCHITECTURE.md` 过期的行数/字段数；修 `RELEASING.md`「本仓没有 prepare」的过期说明（0.8.3 已补）。
 
+**后续补入（同日）**
+
+- **类型门禁**：tsconfig 开 `noUnusedLocals`（纳入 `npm run lint`），一次清掉 88 处死导入/死局部——其中 `index.ts` 62 处是 `wiring.ts` 抽取后的遗留。这类「死代码能一路活到真机」从此变成**编译期错误**。
+- **触发器跨轮窗口**：`TriggerCounters` 增加 48 步滑动窗口（不随 `turn/end` 清零），`converge` 判据改为 `max(轮内连击, 窗口尾部连续只读探查)`——跨轮的撒网不再测不到（此前轮边界清零连击，长任务的收敛提醒永远不触发）。
+- **宿主自愈前置（观测）**：新增宿主**能力矩阵**（apply 时探测 API 面 + 点名降级项）与**工具事件形状漂移检测**（入参/名字持续解不出且过半即告警 + 落 `host-shape-drift` 度量）——把「六功能静默失效」那类事故变成当场可查，而不是事后反推。
+
 **工程**
 
-- 机制覆盖 **49/49**（新增 mechanism-health / criteria-fixtures 两类，均由行为测试锁定）；全量测试 691 条（以 `npm test` 当场输出为准）；`npm run lint`（架构 / 格式 / 类型 / 机制覆盖）全绿。
+- 机制覆盖 **51/51**（新增 mechanism-health / criteria-fixtures / host-capabilities / host-shape-drift，均由行为测试锁定）；全量测试 698 条（以 `npm test` 当场输出为准）；`npm run lint`（架构 / 格式 / 类型 / 机制覆盖）全绿。
 
 ## v0.8.3 (2026-09-28)
 

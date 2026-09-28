@@ -63,6 +63,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsdown",
+    "prepare": "npm run build",
     "bundle": "tsdown",
     "watch": "tsdown --watch",
     "test": "vitest run",

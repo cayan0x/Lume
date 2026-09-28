@@ -67,13 +67,16 @@ export function noticeText(st: SessionRuntime, id: string): string | null {
 	return st.notices[id]?.text ?? null;
 }
 
-/** 写入：text 为空 → 清空该槽且不计数；超上限 → 不写（返回 false）。 */
+/** 写入：text 为空 → 清空该槽且不计数；文本未变 → 不算新命中；超上限 → 不写（返回 false）。 */
 export function setNotice(st: SessionRuntime, id: string, text: string | null | undefined): boolean {
 	const slot = noticeSlot(st, id);
 	if (!text) {
 		slot.text = null;
 		return false;
 	}
+	// 文本逐字未变 = 同一条提醒仍然生效，**不算新的一次命中**：否则调用方每步重生成同一句
+	// 就会把每会话配额烧光，而这些配额是防噪音用的（见文件头）。
+	if (slot.text === text) return true;
 	if (!noticeOpen(st, id)) return false;
 	slot.text = text;
 	slot.used += 1;

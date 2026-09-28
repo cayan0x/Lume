@@ -21,6 +21,8 @@ export const NOTICE_CAPS: Record<string, number> = {
 	citation: 3,
 	/** 断言-证据对齐（没核实就下的否定断言） */
 	claim: 2,
+	/** 证据时效（引用了过去时间的历史证据、却没写时间归属） */
+	recency: 2,
 	/** 提问核对 */
 	question: 2,
 	/** 需求覆盖核对 */

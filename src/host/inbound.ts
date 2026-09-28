@@ -1,5 +1,8 @@
 import type { SessionEventDeps } from "./session-deps.js";
 import type { SessionRuntime } from "./session-runtime.js";
+// 纯函数与文本构建：直接 import（不走 deps）——它们没有宿主依赖，也免去替身同步的负担。
+import { unqualifiedStaleEvidence } from "../core/recency.js";
+import { buildRecencyDirective } from "./methods.js";
 
 /** 每次会话自动沉淀的条数上限（用户规范 / 助手结论 / 工具结果共用）。 */
 export const AUTO_FACT_CAP = 6;
@@ -160,4 +163,6 @@ export function checkEvidenceNotices(st: SessionRuntime, deps: SessionEventDeps,
 	deps.setNotice(st, "claim", deps.buildClaimDirective(claims));
 	// 提问核对：把"你抛了几个问题"摆出来（现场：4 条"待你定"里 3 条是自己造的疑问）
 	deps.setNotice(st, "question", deps.noticeOpen(st, "question") ? deps.buildQuestionAuditDirective(deps.auditOpenQuestions(text)) : null);
+	// 证据时效：拿旧日志/旧记录当本轮解释、却没写时间归属（条款 P2 的机械兜底；只扫可见回答）
+	deps.setNotice(st, "recency", buildRecencyDirective(deps.noticeOpen(st, "recency") ? unqualifiedStaleEvidence(text) : []));
 }

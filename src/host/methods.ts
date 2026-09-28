@@ -218,6 +218,22 @@ export function buildClaimDirective(claims: Array<{ symbol: string; sentence: st
 	].join("\n");
 }
 
+/**
+ * 〔证据时效〕引用了带明确过去时间的历史证据、又把它当本轮解释，但没写时间归属。
+ * 它顶的是「时间归属」这一句，不判因果对错——机械只能保证「有没有交代时间」。
+ */
+export function buildRecencyDirective(hits: Array<{ when: string; sentence: string; kind: "dated" | "relative" }>): string | null {
+	if (!hits.length) return null;
+	const lines = hits.map(
+		(hit, i) => `${i + 1}. 「${hit.sentence}」→ 引用的时间是「${hit.when}」${hit.kind === "relative" ? "（相对过去的说法）" : ""}`,
+	);
+	return [
+		"〔证据时效〕你引用的历史证据带时间，但没写它和当前问题的时间关系：",
+		...lines,
+		"补一句时间归属：这条落在当前问题的时间窗内吗？若不确定，就照实写「这是历史记录，与当前问题的相关性未确认」，再去找与当前时间窗对应的证据。",
+	].join("\n");
+}
+
 export interface ComposeResult {
 	text: string;
 	/** 实际留下的块数 / 被丢掉的块数（预算压力只有记下来才看得见）。 */

@@ -212,6 +212,7 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		{ text: noticeText(st, "drift") },
 		{ text: noticeText(st, "citation") },
 		{ text: noticeText(st, "claim") },
+		{ text: noticeText(st, "recency") },
 		{ text: noticeText(st, "question") },
 	];
 }

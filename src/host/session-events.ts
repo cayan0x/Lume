@@ -10,6 +10,7 @@
  */
 import type { SessionRuntime } from "./session-runtime.js";
 import { pathKey } from "../core/citations.js";
+import { pickMetricCounters } from "../core/metrics.js";
 import { looksLikeFailure } from "../core/signals.js";
 
 import type { HostPayload } from "./host-context.js";
@@ -263,7 +264,7 @@ export function createSessionEventHandler(deps: SessionEventDeps) {
 							sid,
 							turn: st.turnIndex,
 							id: fire.id,
-							counters: { ...st.triggerCounters },
+							counters: pickMetricCounters(st.triggerCounters),
 						});
 						deps.forceNotice(st, "trigger", fire.text);
 						deps.ctx.logger?.warn?.(

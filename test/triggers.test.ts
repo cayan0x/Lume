@@ -23,6 +23,7 @@ import {
 	evaluateToolTrigger,
 	evaluateTurnTrigger,
 	newTriggerCounters,
+	trailingRun,
 	type ToolTriggerContext,
 	type TriggerCounters,
 } from "../src/host/triggers.js";
@@ -202,6 +203,23 @@ describe("evaluateToolTrigger", () => {
 	it("闲聊轮不触发收敛提醒", () => {
 		const counters = feed("inspect", 20);
 		expect(evaluateToolTrigger(counters, { ...CTX, isTask: false })).toBeNull();
+	});
+
+	it("跨轮撒网也能触发收敛（轮边界清零连击，但跨轮窗口不清）", () => {
+		const counters = feed("inspect", 8);
+		// 轮边界：连击清零（与 host/turn-boundary.ts 的行为一致），但窗口保留
+		counters.inspectStreak = 0;
+		feed("inspect", 6, counters);
+		expect(counters.inspectStreak).toBe(6); // 轮内连击没到阈值（12）
+		const fire = evaluateToolTrigger(counters, CTX);
+		expect(fire?.id).toBe("converge");
+		expect(fire?.text).toContain("14"); // 跨轮累计的只读探查步数
+	});
+
+	it("trailingRun 只数窗口尾部连续同类行为（被打断即归零）", () => {
+		expect(trailingRun(["mutate", "inspect", "inspect", "inspect"] as const, "inspect")).toBe(3);
+		expect(trailingRun(["inspect", "inspect", "mutate"] as const, "inspect")).toBe(0);
+		expect(trailingRun(undefined, "inspect")).toBe(0);
 	});
 });
 

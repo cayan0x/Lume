@@ -38,7 +38,18 @@ export interface TriggerCounters {
 	steps: number;
 	/** 摸到真实文件路径的只读探查次数（设计 pass 的触发依据） */
 	codeInspects: number;
+	/**
+	 * 最近 `TRIGGER_WINDOW` 步的工具行为类别（最新在尾部）。
+	 *
+	 * 为什么单独留一个跨轮窗口：`inspectStreak`/`mutateStreak` 在**轮边界清零**（新一轮是新请求），
+	 * 于是「这个任务连续几轮都在撒网式只读探查」这类**跨轮**症状永远测不到——而真机里最贵的失败
+	 * 恰恰是跨轮不收敛。窗口不随轮边界清零，任务内一直累积，让判据能看见跨轮的撒网/连写。
+	 */
+	recentKinds: ToolKind[];
 }
+
+/** 跨轮滑动窗口大小：必须显著大于最长的阈值（inspectStreak 默认 12，可配置抬高）。 */
+export const TRIGGER_WINDOW = 48;
 
 export function newTriggerCounters(): TriggerCounters {
 	return {
@@ -49,12 +60,25 @@ export function newTriggerCounters(): TriggerCounters {
 		mutations: 0,
 		steps: 0,
 		codeInspects: 0,
+		recentKinds: [],
 	};
+}
+
+/** 窗口尾部连续同类行为的长度（跨轮成立：窗口不随轮边界清零）。 */
+export function trailingRun(kinds: readonly ToolKind[] | undefined, kind: ToolKind): number {
+	if (!kinds) return 0;
+	let run = 0;
+	for (let i = kinds.length - 1; i >= 0 && kinds[i] === kind; i--) run++;
+	return run;
 }
 
 /** 计数器推进：语义是「行为模式」，因此只在类别切换或验证成败时重置。 */
 export function applyToolSignal(counters: TriggerCounters, kind: ToolKind, signals: ResultSignals | null): void {
 	counters.steps++;
+	// 先记跨轮窗口（不随轮边界清零），再走轮内连击的重置逻辑。
+	const window = (counters.recentKinds ??= []);
+	window.push(kind);
+	if (window.length > TRIGGER_WINDOW) window.shift();
 	if (kind === "inspect") {
 		counters.inspectStreak++;
 		return;
@@ -179,10 +203,12 @@ export function evaluateToolTrigger(
 			text: `〔设计缺失〕你已经读了 ${counters.codeInspects} 处代码，但还没有一条设计决策。功能型任务最容易在这里翻车：直接照需求改代码，把「数据落在哪 / 接口长什么样 / 照哪个既有范式」留给临场发挥。现在花一次调用写进 lume_design（point / choice / rejected / impact 各一行），写完再动手。`,
 		};
 	}
-	if (ctx.isTask && counters.inspectStreak >= thresholds.inspectStreak) {
+	// 撒网判定同时看轮内连击与跨轮窗口（轮边界会清零连击，但窗口不会）。
+	const inspectBreadth = Math.max(counters.inspectStreak, trailingRun(counters.recentKinds, "inspect"));
+	if (ctx.isTask && inspectBreadth >= thresholds.inspectStreak) {
 		return {
 			id: "converge",
-			text: `〔收敛提醒〕已连续 ${counters.inspectStreak} 次只读探查，还没有产出契约或改动记录。停止撒网式通读，先把链路复述出来——入口 → 数据流 → 影响面（谁调用、被谁调用、配置与 SQL 绑定）——写成改动记录（lume_change）并回填实际数量，然后带着这份清单回去读缺口。`,
+			text: `〔收敛提醒〕已连续 ${inspectBreadth} 次只读探查，还没有产出契约或改动记录。停止撒网式通读，先把链路复述出来——入口 → 数据流 → 影响面（谁调用、被谁调用、配置与 SQL 绑定）——写成改动记录（lume_change）并回填实际数量，然后带着这份清单回去读缺口。`,
 		};
 	}
 	if (counters.verifyFailStreak > 0 && ctx.diagnosing && !ctx.hypothesesTouched) {

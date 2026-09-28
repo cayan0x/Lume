@@ -41,6 +41,22 @@ export interface MetricCounters {
 	codeInspects: number;
 }
 
+/**
+ * 只取度量需要的计数字段。
+ * host 侧的 TriggerCounters 另带一个「跨轮窗口」（recentKinds）——那是判定用的，别灌进 JSONL。
+ */
+export function pickMetricCounters(counters: MetricCounters): MetricCounters {
+	return {
+		steps: counters.steps,
+		inspectStreak: counters.inspectStreak,
+		mutateStreak: counters.mutateStreak,
+		mutations: counters.mutations,
+		verifyFailStreak: counters.verifyFailStreak,
+		verifyEnvHits: counters.verifyEnvHits,
+		codeInspects: counters.codeInspects,
+	};
+}
+
 interface MetricBase {
 	/** 写入时刻（毫秒）；跨会话统计靠它排序，不靠会话内轮次。 */
 	at: number;

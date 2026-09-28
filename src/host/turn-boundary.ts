@@ -8,6 +8,7 @@
  */
 import type { HostPayload } from "./host-context.js";
 import { claimsVerification, looksLikeFailure } from "../core/signals.js";
+import { pickMetricCounters } from "../core/metrics.js";
 import type { SessionRuntime } from "./session-runtime.js";
 import type { SessionEventDeps } from "./session-deps.js";
 
@@ -50,7 +51,7 @@ export function handleTurnEnd(deps: SessionEventDeps, sid: string, st: SessionRu
 				sid,
 				turn: st.turnIndex,
 				id: fire.id,
-				counters: { ...st.triggerCounters },
+				counters: pickMetricCounters(st.triggerCounters),
 			});
 			if (fire.id === "criteria-drift") {
 				// 契约对账用「交付口径」渲染原始判据：防判据随进展漂移。

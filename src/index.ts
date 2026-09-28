@@ -56,6 +56,7 @@ import { volatileBlocks, type BlockDeps } from "./host/prompt-blocks.js";
 import { initStores } from "./host/bootstrap.js";
 import { focusIdsFor } from "./host/clauses.js";
 import { createMetricsLog } from "./host/metrics-log.js";
+import { pickMetricCounters } from "./core/metrics.js";
 import { createAuxLlm } from "./host/llm-aux.js";
 import type { LumeConfig } from "./host/config.js";
 import { createLlmRouteCell } from "./host/llm-route.js";
@@ -692,7 +693,7 @@ function applyInner(ctx: any, config: LumeConfig = {}): void {
 			at: Date.now(),
 			sid,
 			turn: st.turnIndex,
-			counters: { ...st.triggerCounters },
+			counters: pickMetricCounters(st.triggerCounters),
 			hasContract: state.hasContract,
 			designs: designOf(sid).length,
 			changes: changes.length,

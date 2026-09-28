@@ -23,6 +23,8 @@ import * as taskMemoryMod from "../core/task-memory.js";
 export interface Block {
 	text: string | null;
 	droppable?: boolean;
+	/** 预算超限时**先丢权重低的**（见 methods.composeBlocksDetailed）；缺省 0。 */
+	weight?: number;
 }
 
 /** 装配块所需的一切依赖（显式声明，便于替换与测试）。 */
@@ -43,7 +45,7 @@ export interface BlockDeps {
 	renderHypotheses: (items: Hypothesis[]) => string | null;
 	renderDesign: (items: DesignDecision[]) => string | null;
 	renderRequirements: (items: RequirementAnchor[]) => string | null;
-	renderProjectFacts: (facts: ProjectFact[], limit?: number, currentTask?: string | null) => string | null;
+	renderProjectFacts: (facts: ProjectFact[], limit?: number, currentTask?: string | null, query?: string | null) => string | null;
 	/** 会话记忆：冷启动判定 + 注入渲染（纯函数，来自 core/task-memory） */
 	isColdStart: typeof taskMemoryMod.isColdStart;
 	/** 第一轮装配时 cwd 还没到（宿主快照在装配之后），用 slug→cwd 映射补上 */
@@ -119,7 +121,7 @@ export function volatileBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 		{ text: noticeText(st, "postTurn") },
 		{ text: st.compaction ? deps.buildCompactionNotice(st.compaction, st.turnIndex) : null },
 		{ text: noticeText(st, "protocol") },
-		{ text: deps.reflectionFeedback(), droppable: true },
+		{ text: deps.reflectionFeedback(), droppable: true, weight: 1 },
 		...carrierBlocks(deps, input),
 	];
 }
@@ -168,11 +170,11 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 	return [
 		// 契约：有就回显（交付轮切成核对口径），没有且是任务轮就先教它写一份。
 		{ text: deps.renderContract(contract, st.taskPhase === "deliver") },
-		{ text: !contract && contractMethods && !smallEdit ? deps.buildContractMethodDirective() : null, droppable: true },
+		{ text: !contract && contractMethods && !smallEdit ? deps.buildContractMethodDirective() : null, droppable: true, weight: 1 },
 		// 设计三问：设计型任务且还没写下设计时反复顶（实测一次提示会被忽略）
-		{ text: deps.needsDesignPass(sid, st, query, mode) ? deps.buildDesignMethodDirective() : null, droppable: true },
+		{ text: deps.needsDesignPass(sid, st, query, mode) ? deps.buildDesignMethodDirective() : null, droppable: true, weight: 1 },
 		// 需求解读三条硬规则：用户刚给/改了需求时顶
-		{ text: st.requirementFresh ? deps.buildRequirementMethodDirective(taskMethods) : null, droppable: true },
+		{ text: st.requirementFresh ? deps.buildRequirementMethodDirective(taskMethods) : null, droppable: true, weight: 1 },
 		// 台账与假设：存在就回显——让模型「看见」自己的计划，而不是记在脑子里。
 		{ text: changes.length > 0 ? deps.renderChangeLedger(changes) : null },
 		{ text: deps.renderHypotheses(deps.hypothesesOf(sid)) },
@@ -198,15 +200,21 @@ export function carrierBlocks(deps: BlockDeps, input: BlockInput): Block[] {
 					})
 				: null,
 			droppable: true,
+			weight: 2,
 		},
 		// 项目知识：**任何轮次都渲染**——它是事实（跨会话累积的约定/命令/死路），不是方法指引。
 		// 现场教训：曾只在非问答轮渲染，于是「新开会话先问一句『你知道 X 需求吗』」这种最自然的开场白
 		// 恰好看不到知识，用户会以为沉淀没生效。事实类回显与需求锚点同等处理（可丢块，成本可控）。
-		{ text: deps.renderProjectFacts(deps.factsOf(sid, context), 14, st.sessionTitle), droppable: true },
+		// 权重 3（高）：预算紧张时**先牺牲方法指令，保住事实**；facts 本身按 query 相关性取 top-k。
+		{ text: deps.renderProjectFacts(deps.factsOf(sid, context), 14, st.sessionTitle, query), droppable: true, weight: 3 },
 		// 方法块：按任务形态出现；文档方法论只在判定为文档任务时出现。
-		{ text: isTask && mode !== "question" ? deps.buildImpactDirective() : null, droppable: true },
+		{ text: isTask && mode !== "question" ? deps.buildImpactDirective() : null, droppable: true, weight: 1 },
 		{ text: docDirective ? deps.buildDocumentMethodDirective() : null },
-		{ text: mode === "execute" || mode === "diagnosis" ? deps.buildStructureHint(deps.structureToolName(context)) : null, droppable: true },
+		{
+			text: mode === "execute" || mode === "diagnosis" ? deps.buildStructureHint(deps.structureToolName(context)) : null,
+			droppable: true,
+			weight: 1,
+		},
 		{ text: noticeText(st, "turn") },
 		{ text: noticeText(st, "trigger") },
 		{ text: noticeText(st, "drift") },

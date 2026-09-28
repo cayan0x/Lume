@@ -252,22 +252,34 @@ export interface ComposeResult {
  * 从尾部丢 droppable——丢没丢、丢了几块，此前**没有任何地方知道**。没有这个计数，
  * 「条款该不该做预算」就只能靠感觉。
  */
-export function composeBlocksDetailed(blocks: Array<{ text: string | null; droppable?: boolean }>, budgetChars = 4200): ComposeResult {
-	const present = blocks.filter((block): block is { text: string; droppable?: boolean } => Boolean(block.text));
+export function composeBlocksDetailed(
+	blocks: Array<{ text: string | null; droppable?: boolean; weight?: number }>,
+	budgetChars = 4200,
+): ComposeResult {
+	const present = blocks.filter((block): block is { text: string; droppable?: boolean; weight?: number } => Boolean(block.text));
 	let out = present.map((block) => block.text).join("\n\n");
 	let dropped = 0;
 	if (out.length > budgetChars) {
-		for (let i = present.length - 1; i >= 0 && out.length > budgetChars; i--) {
-			if (!present[i]!.droppable) continue;
-			present.splice(i, 1);
+		// 可丢块按**价值升序**（权重低的先丢）；同权重时更靠后的先丢。
+		// 为什么要显式权重而不是「从尾部丢」：装配顺序会随实现变动，而「事实回显比方法指令更该留」
+		// 是稳定意图——权重把这条意图写进代码并可测（见 prompt-blocks 的 weight）。
+		const droppable = present
+			.map((block, index) => ({ block, index }))
+			.filter(({ block }) => block.droppable)
+			.sort((a, b) => (a.block.weight ?? 0) - (b.block.weight ?? 0) || b.index - a.index);
+		for (const { block } of droppable) {
+			if (out.length <= budgetChars) break;
+			const at = present.indexOf(block);
+			if (at < 0) continue;
+			present.splice(at, 1);
 			dropped++;
-			out = present.map((block) => block.text).join("\n\n");
+			out = present.map((entry) => entry.text).join("\n\n");
 		}
 		if (out.length > budgetChars) out = out.slice(0, budgetChars);
 	}
 	return { text: out, kept: present.length, dropped, chars: out.length, budget: budgetChars };
 }
 
-export function composeBlocks(blocks: Array<{ text: string | null; droppable?: boolean }>, budgetChars = 4200): string {
+export function composeBlocks(blocks: Array<{ text: string | null; droppable?: boolean; weight?: number }>, budgetChars = 4200): string {
 	return composeBlocksDetailed(blocks, budgetChars).text;
 }

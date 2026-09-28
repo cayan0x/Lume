@@ -12,6 +12,7 @@ import { isRequirementStatement } from "./coverage.js";
  * 本模块只做纯逻辑（类型/解析/归一/渲染/上限），IO 在 host/project.ts。
  */
 import { fnv1a32 } from "./sampling.js";
+import { relevanceScore } from "./retrieval.js";
 import { memoryId, numberFacts } from "./memory-id.js";
 import { classifyScope, visibleForTask } from "./scope.js";
 
@@ -341,14 +342,45 @@ function ageLabel(at: number, now = Date.now()): string {
 	return `（${Math.round(hours / 24)} 天前）`;
 }
 
+/** 死路的保留权重：它最省时间，同类下永远优先于其它类别。 */
+const DEADEND_BONUS = 1;
+
+/**
+ * 项目知识选条：条目超过上限时，按「与当前请求的相关性 + 新近度 + 死路优先」取 top-k。
+ *
+ * 为什么不再直接取最近 N 条：facts 是**跨会话累积**的，条数会涨；全量注入既贵又稀释注意力，
+ * 而只按新近度选会漏掉「这个请求正好需要的旧结论」。相关性由本地分词打分（零额外调用），
+ * 空 query 时退化为纯新近度（与旧行为一致）；死路永远优先（重踩一次环境死路的代价最高）。
+ *
+ * 返回**按原顺序**（编号/分组稳定，不因 query 抖动而重排）。
+ */
+export function rankFactsForInjection(
+	entries: { item: ProjectFact; n: number }[],
+	query: string | null | undefined,
+	limit: number,
+): { item: ProjectFact; n: number }[] {
+	if (entries.length <= limit) return entries;
+	const len = entries.length;
+	const scored = entries.map((entry, index) => {
+		// 相关分（0~0.5）主导 + 新近度（0~0.15）只当平局裁决 + 死路固定加成。
+		// 相关分必须能压过新近度，否则「相关的旧结论」永远被「不相关的新条目」挤掉。
+		const score = relevanceScore(query ?? "", entry.item.text) + 0.15 * (index / (len - 1));
+		const bonus = entry.item.kind === "deadend" ? DEADEND_BONUS : 0;
+		return { entry, score: score + bonus };
+	});
+	scored.sort((a, b) => b.score - a.score);
+	const picked = new Set(scored.slice(0, limit).map((entry) => entry.entry));
+	return entries.filter((entry) => picked.has(entry));
+}
+
 /** 渲染项目知识：按类别归组；死路单独成节（它最省时间）。 */
-export function renderProjectFacts(facts: ProjectFact[], limit = 14, currentTask?: string | null): string | null {
+export function renderProjectFacts(facts: ProjectFact[], limit = 14, currentTask?: string | null, query?: string | null): string | null {
 	if (facts.length === 0) return null;
 	const order: ProjectFactKind[] = ["build", "test", "convention", "module", "deadend"];
 	// 作用域隔离：通用知识人人可见；需求级知识只给同一需求看（否则会拿别的需求的结论误导当前需求）。
 	const numbered = numberFacts(facts.filter((fact) => visibleForTask(fact, currentTask)));
 	if (numbered.length === 0) return null;
-	const picked = numbered.slice(-limit);
+	const picked = rankFactsForInjection(numbered, query, limit);
 	const lines: string[] = [];
 	for (const kind of order) {
 		const group = picked.filter((entry) => entry.item.kind === kind);

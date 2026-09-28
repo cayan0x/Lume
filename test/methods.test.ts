@@ -17,6 +17,7 @@ import {
 	buildStructureHint,
 	buildUnverifiedDeliveryNotice,
 	composeBlocks,
+	composeBlocksDetailed,
 } from "../src/host/methods.js";
 
 describe("方法块内容", () => {
@@ -144,5 +145,17 @@ describe("composeBlocks", () => {
 	it("全不可丢且超预算时硬截断（保底不炸）", () => {
 		const text = composeBlocks([{ text: "y".repeat(200) }], 50);
 		expect(text.length).toBe(50);
+	});
+
+	it("超预算时先丢**低权重**的可丢块（事实比方法指令更该留）", () => {
+		const fact = "FACT-".repeat(20); // 100 字符，权重 3
+		const method = "METHOD-".repeat(20); // 120 字符，权重 1
+		const res = composeBlocksDetailed(
+			[{ text: "HEAD" }, { text: fact, droppable: true, weight: 3 }, { text: method, droppable: true, weight: 1 }],
+			120,
+		);
+		expect(res.text).toContain("FACT-");
+		expect(res.text).not.toContain("METHOD-");
+		expect(res.dropped).toBe(1);
 	});
 });

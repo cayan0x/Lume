@@ -16,12 +16,33 @@
 共同点：**坏在「宿主 API 的接线方式」上，而单测用的是假宿主**——所以再多的单测也抓不到。
 结论：发布门禁不能只看测试，必须**对产物本身断言**，并且**先发 next、验证通过才提升 latest**。
 
-## 一、正常发布（三条命令）
+## 一、正常发布（完整清单）
+
+**顺序不能反**：先把 GitHub 侧改干净并绿了，再动 npm —— npm 发出去撤不回来。
 
 ```bash
-npm run release:check          # ① 本地门禁：不变量 + 类型 + 测试 + 构建产物
-npm run release:publish        # ② 两阶段发布：publish --tag next → 验证产物 → 提升 latest
-git tag -a vX.Y.Z -m "…" && git push origin main && git push origin vX.Y.Z
+# 0. 改版本号与 CHANGELOG（package.json 的 version 是唯一事实源）
+# 1. 本地门禁 = 与 CI 完全同一条命令（返回真实退出码；绝不信 cmd 的 %ERRORLEVEL%）
+npm run gate
+
+# 2. main 先推上去，等 CI 绿（推完对照下面的体检清单核对）
+git push origin main
+
+# 3. 对**产物**断言的门禁（会先构建）
+npm run release:check
+
+# 4. 两阶段发布：publish --tag next → 下载真 tarball 复检 → 通过才提升 latest
+npm run release:publish
+
+# 5. 给「已发布的那份代码」打 tag 并推 tag
+git tag -a vX.Y.Z -m "…" && git push origin vX.Y.Z
+
+# 6. 建/更新 GitHub Release（幂等；漏了这步 Releases 页会停在旧版本还顶着 Latest）
+node scripts/gh-release.mjs
+
+# 7. 逐条核对下面「发布后体检」那张表（7 个面都成立才算发布完成）
+
+# 8. 真机：市场里更新 → **完全重启 DSH（含托盘进程）** → npm run verify:live
 ```
 
 `npm run release:publish` 做的事（见 `scripts/publish.mjs`）：
@@ -119,4 +140,43 @@ npm deprecate lume-dsh-plugin@<坏版本> "…"                 # 并给坏版�
 node scripts/gh-release.mjs            # 版本取 package.json；已存在则更新并标记 Latest
 ```
 
-完整顺序：`npm run gate` → `npm run release:check` → `npm run release:publish` → `git push origin main` + `git push origin v<版本>` → **`node scripts/gh-release.mjs`**。
+**完整顺序以上面的「一、正常发布」为唯一事实源**（本文件里任何别的顺序描述都从属于它）。
+
+## 发布后体检（2026-09-28 新增，手工清单）
+
+发布「完成」的判据不是感觉，而是下面这些面**同时**成立。逐条自己核（全是只读命令），任何一条不成立就等于没发布完：
+
+| 面              | 断言                                                                         | 不过会怎样                                    |
+| --------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| 工作区干净      | `git status --porcelain` 为空                                                | 发布窗口夹带未提交改动                        |
+| 已推送          | `origin/main..HEAD` 为空                                                     | 线上不是这份代码                              |
+| CI 绿           | HEAD 的那次 push run = success                                               | 用户拿到没过门禁的版本                        |
+| tag 对得上      | 本地 `vX.Y.Z` 存在，且远端 tag 指向同一 commit                               | 走 GitHub 安装的人拿到错版本                  |
+| npm 指对        | `dist-tags.latest` = `package.json` 的 version                               | 市场装到旧版本                                |
+| GitHub Release  | 存在、正文带安装页脚、且是 Latest                                            | 对外显示「最新版是某个旧版本」（v0.6.1 事故） |
+| 市场条目一致    | 上游 `data/plugins/<owner>__<repo>.yml` 与本地 `docs/hub-pr/` 那份逐字节相同 | 市场文案与代码说的不一样                      |
+| fork 卫生（附） | fork 继承来的定时任务近 7 天没有失败                                         | 每天一封失败邮件（2026-09-28 的 32 连红）     |
+
+**核对的都是「发布后世界的样子」，不是「我以为我发了」。**
+
+## GitHub 安装路径的前置条件（`dsh plugin add github:cayan0x/Lume#vX.Y.Z`）
+
+`dsh plugin …` 是 **pnpm 的薄转发器**（`@deepseek-ai/dsh/lib/plugin-*.js` 原文：a thin pnpm forwarder … run `pnpm <args...>` in the profile directory）。
+git 来源的插件**靠 `prepare` 脚本在安装时构建** —— DSH 自己的报错文案就这么写的：
+「git-hosted plugins build on install via their prepare script, which pnpm blocks until allowed」。
+
+所以这条路有两个前提：
+
+1. **本包必须有 `prepare`**。**本仓目前没有**（2026-09-28 发现，**未改** —— 要不要加待定）：所以现在从 GitHub 装 0.8.2 及更早的 tag，装到的是一个**没有 `lib/` 的空壳**，插件加载不了。修法是在 `package.json` 加 `"prepare": "npm run build"`。
+2. **pnpm 默认拦构建脚本**：用户要按 pnpm 打印出来的那个 key，在 profile 的 `pnpm-workspace.yaml` 里加 `allowBuilds`，再重跑一次。
+
+**npm 路径（推荐）不受这两条影响** —— npm 包里自带构建好的 `lib/`。
+
+## fork 纪律（2026-09-28 血的教训）
+
+fork **只用来装「你的改动分支」**；它继承来的自动化，要么关掉、要么连 fork 一起删。
+
+- fork 会复制 `.github/workflows/`（**含 cron**），但**不会复制绑在仓库上的基础设施**（GitHub Pages、npm trusted publishing/OIDC、secrets）
+  → 上游的「发布型」定时任务在 fork 里**注定每天红**。实例：`Build site from README` 在你的 fork 里每天跑 52 分钟、倒在 `publish the catalog to npm`，**连红 32 天**，每天一封失败邮件；2026-09-28 已禁用（状态 `disabled_manually`，恢复用 `PUT .../actions/workflows/347592895/enable`）。
+- **绝不要**为了让它变绿去 fork 里改 workflow / 开 Pages / 配 token：workflow 来自上游，同步会被覆盖；而且会把 fork main 与上游 main 越推越远，以后提 PR 越容易冲突。
+- fork 的 `main` 只当上游镜像（用 Sync fork）；**每个 PR 开新分支**；检查失败就往**同一个分支**推修复（上游 `contributing.md` 明文）。

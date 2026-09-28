@@ -80,25 +80,28 @@ if (!local.ok) {
 console.log("  ✓ 通过\n");
 
 console.log("② 发布到 next（latest 暂不动）");
-	// 幂等：版本已在 registry 上就别再 publish（重复 publish 会非零退出，被误判成失败）
-	const precheck = await versionOnRegistry(version);
-	if (precheck.ok) {
-		console.log("  · registry 上已经有 " + version + "（跳过 publish，直接进入复检）\n");
-	} else {
+// 幂等：版本已在 registry 上就别再 publish（重复 publish 会非零退出，被误判成失败）
+const precheck = await versionOnRegistry(version);
+// publishOutput 必须在**外层**作用域：它在 ②b 判定「没发出去」时要打印（此前声明在 else 块里，
+// 失败路径会 ReferenceError，把真正的 npm 输出吃掉——2026-09-28 发布时踩到）。
 let publishOutput = "";
-try {
-	publishOutput = run(["publish", "--tag", "next"], { capture: true });
-} catch (error) {
-	publishOutput = String((error && error.stdout) || "") + String((error && error.stderr) || "");
-	console.error(publishOutput.trim().slice(-2000));
-	console.error("✗ npm publish 非零退出 → 已中止（latest 未改动）");
-	process.exit(1);
-}
-
+if (precheck.ok) {
+	console.log("  · registry 上已经有 " + version + "（跳过 publish，直接进入复检）\n");
+} else {
+	try {
+		publishOutput = run(["publish", "--tag", "next"], { capture: true });
+	} catch (error) {
+		publishOutput = String((error && error.stdout) || "") + String((error && error.stderr) || "");
+		console.error(publishOutput.trim().slice(-2000));
+		console.error("✗ npm publish 非零退出 → 已中止（latest 未改动）");
+		process.exit(1);
 	}
+}
 console.log("②b registry 确认（命令返回 0 不算发出去）");
 let landed = false;
-for (let attempt = 1; attempt <= 12; attempt++) {
+// 12 次 × 20s = 4 分钟曾经不够（2026-09-28：PUT 202 后 packument 约 5–6 分钟才可见 → 误判中止）。
+// 放宽到 24 次（8 分钟）：这是**只读轮询**，多等一会儿远比误报「没发出去」安全。
+for (let attempt = 1; attempt <= 24; attempt++) {
 	await new Promise((resolve) => setTimeout(resolve, 20000));
 	const probe = await versionOnRegistry(version);
 	if (probe.ok) {
@@ -106,7 +109,7 @@ for (let attempt = 1; attempt <= 12; attempt++) {
 		console.log("  ✓ registry 已出现 " + version + "（第 " + attempt + " 次查询）\n");
 		break;
 	}
-	console.log("  … 尚未出现（第 " + attempt + " / 12 次）：" + probe.why);
+	console.log("  … 尚未出现（第 " + attempt + " / 24 次）：" + probe.why);
 }
 if (!landed) {
 	console.error("✗ npm publish 退出码为 0，但 registry 上始终没有 " + version + " —— 判定为**没发出去**，已中止（latest 未改动）。");

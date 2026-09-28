@@ -51,6 +51,23 @@ describe("core/recency：证据时效的机械判据", () => {
 		expect(unqualifiedStaleEvidence("因为我记错了，所以结论不对。", { now: NOW })).toHaveLength(0);
 	});
 
+	it("命中：引用了带量的历史数据、却没写它覆盖哪段时间（2026-09-28 实测漏掉的那类）", () => {
+		const hits = unqualifiedStaleEvidence("看了下实际数据，23 个会话 / 658 条记录。", { now: NOW });
+		expect(hits).toHaveLength(1);
+		expect(hits[0]!.kind).toBe("bulk");
+	});
+
+	it("不命中：bulk 不越界（写明了时间窗 / 只有一位数 / 没有数据类名词）", () => {
+		expect(unqualifiedStaleEvidence("本会话这 658 条记录都落在当前时间窗内。", { now: NOW })).toHaveLength(0);
+		expect(unqualifiedStaleEvidence("我读了 12 个文件。", { now: NOW })).toHaveLength(0);
+	});
+
+	it("命中：句中的「现在」不再被当成时间归属（2026-09-28 实测漏报）", () => {
+		const hits = unqualifiedStaleEvidence("因为昨天那次提交改了配置，所以现在测试失败。", { now: NOW });
+		expect(hits).toHaveLength(1);
+		expect(hits[0]!.when).toBe("昨天");
+	});
+
 	it("条数受 limit 约束，且只截取前 N 条", () => {
 		const text = "日志里 2026-09-20 的报错就是原因。上次的记录说明也是这个问题。";
 		expect(unqualifiedStaleEvidence(text, { now: NOW })).toHaveLength(2);

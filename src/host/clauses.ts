@@ -144,14 +144,20 @@ function applyCorrectionClosedLoop(input: FocusInput, ids: string[]): string[] {
 	if (corrections < 2 || input.correction || ids[0] === "align") return ids;
 	const last = input.lastCorrectionTurnByMode?.[input.mode];
 	if (last === undefined || input.turnIndex - last > CORRECTION_LOOP_TURNS) return ids;
-	return ["align", ...ids].slice(0, FOCUS_CLAUSE_LIMIT);
+	const kept = ["align", ...ids].slice(0, FOCUS_CLAUSE_LIMIT);
+	// 保底（2026-09-28）：插入「对齐」会把末位的「证据时效」正好挤出三条之外，而纠正后的下一轮
+	// 正是「拿旧结论当现状」的高发点。被挤出去就用它顶掉最后一条——条数不变，顺序仍然 align 优先。
+	if (ids.includes("evidence-recency") && !kept.includes("evidence-recency")) kept[kept.length - 1] = "evidence-recency";
+	return kept;
 }
 
 /** 闭环的记忆窗口（轮）：超过就不再加权，避免「沾上就摘不掉」。 */
 export const CORRECTION_LOOP_TURNS = 6;
 
 function baseClauseIds(input: FocusInput): string[] {
-	if (input.correction) return ["align", "question-discipline", "independent"];
+	// 纠正轮最该回去核时间窗：被纠正的往往正是「拿旧证据/旧结论当现状」，所以把证据时效提到
+	// 「独立判断」前面（2026-09-28）。
+	if (input.correction) return ["align", "evidence-recency", "question-discipline"];
 	if (input.compactionRecent) return ["context", "evidence-recency", "facts-first"];
 	switch (input.mode) {
 		case "question":

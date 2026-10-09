@@ -12,8 +12,6 @@ export interface AuxLlmDeps {
 	ctx: LumeHostContext;
 	/** 小模型原始输出的诊断落盘路径（调试用；由 index 从 DSH_HOME 推导）。 */
 	llmDumpPath: string;
-	/** 主对话路由（request/context 事件更新，可能为 null）。 */
-	llmRoute: () => { provider: string; model: string } | null;
 }
 
 /** 工厂返回值：deps 边界复用它，避免把签名再抄一遍。 */

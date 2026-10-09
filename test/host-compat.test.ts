@@ -53,10 +53,9 @@ describe("RPC 通道注册", () => {
 		const warnings = harness.loggerWarnings.join("\n");
 		expect(warnings).toContain("失败");
 		expect(warnings).toContain("shapes:");
-		// ★ 事故症状本身被锁死：即使 RPC 完全起不来，界面该有的注入与工具也必须在
+		// 即使 RPC 完全起不来，人设注入与人设工具也必须在。
 		expect(harness.sections["lume:thinking"]).toBeTruthy();
 		expect(harness.sections["lume:persona"]).toBeTruthy();
-		expect(harness.toolNames()).toContain("lume_contract");
 		expect(harness.toolNames()).toContain("lume_remember");
 	});
 
@@ -65,7 +64,7 @@ describe("RPC 通道注册", () => {
 		expect(harness.hasRpc()).toBe(false);
 		expect(harness.sections["lume:thinking"]).toBeTruthy();
 		expect(harness.sections["lume:persona"]).toBeTruthy();
-		expect(harness.toolNames()).toContain("lume_contract");
+		expect(harness.toolNames()).toContain("lume_remember");
 	});
 });
 

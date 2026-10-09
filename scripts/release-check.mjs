@@ -64,235 +64,50 @@ const HOST_INVARIANTS = [
 	},
 ];
 
-/** 分文件断言：每条检查都在指定产物的文本上跑（本版新增行为，防止退化）。 */
+/** 分文件断言：0.9 仅保留人设/轻量纪律相关不变量，旧任务机制已全部移除。 */
 const FILE_INVARIANTS = [
 	{
-		id: "claim-gate",
-		files: ["lib/core/citations.js", "lib/host/methods.js"],
-		what: "断言-证据对齐（否定断言要么给行号、要么本会话见过）",
-		incident: '2026-09-23 文档："resultMap 里 create_id/modify_id 都没映射" 其实是错的（已映射），而它支撑了"必须另开一列"这个决策',
-		check: (text) => text.includes("unsupportedClaims") && text.includes("recordSymbols") && text.includes("断言核对"),
+		id: "persona-layering",
+		file: "lib/host/injection.js",
+		what: "人设契约与运行时上下文分层存在（稳定 system + 易变 context）",
+		incident: "人设记忆和语料混入 system 段会让每轮更新都作废前缀缓存",
+		check: (text) => text.includes("buildPersonaContractSection") && text.includes("buildPersonaRuntimeSection"),
 	},
 	{
-		file: "lib/core/ledger.js",
-		id: "project-key-null",
-		what: "projectKeyOf 拿不到 cwd 时返回 null（不再回落 unknown，避免跨项目串味）",
-		incident: "2026-09-22 现场：facts 表的键是 unknown，所有项目的知识混在一个桶里",
-		check: (text) => text.includes("export function projectKeyOf") && !text.includes('return "unknown"'),
+		id: "persona-context-channel",
+		file: "lib/host/sections.js",
+		what: "宿主支持时，人设易变内容通过 systemPrompt.context 注入",
+		incident: "所有内容都写入 systemPrompt.section 会破坏缓存分层",
+		check: (text) => text.includes("systemPrompt.context") && text.includes("runtimeContextText"),
 	},
 	{
-		files: ["lib/host/session-events.js"],
-		id: "auto-change-ledger",
-		what: "mutate 类工具调用会自动写入改动台账（不依赖模型自觉）",
-		incident: "0.7.0 实测：lume_change 零调用、ledger 表 0 行——载具写了却永远空着",
-		// 空白宽容：源码格式化（prettier）不该让门禁变红，行为由 apply-carriers 测试兜底
-		check: (text) => /upsertChange\(sid,\s*\{\s*target/.test(text) && /summarizeToolChange|（自动）/.test(text),
+		id: "persona-tools-only",
+		file: "lib/host/tools.js",
+		what: "模型侧只暴露记忆、风格更新和创建人设三个工具",
+		incident: "0.9 移除任务台账、契约、项目知识与补丁工具，避免继续注入重任务协议",
+		check: (text) => {
+			const names = [...text.matchAll(/name:\s*["'](lume_[a-z_]+)["']/g)].map((match) => match[1]);
+			return names.length === 3 && ["lume_remember", "lume_update_style", "lume_create_persona"].every((name) => names.includes(name));
+		},
 	},
 	{
-		files: ["lib/host/tools.js"],
-		id: "contract-count-required",
-		what: "lume_contract 的 expectCount 在 schema 里必填（否则模型只填目标就交差）",
-		incident: "0.7.0 实测：3 份真实契约的 expectCount/actualCount 全是 -1（未估未回填）",
-		check: (text) => text.includes('expectCount: { type: "number", required: true'),
-	},
-	{
-		file: "lib/core/coverage.js",
-		id: "requirement-coverage",
-		what: "需求覆盖核对存在：按**用户原文**切条目，并把需求原句与交付物里的句子并列（替代模型自证式「N 条全有落点」）",
-		incident:
-			"2026-09-23 现场：交付文档自称「8 条全有落点、已验证」，那张对照表却是模型自己切自己填的；实际藏着三类硬伤——与需求原文矛盾（历史权限人）、论据错（resultMap）、落点错（whereSql），最后靠人让 goose 复核才发现",
+		id: "persona-rpc",
+		file: "lib/host/rpc.js",
+		what: "人设选择、蒸馏、记忆与角色卡 RPC 仍在产物中",
+		incident: "精简任务层时不得误删人设管理能力",
 		check: (text) =>
-			text.includes("export function splitRequirementItems") &&
-			text.includes("export function coverageRows") &&
-			text.includes("export function danglingSectionRefs"),
+			["getSessionPersona", "distillStart", "getMemory", "exportPersona", "importPersona"].every((endpoint) => text.includes(endpoint)),
 	},
 	{
-		file: "lib/core/citations.js",
-		id: "citation-gate",
-		what: "引用-证据对齐存在：回答里引用没读过的行会被核对（unsupportedCitations + 证据索引）",
-		incident: "2026-09-23 现场：模型用「单条新增分支」的注释（:159-160）断定导入路径不改 status，用户反问后才认错（导入路径在 :534）",
-		check: (text) => text.includes("export function unsupportedCitations") && text.includes("export function recordReadArgs"),
-	},
-	{
-		files: ["lib/host/project-access.js"],
-		id: "auto-verify-ledger",
-		what: "成功的真验证会自动把台账推进到 verified，失败立刻顶「先修红」（不依赖模型调 lume_change）",
-		incident: "0.7.4 实测：4 个会话 0 次 lume_change、0 次状态推进——「未验证」永远是未验证",
-		check: (text) => text.includes("verifyChanges(sid, { before") && text.includes("settleVerification"),
-	},
-	{
-		file: "lib/core/signals.js",
-		id: "real-verify-command",
-		what: "真验证判据存在（git grep 这类通用命令不算验证，避免把「未验证」洗白）",
-		incident: "自动推进台账若把 git grep 当验证，台账会撒谎——比不做更糟",
-		check: (text) => text.includes("export function isRealVerifyCommand") && text.includes("REAL_VERIFY_RE"),
-	},
-	{
-		files: ["lib/core/signals.js", "lib/host/methods.js", "lib/host/inbound.js"],
-		id: "question-audit",
-		what: "提问纪律的结构化核对存在：一轮抛出 >2 条「待你定」会被核对（把核实责任推回模型）",
-		incident: "2026-09-23 现场：用户只问「方案清楚了吗」，模型回 4 条待你定、其中 3 条是自己造的疑问（用户反问后才撤）",
-		check: (text) => text.includes("auditOpenQuestions") && text.includes("buildQuestionAuditDirective"),
-	},
-	{
-		files: ["lib/host/project-access.js"],
-		id: "pending-facts-flush",
-		what: "项目知识在 cwd 未知时暂存、拿到 cwd 后补落盘（不再静默丢弃）",
-		incident: "2026-09-23 现场：模型主动调 3 次 lume_project_note，全部因「无法确定工作目录」被丢弃，facts 表一条没有",
-		check: (text) => text.includes("flushPendingFacts") && text.includes("pendingFacts"),
-	},
-	{
+		id: "lightweight-discipline",
 		file: "lib/host/thinking.js",
-		id: "question-discipline",
-		what: "恒定协议含「提问纪律」（先核实前提／待确认 ≤2／不许把「我没查环境」列成待你定）",
-		incident: "现场：规则的**位置**决定它生不生效——挂在〔需求解读〕上时，产生假问题的那一轮它不在场",
-		check: (text) => text.includes("提问纪律") && text.includes("待确认"),
-	},
-	{
-		file: "lib/host/protocol.js",
-		id: "execute-extra-re",
-		what: "执行动词补充表存在（重构/梳理/删掉/合并…不再被判成问答）",
-		incident: "现场实测：「帮我重构订单退费链路」被判成问答 → 方法层与阶段门控都不生效",
-		check: (text) => text.includes("EXECUTE_EXTRA_RE"),
-	},
-	{
-		files: ["lib/host/session-events.js", "lib/core/ledger.js", "lib/host/inbound.js"],
-		id: "requirement-anchor",
-		what: "需求锚点由插件自动落账并逐字回显（renderRequirements）",
-		incident: "2026-09-23 现场：契约 0 次调用、用户原话没被固定 → 模型用自己的转述工作（新增字段→复用 create_id）",
-		check: (text) => text.includes("renderRequirements") && text.includes("appendRequirement"),
-	},
-	{
-		file: "lib/core/signals.js",
-		id: "requirement-drift",
-		what: "需求漂移词法检测存在（模型输出里出现需求没提的变更类型词就顶一句）",
-		incident: "现场：需求说「新增选项」，模型推论「删除/割接」，被用户当场纠正两次",
-		check: (text) => text.includes("unrequestedChangeWords"),
-	},
-	{
-		file: "lib/host/methods.js",
-		id: "design-respects-spec",
-		what: "设计三问以「需求已明确的选择照做」为前提（不再鼓励重新论证需求）",
-		incident: "现场：模型拿需求写死的「新增字段」去论证「复用 create_id/modify_id」，被判「没有代码设计架构的思想」",
-		check: (text) => text.includes("需求已明确") && text.includes("照做"),
-	},
-	{
-		file: "lib/host/methods.js",
-		id: "design-method-block",
-		what: "设计三问方法块存在（数据落在哪 / 接口长什么样 / 照哪个既有范式 + 取舍/回归面/分期）",
-		incident: "2026-09-23 现场：B2I 优惠视图与订单属性需求，模型澄清需求 + 找代码后直接动手，全程 0 条设计决策",
-		check: (text) => text.includes("设计三问") && text.includes("lume_design"),
-	},
-	{
-		files: ["lib/host/tools.js", "lib/core/ledger.js"],
-		id: "design-carrier",
-		what: "lume_design 载具已注册且设计决策会回显（renderDesign）",
-		incident: "同上：设计决策必须跨轮/跨压缩留在上下文里，否则会随进展漂移",
-		check: (text) => text.includes('"lume_design"') && text.includes("renderDesign"),
-	},
-	{
-		file: "lib/host/triggers.js",
-		id: "triggers-name-tools",
-		what: "触发器文案点名工具（增量验证→lume_change；验证降级→lume_project_note）",
-		incident: "现场实测：方法块/提醒不点名工具时，模型不会调用（lume_change 零调用）",
-		check: (text) => text.includes("lume_change") && text.includes("lume_project_note"),
-	},
-	// 知识作用域：需求特有的结论不该污染别的需求（知识按工作目录共享，会串味）。
-	{
-		id: "knowledge-scope",
-		files: ["lib/core/scope.js", "lib/core/ledger.js", "lib/host/session-events.js"],
-		what: "作用域：repo（同仓库通用）/ task（该需求特有）；注入时按当前需求过滤",
-		incident: "2026-09-24：需求级结论（如某需求的列名约定）出现在别的需求注入里，占额度还误导",
-		check: (text) => text.includes("classifyScope") && text.includes("visibleForTask") && text.includes("taskTitle"),
-	},
-	// 记忆 ID：去重从模糊文本比对升级为内容寻址（同主题 → 同 id → 精确合并/覆盖），并给每条显示编号。
-	{
-		id: "memory-id",
-		files: ["lib/core/memory-id.js", "lib/core/ledger.js", "lib/host/project.js"],
-		what: "内容寻址记忆：topicKey → fnv1a32 id；同 id 精确合并，更具体才覆盖；注入显示 #n·id",
-		incident: "2026-09-24：只靠 Jaccard 去重时，同义不同词会写两条；且先到先得会把后来更完整的表述丢掉",
-		check: (text) => text.includes("memoryId") && text.includes("isMoreSpecific") && text.includes("deleteFactById"),
-	},
-	// 会话记忆：上下文不能当记忆载体 —— 撑满时宿主压缩会失败，必须能把进度搬到新会话（现场：context overflow）。
-	{
-		id: "task-memory",
-		files: ["lib/core/task-memory.js", "lib/host/project.js", "lib/host/session-events.js"],
-		what: "会话记忆：每轮导出 + 冷启动注入 + 上下文压力预警",
-		incident: "2026-09-24 现场：会话撑满后压缩失败，新开窗口认不出旧会话的进度（用户只能自己手写会话记忆.md）",
-		check: (text) => text.includes("renderTaskMemory") && text.includes("contextPressure") && text.includes("task_memory"),
-	},
-	// 会话补蒸馏：已经撑满的会话也能补出知识（记录在硬盘上，压缩失败不等于内容丢失）。
-	// 反例价值：上下文溢出 → 宿主 compaction 失败 → 会话再产不出事件，期间没沉淀的知识会永久丢。
-	{
-		id: "session-backfill",
-		file: "lib/host/backfill.js",
-		what: "补蒸馏：扫最近 7 天会话文件（含已撑满的），机械提炼后写进跨会话知识",
-		incident: "2026-09-24 现场：compaction/end 报 context overflow，会话聊不动；该会话 1711 个事件里的知识只能靠离线补",
-		check: (text) => text.includes("recentSessionFiles") && text.includes("startBackfill") && text.includes("session.v3.jsonl.zstd"),
-	},
-	// ── 0.8.4：机制健康 / 判据集中化 / 宿主自愈观测 / 注入治理 / 撤销入口 ──
-	{
-		id: "mechanism-health",
-		files: ["lib/core/mechanisms.js", "lib/core/metrics.js", "lib/host/session-events.js"],
-		what: "机制健康自检：机制目录 + 命中随状态快照落盘 + 从未命中报告（含 lume_* 工具使用）",
-		incident: "本版前的病根：机制静默失效无法从数据里看见，只能翻日志（六功能一起死过）",
-		check: (text) => text.includes("MECHANISMS") && text.includes("neverFired") && text.includes("mechanismFires"),
-	},
-	{
-		id: "criteria-registry",
-		file: "lib/core/criteria.js",
-		what: "词法判据集中到单一注册表（每条带正/反例，fixture 门禁）",
-		incident: "误报的旧修法是「加一张例外表」——换个词同一个 bug 原样再来",
-		check: (text) => text.includes("CRITERIA") && text.includes("SENSITIVE_RE"),
-	},
-	{
-		id: "host-capabilities",
-		file: "lib/host/capabilities.js",
-		what: "宿主能力矩阵：apply 时探测 API 面并点名降级项",
-		incident: "静默降级（宿主不支持某 API）只能靠行为反推",
-		check: (text) => text.includes("probeHostCapabilities") && text.includes("degradedCapabilities"),
-	},
-	{
-		id: "host-shape-drift",
-		files: ["lib/core/host-shape.js", "lib/host/session-events.js"],
-		what: "工具事件形状漂移检测：入参/名字持续解不出即告警并入度量",
-		incident: "2026-09-23：arguments 是字符串 → 六个依赖入参的机制一起静默失效",
-		check: (text) => text.includes("isShapeDrift") && text.includes("host-shape-drift"),
-	},
-	{
-		id: "facts-ranking",
-		file: "lib/core/ledger.js",
-		what: "项目知识按相关性取 top-k（相关性主导 + 新近度 + 死路优先）",
-		incident: "facts 跨会话累积会涨，全量注入既贵又稀释注意力",
-		check: (text) => text.includes("rankFactsForInjection"),
-	},
-	{
-		id: "block-budget-weight",
-		files: ["lib/host/methods.js", "lib/host/prompt-blocks.js"],
-		what: "块预算按权重丢块（事实回显优先于方法指令）",
-		incident: "原先按数组尾部顺序丢，项目知识反而先被牺牲",
-		check: (text) => text.includes("weight") && text.includes("droppable"),
-	},
-	{
-		id: "forget-entry",
-		files: ["lib/host/tools.js", "lib/host/project-access.js", "lib/host/project.js", "lib/host/rpc.js"],
-		what: "撤销入口：lume_forget 工具 + deleteProjectEntry RPC（改动/假设/设计/需求/知识）",
-		incident: "自动入账的条目此前没有定点删除入口，记错只能整库清空",
-		check: (text) => text.includes("lume_forget") && text.includes("forgetEntry") && text.includes("deleteProjectEntry"),
-	},
-	{
-		id: "notice-idempotent",
-		file: "lib/host/notices.js",
-		what: "setNotice 文本未变不算新命中（防每步重生成烧光每会话配额）",
-		incident: "配额是防噪音用的；重复计费会让机制形同虚设",
-		check: (text) => text.includes("slot.text === text"),
-	},
-	{
-		id: "trigger-cross-turn",
-		file: "lib/host/triggers.js",
-		what: "收敛判定含跨轮滑动窗口（轮边界清零连击后仍能看见跨轮撒网）",
-		incident: "轮内连击在 turn/end 被清零 → 长任务的收敛提醒永不触发",
-		check: (text) => text.includes("recentKinds") && text.includes("trailingRun"),
+		what: "任务侧只保留固定轻量纪律，不再包含路由、阶段或台账协议",
+		incident: "0.9 的目标是完整保留人设能力，同时移除重任务编排",
+		check: (text) =>
+			text.includes("LIGHTWEIGHT_DISCIPLINE") &&
+			!["lume_contract", "lume_change", "lume_design", "lume_project_note", "lume_forget", "lume_patch"].some((name) =>
+				text.includes(name),
+			),
 	},
 ];
 
@@ -418,20 +233,8 @@ async function collectTarget(publishedVersion) {
 			"lib/index.js",
 			"lib/client.js",
 			"lib/host/rpc-bridge.js",
-			"lib/core/ledger.js",
-			"lib/core/signals.js",
-			"lib/host/protocol.js",
-			"lib/host/triggers.js",
-			"lib/host/methods.js",
-			"lib/host/project.js",
 			"lib/host/session-runtime.js",
 			"lib/host/tools.js",
-			"lib/host/session-events.js",
-			"lib/host/prompt-blocks.js",
-			"lib/host/notices.js",
-			"lib/host/host-events.js",
-			"lib/core/coverage.js",
-			"lib/core/citations.js",
 			"lib/core/persona-limits.js",
 			"lib/host/thinking.js",
 		];
@@ -568,7 +371,7 @@ async function main() {
 		rows.push({
 			id: "protocol-text-fingerprint",
 			ok: true,
-			what: `协议正文指纹 ${digest}（改动会作废整段前缀缓存 ~190K tokens，请攒批）`,
+			what: `轻量纪律指纹 ${digest}（改动会作废整段前缀缓存，请攒批）`,
 			incident: "",
 		});
 	}

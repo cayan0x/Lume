@@ -21,7 +21,7 @@ const UPSTREAM = "awesome-dsh-plugin/awesome-dsh-plugin";
 // 提交前先验证 YAML —— 2026-09-25 PR #5888 就因为内层裸双引号被索引 CI 判 invalid YAML
 assertYamlValid(new URL("cayan0x__Lume.yml", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const ENTRY = "data/plugins/cayan0x__Lume.yml";
-const BRANCH = "update-cayan0x-lume-description";
+const BRANCH = "update-cayan0x-lume-description-090";
 
 /**
  * 提交前必须**用真解析器验证 YAML**——只数引号是否成对是不够的：
@@ -46,7 +46,7 @@ function assertYamlValid(file) {
 	parse(raw); // 解析失败会抛
 }
 
-const TITLE = "Update description for cayan0x/Lume (trim to a short blurb; drop claims that no longer match the code)";
+const TITLE = "Update cayan0x/Lume description for 0.9.0 persona focus";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** 统一用 capture 模式跑外部命令，失败时把 stderr 一并抛出，便于定位。 */

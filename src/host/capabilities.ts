@@ -18,7 +18,6 @@ export interface HostCapabilityMatrix {
 	storageDomainOpen: boolean;
 	connectionRpc: boolean;
 	webServerRegister: boolean;
-	tokenMeter: boolean;
 	llm: boolean;
 }
 
@@ -50,7 +49,6 @@ export function probeHostCapabilities(ctx: LumeHostContext): HostCapabilityMatri
 		storageDomainOpen: hasFn(ctx.storageDomain, "open"),
 		connectionRpc: hasFn(rpc, "handle"),
 		webServerRegister: hasFn(safeGet(ctx, "webServer"), "register"),
-		tokenMeter: Boolean(safeGet(ctx, "tokenMeter")),
 		llm: Boolean(safeGet(ctx, "llm")),
 	};
 }
@@ -64,7 +62,6 @@ export function formatCapabilityMatrix(caps: HostCapabilityMatrix): string {
 		`storageDomain.open=${caps.storageDomainOpen}`,
 		`connection.rpc=${caps.connectionRpc}`,
 		`webServer.register=${caps.webServerRegister}`,
-		`tokenMeter=${caps.tokenMeter}`,
 		`llm=${caps.llm}`,
 	].join(" ");
 }

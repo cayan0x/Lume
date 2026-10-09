@@ -13,13 +13,7 @@ const fullHost = {
 	tools: { register: fn },
 	storageDomain: { open: fn },
 	get: (name: string) =>
-		name === "connection"
-			? { rpc: { handle: fn } }
-			: name === "webServer"
-				? { register: fn }
-				: name === "tokenMeter" || name === "llm"
-					? {}
-					: null,
+		name === "connection" ? { rpc: { handle: fn } } : name === "webServer" ? { register: fn } : name === "llm" ? {} : null,
 } as unknown as LumeHostContext;
 
 describe("host/capabilities：能力矩阵探测", () => {
@@ -32,7 +26,6 @@ describe("host/capabilities：能力矩阵探测", () => {
 			storageDomainOpen: true,
 			connectionRpc: true,
 			webServerRegister: true,
-			tokenMeter: true,
 			llm: true,
 		});
 		expect(degradedCapabilities(caps)).toEqual([]);
@@ -49,7 +42,6 @@ describe("host/capabilities：能力矩阵探测", () => {
 			storageDomainOpen: false,
 			connectionRpc: false,
 			webServerRegister: false,
-			tokenMeter: false,
 			llm: false,
 		});
 		expect(degradedCapabilities(caps)).toContain("systemPromptContext");

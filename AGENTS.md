@@ -26,8 +26,8 @@
 
 - 插件入口 / 接线：`src/index.ts`
 - 宿主层：`src/host/`（`rpc.ts`、`rpc-bridge.ts`、`injection.ts`、`project.ts`、`triggers.ts`、`tools.ts`、`session-events.ts`…）
-- 任务载具 / 台账 / 判据：`src/core/`（`ledger.ts`、`criteria.ts`、`mechanisms.ts`、`metrics.ts`…）
-- 协议正文：`src/host/thinking.ts`；条款加权：`src/host/clauses.ts`
+- 人设核心：`src/host/injection.ts`、`identity.ts`、`extraction.ts`、`distill.ts`、`registry.ts`
+- 轻量纪律：`src/host/thinking.ts`（固定短文本，不做任务路由或动态加权）
 - 构建：`npm run build` = `tsc -p tsconfig.build.json`（出 `lib/` 的 host/core）**+** `tsdown`（出 `lib/client.js`）。**只跑 tsdown 不会更新 host/core 的产物。**
 - 发布：`RELEASING.md`；架构：`ARCHITECTURE.md`；变更：`CHANGELOG.md`
 

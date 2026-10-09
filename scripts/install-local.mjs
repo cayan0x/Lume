@@ -56,11 +56,10 @@ function projectedGeneration() {
  * 也别留一条永远为假的审计项。
  */
 const MARKERS = [
-	["轨迹路由", "classifyWithTrajectory"],
-	["判据可归因", "classifyInteractionDetailed"],
-	["条款预算", "focusIdsFor"],
-	["装配记账", "composeBlocksDetailed"],
-	["运行时度量", "metricsLog"],
+	["轻量纪律", "LIGHTWEIGHT_DISCIPLINE"],
+	["人设契约", "buildPersonaContractSection"],
+	["人设记忆", "buildPersonaRuntimeSection"],
+	["人设工具", "lume_remember"],
 	["提示段注册", "installPromptSections"],
 	["RPC 通道", "RPC 通道 /lume"],
 ];
@@ -109,8 +108,8 @@ for (const root of new Set(ROOTS.filter(Boolean))) {
 			if (existsSync(path.join(ROOT, file))) cpSync(path.join(ROOT, file), path.join(pkg, file));
 		}
 		const index = readFileSync(path.join(pkg, "lib", "index.js"), "utf8");
-		const protocol = existsSync(path.join(pkg, "lib", "host", "protocol.js"))
-			? readFileSync(path.join(pkg, "lib", "host", "protocol.js"), "utf8")
+		const protocol = existsSync(path.join(pkg, "lib", "host", "thinking.js"))
+			? readFileSync(path.join(pkg, "lib", "host", "thinking.js"), "utf8")
 			: "";
 		const all = index + protocol;
 		console.log(`     ${MARKERS.map(([label, marker]) => `${label}=${all.includes(marker)}`).join("  ")}`);

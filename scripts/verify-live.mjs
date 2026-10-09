@@ -40,11 +40,7 @@ const tail = log.slice(-400000);
 const loads = tail.split("\n").filter((l) => l.includes("lume: 已加载"));
 check("插件已加载（最近一次）", loads.length > 0, loads.slice(-1)[0]?.slice(0, 120) ?? "没有「已加载」行");
 const capability = loads.slice(-1)[0]?.match(/能力=[^）]*/)?.[0] ?? null;
-check(
-	"能力行含新层（载具/触发器/设计 pass/需求锚点）",
-	Boolean(capability && /载具/.test(capability) && /触发器/.test(capability)),
-	capability ?? "能力行缺失",
-);
+check("能力行是人设轻量版", Boolean(capability && /人设/.test(capability) && /轻量纪律/.test(capability)), capability ?? "能力行缺失");
 
 // ② RPC 通道：主路径 or 自注册回退，二者其一即可；但出现 shapes: 说明两路都挂
 const rpcLines = tail.split("\n").filter((l) => l.includes("lume: RPC 通道"));
@@ -56,25 +52,7 @@ check(
 	"出现 shapes: 说明 registerRpcChannel 两路都失败",
 );
 
-// ③ 补蒸馏跑了（这条以前是静默的）
-const backfill = tail.split("\n").filter((l) => l.includes("会话补蒸馏收尾"));
-check("启动补蒸馏有收尾留痕", backfill.length > 0, backfill.slice(-1)[0]?.slice(0, 140) ?? "没有收尾行（可能静默跳过）");
-
-// ④ 知识桶有内容
-const storePath = join(HOME, "harness", "storages", "lume_project.json");
-let factsTotal = 0;
-let taskScoped = 0;
-if (existsSync(storePath)) {
-	const store = JSON.parse(readFileSync(storePath, "utf8"));
-	for (const list of Object.values(store.tables?.facts ?? {})) {
-		const arr = Array.isArray(list) ? list : [];
-		factsTotal += arr.length;
-		taskScoped += arr.filter((f) => f.scope === "task").length;
-	}
-}
-check("跨会话知识非空", factsTotal > 0, `${factsTotal} 条（其中按需求归属 ${taskScoped} 条）`);
-
-// ⑤ 最近会话里真的注入了提示块
+// ③ 最近会话里真的注入了人设与轻量纪律
 const sessionsRoot = join(HOME, "harness", "sessions");
 const MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
 const decode = (file) => {
@@ -115,11 +93,11 @@ for (const slug of readdirSync(sessionsRoot)) {
 }
 if (newest) {
 	const text = decode(newest.file);
-	const blocks = { "项目知识｜本目录": /项目知识｜本目录/g, 需求锚点: /需求锚点/g, 改动台账: /改动台账/g, 当前请求路由: /当前请求路由/g };
+	const blocks = { 轻量工作纪律: /轻量工作纪律/g, 人设契约: /说话人切换/g, 人设记忆: /你记得/g };
 	const detail = Object.entries(blocks)
 		.map(([name, re]) => `${name} ${(text.match(re) ?? []).length}`)
 		.join(" · ");
-	check("最近会话里有注入块", /项目知识｜本目录|需求锚点|当前请求路由/.test(text), `${newest.sub.slice(0, 18)} → ${detail}`);
+	check("最近会话里有人设或轻量注入", /轻量工作纪律|说话人切换|你记得/.test(text), `${newest.sub.slice(0, 18)} → ${detail}`);
 }
 
 // ⑥ 客户端产物可解析（Harness 起不来的那次就是这里）
@@ -152,35 +130,5 @@ try {
 console.log("── 清单 ──");
 for (const row of rows) console.log(`  ${row.ok ? "✔" : "✘"} ${row.name}${row.detail ? "：" + row.detail : ""}`);
 const failed = rows.filter((r) => !r.ok);
-console.log(`\n结论：${failed.length === 0 ? "全部通过（可真机发布）" : `不通过（${failed.length} 项）`}`);
-process.exit(failed.length === 0 ? 0 : 1);
-try {
-	const liveRoot = join(HOME, "harness", "profiles", ".generations", "live");
-	const gens = readdirSync(liveRoot)
-		.map((name) => ({ name, file: join(liveRoot, name, "node_modules", "lume-dsh-plugin", "lib", "client.js") }))
-		.filter((g) => existsSync(g.file))
-		.map((g) => ({ ...g, m: statSync(g.file).mtimeMs }))
-		.sort((a, b) => b.m - a.m);
-	if (gens.length === 0) check("live 客户端产物可解析", false, "没找到 lib/client.js");
-	else {
-		let bad = 0;
-		for (const g of gens) {
-			try {
-				new vm.Script(readFileSync(g.file, "utf8"));
-			} catch {
-				bad++;
-			}
-		}
-		check(
-			"live 客户端产物可解析（全部 " + gens.length + " 个）",
-			bad === 0,
-			bad === 0 ? "最新 " + gens[0].name.slice(0, 40) : bad + " 个解析失败",
-		);
-	}
-} catch (error) {
-	check("live 客户端产物可解析", false, String(error).slice(0, 120));
-}
-console.log("── 清单 ──");
-for (const row of rows) console.log(`  ${row.ok ? "✔" : "✘"} ${row.name}${row.detail ? "：" + row.detail : ""}`);
 console.log(`\n结论：${failed.length === 0 ? "全部通过（可真机发布）" : `不通过（${failed.length} 项）`}`);
 process.exit(failed.length === 0 ? 0 : 1);

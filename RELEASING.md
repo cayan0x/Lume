@@ -1,5 +1,5 @@
 > 注：`lib/` 是构建产物，**不入库**（只在磁盘上）。`release:check` 会先 `npm run build`，
-> 另外：**发布前必跑 `npm run verify:live`**（真机清单，只读：加载行 / 能力行 / RPC 两路 / 补蒸馏留痕 / 知识桶 / 注入块 / 客户端产物可解析）。
+> 另外：**发布前必跑 `npm run verify:live`**（真机清单，只读：加载行 / 人设轻量能力行 / RPC 两路 / 人设注入 / 客户端产物可解析）。
 > `install-local` / `npm pack` 也都从磁盘读 `lib/`——所以流程不变，只是产物不进版本库。
 
 # 发布流程（RELEASING）
@@ -110,7 +110,7 @@ npm deprecate lume-dsh-plugin@<坏版本> "…"                 # 并给坏版�
    lume: RPC 通道 /lume = rpc.handle 失败(…) | webServer.register(自注册路由)   ← 回退生效（同样可用）
    lume: RPC 通道 /lume = rpc.handle 失败(…) | webServer.register 失败(…) | shapes: …  ← 把这一行发出来
    ```
-3. 确认人设菜单可用、`lume_contract` 等载具工具出现在工具列表里
+3. 确认人设菜单可用，工具列表里只有 `lume_remember`、`lume_update_style`、`lume_create_persona` 三个 Lume 工具
 
 ## 发布顺序纪律（2026-09-25 起，用户要求）
 

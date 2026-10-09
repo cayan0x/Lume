@@ -36,12 +36,6 @@ export interface LumeRpcDeps {
 	identity: IdentityStore | null;
 	/** 蒸馏任务Runner；蒸馏管线不可用时为 null。 */
 	distill: DistillJobRunner | null;
-	/** 任务载具与项目知识的只读视图（诊断用；未接线时返回 null）。 */
-	getProjectState?: (sessionId: string) => unknown;
-	/** 清空当前项目的知识积累（不可逆）。 */
-	clearProjectFacts?: (sessionId: string) => Promise<boolean>;
-	/** 撤销一条记录（改动/假设/设计/需求/知识）。 */
-	deleteProjectEntry?: (sessionId: string, kind: string, ref: string) => Promise<boolean>;
 }
 
 function requireString(payload: unknown, field: string): string | null {
@@ -63,31 +57,6 @@ export function createLumeRpcHandler(deps: LumeRpcDeps) {
 		switch (endpoint) {
 			case "list": {
 				return { ok: true, value: registry.list() };
-			}
-			case "getProjectState": {
-				// 任务载具 + 项目知识的只读视图（诊断/排查用；未接线时返回 null）。
-				const sessionId = requireString(payload, "sessionId");
-				if (!sessionId) return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
-				return { ok: true, value: deps.getProjectState?.(sessionId) ?? null };
-			}
-			case "clearProjectFacts": {
-				// 清空当前项目的知识积累（不可逆）。项目知识是工作事实，用户有权一键忘掉。
-				const sessionId = requireString(payload, "sessionId");
-				if (!sessionId) return { ok: false, error: { code: "bad-request", message: "sessionId is required" } };
-				const cleared = (await deps.clearProjectFacts?.(sessionId)) ?? false;
-				return { ok: true, value: { cleared } };
-			}
-			case "deleteProjectEntry": {
-				// 撤销一条记录（改动/假设/设计/需求/知识）：供外部工具与未来 UI 使用。
-				const sessionId = requireString(payload, "sessionId");
-				const kind = requireString(payload, "kind");
-				const ref = requireString(payload, "ref");
-				if (!sessionId || !kind || !ref) {
-					return { ok: false, error: { code: "bad-request", message: "sessionId, kind and ref are required" } };
-				}
-				if (!deps.deleteProjectEntry) return { ok: false, error: { code: "storage-unavailable", message: "project store unavailable" } };
-				const deleted = await deps.deleteProjectEntry(sessionId, kind, ref);
-				return { ok: true, value: { deleted } };
 			}
 			case "select": {
 				const sessionId = requireString(payload, "sessionId");

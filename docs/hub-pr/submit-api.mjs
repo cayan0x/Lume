@@ -19,10 +19,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const UPSTREAM = "awesome-dsh-plugin/awesome-dsh-plugin";
-	// 提交前先验证 YAML —— 2026-09-25 PR #5888 就因为内层裸双引号被索引 CI 判 invalid YAML
-	assertYamlValid(new URL("cayan0x__Lume.yml", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 const ENTRY = "data/plugins/cayan0x__Lume.yml";
 const BRANCH = "update-cayan0x-lume-description-090";
+
+// 提交前先验证 YAML —— 2026-09-25 PR #5888 就因为内层裸双引号被索引 CI 判 invalid YAML
+assertYamlValid(new URL("cayan0x__Lume.yml", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
 
 /**
  * 提交前必须**用真解析器验证 YAML**——只数引号是否成对是不够的：
